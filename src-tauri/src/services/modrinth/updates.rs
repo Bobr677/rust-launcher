@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 
+use futures_util::stream::{self, StreamExt};
 use reqwest::header::USER_AGENT;
 use crate::app::paths::{instance_config_path, instance_dir};
 use crate::models::profile::InstanceConfig;
@@ -9,6 +12,7 @@ use crate::services::game::profiles::{
     profile_item_display_name, profile_item_is_disabled, profile_item_stored_name,
     read_instance_config, resolve_profile_item_path,
 };
+use crate::services::game::state::DEFAULT_DOWNLOAD_CONCURRENCY;
 
 use crate::infra::api_base::curseforge_api_base;
 use super::client::{modrinth_http_client, should_filter_by_loader, MODRINTH_API_BASE};
@@ -831,42 +835,57 @@ pub async fn apply_profile_content_updates(
         .await
         .map_err(|e| format!("Не удалось создать папку '{subdir}': {e}"))?;
 
-    let mut applied = 0u32;
+    let applied = Arc::new(AtomicU32::new(0));
+    let results: Vec<Result<(), String>> = stream::iter(updates.into_iter())
+        .map(|item| {
+            let content_dir = content_dir.clone();
+            let profile_id = profile_id.clone();
+            let applied = Arc::clone(&applied);
+            async move {
+                let target_display = if item.latest_filename.trim().is_empty() {
+                    item.filename.as_str()
+                } else {
+                    item.latest_filename.as_str()
+                };
+                let stored_name = profile_item_stored_name(target_display, item.enabled);
+                let dest_path = content_dir.join(&stored_name);
 
-    for item in &updates {
-        let target_display = if item.latest_filename.trim().is_empty() {
-            item.filename.as_str()
-        } else {
-            item.latest_filename.as_str()
-        };
-        let stored_name = profile_item_stored_name(target_display, item.enabled);
-        let dest_path = content_dir.join(&stored_name);
+                save_modrinth_file(
+                    download_category,
+                    &item.latest_url,
+                    &stored_name,
+                    Some(&profile_id),
+                    item.latest_sha1.as_deref(),
+                )
+                .await?;
 
-        save_modrinth_file(
-            download_category,
-            &item.latest_url,
-            &stored_name,
-            Some(&profile_id),
-            item.latest_sha1.as_deref(),
-        )
-        .await?;
+                if let Some(old_path) = resolve_profile_item_path(&content_dir, &item.filename) {
+                    if old_path != dest_path && old_path.is_file() {
+                        let _ = tokio::fs::remove_file(&old_path).await;
+                    }
+                }
 
-        if let Some(old_path) = resolve_profile_item_path(&content_dir, &item.filename) {
-            if old_path != dest_path && old_path.is_file() {
-                let _ = tokio::fs::remove_file(&old_path).await;
+                let sibling_name = profile_item_stored_name(target_display, !item.enabled);
+                if sibling_name != stored_name {
+                    let sibling_path = content_dir.join(&sibling_name);
+                    if sibling_path.is_file() {
+                        let _ = tokio::fs::remove_file(&sibling_path).await;
+                    }
+                }
+
+                applied.fetch_add(1, Ordering::SeqCst);
+                Ok(())
             }
-        }
+        })
+        .buffer_unordered(DEFAULT_DOWNLOAD_CONCURRENCY)
+        .collect()
+        .await;
 
-        let sibling_name = profile_item_stored_name(target_display, !item.enabled);
-        if sibling_name != stored_name {
-            let sibling_path = content_dir.join(&sibling_name);
-            if sibling_path.is_file() {
-                let _ = tokio::fs::remove_file(&sibling_path).await;
-            }
-        }
-
-        applied += 1;
+    for result in results {
+        result?;
     }
+
+    let applied = applied.load(Ordering::SeqCst);
 
     Ok(applied)
 }

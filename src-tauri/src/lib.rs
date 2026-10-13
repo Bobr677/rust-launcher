@@ -44,8 +44,8 @@ use services::game::{
     lan_bridge_start_host, lan_bridge_stop, lan_bridge_write,
     create_profile_backup, delete_profile_backup, list_profile_backups,
     open_profile_backups_folder, restore_profile_backup_as_new,
-    cleanup_profile, duplicate_profile, get_profile_disk_usage, get_profile_instance_settings,
-    list_profile_worlds,
+    cleanup_profile, delete_profile_worlds, duplicate_profile, get_profile_disk_usage,
+    get_profile_instance_settings, list_profile_worlds,
 };
 use services::auth::{
     ely_login_with_password, ely_logout, handle_oauth_callback, ms_logout, refresh_ely_session,
@@ -61,6 +61,7 @@ use services::modrinth::{
     apply_profile_content_updates, check_profile_content_updates,
     check_profile_incompatible_content, download_modrinth_with_dependencies,
     resolve_modrinth_required_dependencies, resolve_profile_item_metadata,
+    scan_profile_mod_jars,
 };
 use services::rpc::{
     discord_presence_clear, discord_presence_update, shutdown as discord_presence_shutdown,
@@ -247,6 +248,7 @@ pub fn run() {
             resolve_modrinth_required_dependencies,
             check_profile_content_updates,
             check_profile_incompatible_content,
+            scan_profile_mod_jars,
             apply_profile_content_updates,
             resolve_profile_item_metadata,
             download_modrinth_modpack_and_import,
@@ -293,6 +295,7 @@ pub fn run() {
             open_profile_backups_folder,
             duplicate_profile,
             list_profile_worlds,
+            delete_profile_worlds,
             get_profile_disk_usage,
             cleanup_profile,
             get_profile_instance_settings,

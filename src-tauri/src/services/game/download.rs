@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 
+use futures_util::stream::{self, StreamExt};
 use rand::Rng;
 use serde::Deserialize;
 use tauri::{AppHandle, Emitter};
@@ -12,7 +14,7 @@ use crate::models::events::{MrpackImportProgressPayload, EVENT_MRPACK_IMPORT_PRO
 use crate::models::profile::InstanceProfileSummary;
 use crate::services::game::cache as cache_service;
 use crate::services::game::profiles::{create_profile_impl, delete_profile, set_profile_icon_path};
-use crate::services::game::state::CANCEL_DOWNLOAD;
+use crate::services::game::state::{CANCEL_DOWNLOAD, DEFAULT_DOWNLOAD_CONCURRENCY};
 
 const DOWNLOAD_CANCELLED_MSG: &str = "Загрузка отменена пользователем";
 
@@ -153,10 +155,11 @@ pub async fn import_mrpack(
     let index: MrpackIndex =
         serde_json::from_str(&index_text).map_err(|e| format!("Ошибка разбора modrinth.index.json: {e}"))?;
 
-    let files_to_download: Vec<_> = index
+    let files_to_download: Vec<(String, String)> = index
         .files
         .iter()
         .filter(|f| !f.downloads.is_empty() && !f.downloads[0].is_empty())
+        .map(|f| (f.path.clone(), f.downloads[0].clone()))
         .collect();
     let total = files_to_download.len() as u32;
 
@@ -171,55 +174,66 @@ pub async fn import_mrpack(
     );
 
     let client = http_client(false);
+    let completed = Arc::new(AtomicU32::new(0));
+    let app = app.clone();
+    let dir = dir.clone();
 
-    let mut current_file: u32 = 0;
-    for f in index.files.iter() {
-        check_download_cancelled()?;
-        if f.downloads.is_empty() {
-            continue;
-        }
-        let url = &f.downloads[0];
-        if url.is_empty() {
-            continue;
-        }
-        current_file += 1;
-        let filename = f.path.rsplit('/').next().unwrap_or(&f.path).to_string();
-        let _ = app.emit(
-            EVENT_MRPACK_IMPORT_PROGRESS,
-            MrpackImportProgressPayload {
-                phase: "files".to_string(),
-                current: Some(current_file),
-                total: Some(total),
-                message: Some(filename),
-            },
-        );
-        let dest = dir.join(&f.path);
-        if let Some(parent) = dest.parent() {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .map_err(|e| format!("Не удалось создать папку для файла сборки: {e}"))?;
-        }
-        let resp = client
-            .get(url)
-            .send()
-            .await
-            .map_err(|e| format!("Ошибка скачивания файла из Modrinth: {e}"))?;
-        check_download_cancelled()?;
-        if !resp.status().is_success() {
-            return Err(format!(
-                "Modrinth вернул ошибку {} при скачивании {}",
-                resp.status(),
-                url
-            ));
-        }
-        let bytes = resp
-            .bytes()
-            .await
-            .map_err(|e| format!("Ошибка чтения тела ответа Modrinth: {e}"))?;
-        check_download_cancelled()?;
-        tokio::fs::write(&dest, &bytes)
-            .await
-            .map_err(|e| format!("Не удалось сохранить файл сборки: {e}"))?;
+    let results: Vec<Result<(), String>> = stream::iter(files_to_download.into_iter())
+        .map(|(path, url)| {
+            let client = client.clone();
+            let dir = dir.clone();
+            let app = app.clone();
+            let completed = Arc::clone(&completed);
+            async move {
+                check_download_cancelled()?;
+                let filename = path.rsplit('/').next().unwrap_or(&path).to_string();
+                let dest = dir.join(&path);
+                if let Some(parent) = dest.parent() {
+                    tokio::fs::create_dir_all(parent)
+                        .await
+                        .map_err(|e| format!("Не удалось создать папку для файла сборки: {e}"))?;
+                }
+                let resp = client
+                    .get(&url)
+                    .send()
+                    .await
+                    .map_err(|e| format!("Ошибка скачивания файла из Modrinth: {e}"))?;
+                check_download_cancelled()?;
+                if !resp.status().is_success() {
+                    return Err(format!(
+                        "Modrinth вернул ошибку {} при скачивании {}",
+                        resp.status(),
+                        url
+                    ));
+                }
+                let bytes = resp
+                    .bytes()
+                    .await
+                    .map_err(|e| format!("Ошибка чтения тела ответа Modrinth: {e}"))?;
+                check_download_cancelled()?;
+                tokio::fs::write(&dest, &bytes)
+                    .await
+                    .map_err(|e| format!("Не удалось сохранить файл сборки: {e}"))?;
+
+                let current = completed.fetch_add(1, Ordering::SeqCst) + 1;
+                let _ = app.emit(
+                    EVENT_MRPACK_IMPORT_PROGRESS,
+                    MrpackImportProgressPayload {
+                        phase: "files".to_string(),
+                        current: Some(current),
+                        total: Some(total),
+                        message: Some(filename),
+                    },
+                );
+                Ok(())
+            }
+        })
+        .buffer_unordered(DEFAULT_DOWNLOAD_CONCURRENCY)
+        .collect()
+        .await;
+
+    for result in results {
+        result?;
     }
 
     Ok(())

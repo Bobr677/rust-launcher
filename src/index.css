@@ -235,20 +235,14 @@ body {
 
 .interactive-press {
   transition:
-    transform 120ms ease-out,
-    box-shadow 140ms ease-out,
-    background-color 150ms ease-out,
-    color 150ms ease-out,
-    border-color 150ms ease-out;
-}
-
-.interactive-press:hover {
-  transform: translateY(-0.5px);
+    background-color 120ms ease-out,
+    color 120ms ease-out,
+    border-color 120ms ease-out,
+    opacity 120ms ease-out;
 }
 
 .interactive-press:active {
-  transform: scale(0.97) translateY(0.5px);
-  box-shadow: 0 0 0 rgba(0, 0, 0, 0);
+  opacity: 0.88;
 }
 
 .interactive-press.no-shift:hover {

@@ -65,8 +65,8 @@ pub use profile_backups::{
     open_profile_backups_folder, restore_profile_backup_as_new,
 };
 pub use profile_tools::{
-    cleanup_profile, duplicate_profile, get_profile_disk_usage, get_profile_instance_settings,
-    list_profile_worlds,
+    cleanup_profile, delete_profile_worlds, duplicate_profile, get_profile_disk_usage,
+    get_profile_instance_settings, list_profile_worlds,
 };
 pub use screenshots::{
     delete_screenshot, get_screenshot_data_uri, get_screenshot_thumbnail, list_screenshots,

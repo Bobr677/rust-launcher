@@ -163,7 +163,13 @@ export function ModsTab({
   const [modpackImportBusy, setModpackImportBusy] = useState(false);
   const [modpackImportProgress, setModpackImportProgress] =
     useState<MrpackImportProgressPayload | null>(null);
-  const [installingKey, setInstallingKey] = useState<string | null>(null);
+  const [installingKeys, setInstallingKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [batchSelectedKeys, setBatchSelectedKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [batchInstalling, setBatchInstalling] = useState(false);
 
   const [installedFilenames, setInstalledFilenames] = useState<Set<string>>(
     new Set(),
@@ -844,29 +850,45 @@ export function ModsTab({
     });
   }, [modpackImportBusy, finishDownloadJob]);
 
+  const addInstallingKey = useCallback((key: string) => {
+    setInstallingKeys((prev) => {
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
+  }, []);
+
+  const removeInstallingKey = useCallback((key: string) => {
+    setInstallingKeys((prev) => {
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+  }, []);
+
   const handleCatalogVersionDownload = useCallback(
     async (v: CatalogVersion, projectKeyOverride?: string | null) => {
       const projectKey =
         projectKeyOverride !== undefined ? projectKeyOverride : selectedKey;
-      if (projectKey) setInstallingKey(projectKey);
+      if (projectKey) addInstallingKey(projectKey);
       try {
         await downloadCatalogVersion(
           v,
           buildDownloadDeps(projectKey),
         );
       } finally {
-        setInstallingKey(null);
+        if (projectKey) removeInstallingKey(projectKey);
       }
     },
-    [buildDownloadDeps, selectedKey],
+    [addInstallingKey, buildDownloadDeps, removeInstallingKey, selectedKey],
   );
 
   const handleQuickInstall = useCallback(
     async (key?: string) => {
       const targetKey = key ?? selectedKey;
-      if (!targetKey || installingKey) return;
+      if (!targetKey || installingKeys.has(targetKey)) return;
 
-      setInstallingKey(targetKey);
+      addInstallingKey(targetKey);
       try {
         const latest = await resolveLatestCompatibleVersion({
           projectKey: targetKey,
@@ -889,22 +911,125 @@ export function ModsTab({
         console.error(e);
         showNotification("error", tt("mods.noAvailableVersions"));
       } finally {
-        setInstallingKey(null);
+        removeInstallingKey(targetKey);
       }
     },
     [
+      addInstallingKey,
       buildDownloadDeps,
       catalogVersions,
       contentProvider,
       contentType,
       gameVersion,
-      installingKey,
+      installingKeys,
       loader,
+      removeInstallingKey,
       selectedKey,
       showNotification,
       tt,
     ],
   );
+
+  const toggleBatchSelect = useCallback((key: string) => {
+    setBatchSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const clearBatchSelection = useCallback(() => {
+    setBatchSelectedKeys(new Set());
+  }, []);
+
+  const handleBatchInstall = useCallback(async () => {
+    if (batchSelectedKeys.size === 0 || batchInstalling) return;
+    if (contentType === "modpack") {
+      showNotification("warning", tt("mods.batch.modpackHint"));
+      return;
+    }
+
+    const keys = Array.from(batchSelectedKeys).filter(
+      (key) => !installedProjectKeys.has(key) && !installingKeys.has(key),
+    );
+    if (keys.length === 0) {
+      clearBatchSelection();
+      return;
+    }
+
+    setBatchInstalling(true);
+    keys.forEach((key) => addInstallingKey(key));
+
+    const BATCH_CONCURRENCY = 4;
+    let ok = 0;
+    let failed = 0;
+
+    try {
+      for (let i = 0; i < keys.length; i += BATCH_CONCURRENCY) {
+        const chunk = keys.slice(i, i + BATCH_CONCURRENCY);
+        const results = await Promise.allSettled(
+          chunk.map(async (targetKey) => {
+            const latest = await resolveLatestCompatibleVersion({
+              projectKey: targetKey,
+              contentProvider,
+              contentType,
+              gameVersion,
+              loader,
+            });
+            if (!latest) {
+              throw new Error("no version");
+            }
+            await downloadCatalogVersion(
+              latest,
+              buildDownloadDeps(targetKey),
+            );
+          }),
+        );
+        for (const result of results) {
+          if (result.status === "fulfilled") ok += 1;
+          else failed += 1;
+        }
+      }
+
+      if (ok > 0 && failed === 0) {
+        showNotification(
+          "success",
+          tt("mods.batch.success", { count: ok }),
+        );
+      } else if (ok > 0) {
+        showNotification(
+          "warning",
+          tt("mods.batch.partial", { ok, failed }),
+        );
+      } else {
+        showNotification("error", tt("mods.batch.failed"));
+      }
+      clearBatchSelection();
+    } finally {
+      keys.forEach((key) => removeInstallingKey(key));
+      setBatchInstalling(false);
+    }
+  }, [
+    addInstallingKey,
+    batchInstalling,
+    batchSelectedKeys,
+    buildDownloadDeps,
+    clearBatchSelection,
+    contentProvider,
+    contentType,
+    gameVersion,
+    installedProjectKeys,
+    installingKeys,
+    loader,
+    removeInstallingKey,
+    showNotification,
+    tt,
+  ]);
+
+  useEffect(() => {
+    setBatchSelectedKeys(new Set());
+  }, [contentProvider, contentType, sourceTab, page]);
 
   const externalUrl = useMemo(() => {
     if (!detail && !selectedKey) return null;
@@ -1064,7 +1189,7 @@ export function ModsTab({
             onDownloadVersion={(v) => void handleCatalogVersionDownload(v)}
             onCancelModpackImport={() => void handleCancelModpackImport()}
             canQuickInstall={contentType !== "modpack" || contentProvider === "modrinth"}
-            installBusy={Boolean(selectedKey && installingKey === selectedKey)}
+            installBusy={Boolean(selectedKey && installingKeys.has(selectedKey))}
           />
         ) : (
           <CatalogGrid
@@ -1076,11 +1201,17 @@ export function ModsTab({
             provider={contentProvider}
             selectedKey={selectedKey}
             installedKeys={installedProjectKeys}
-            installingKey={installingKey}
+            installingKeys={installingKeys}
+            batchSelectedKeys={batchSelectedKeys}
+            batchInstalling={batchInstalling}
+            allowBatchSelect={contentType !== "modpack"}
             contentTypeIsModpack={contentType === "modpack"}
             activeProfileId={activeProfileId}
             onSelect={(key) => void openProject(key)}
             onQuickInstall={(key) => void handleQuickInstall(key)}
+            onToggleBatchSelect={toggleBatchSelect}
+            onClearBatchSelection={clearBatchSelection}
+            onBatchInstall={() => void handleBatchInstall()}
             page={sourceTab === "catalog" ? page : 0}
             totalHits={
               sourceTab === "catalog"

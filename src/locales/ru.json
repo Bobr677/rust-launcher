@@ -87,6 +87,18 @@
     "curseforgeModpackHint": "Сборка CurseForge сохранена как архив. Автоимпорт .mrpack доступен только для Modrinth.",
     "quickInstall": "Установить",
     "installing": "Установка…",
+    "batch": {
+      "hint": "Отметьте несколько проектов галочками и скачайте пачкой.",
+      "selectOne": "Выбрать {{title}}",
+      "selected": "Выбрано: {{count}}",
+      "clear": "Снять выделение",
+      "download": "Скачать {{count}}",
+      "installing": "Скачивание пачки…",
+      "success": "Установлено проектов: {{count}}.",
+      "partial": "Установлено {{ok}}, не удалось: {{failed}}.",
+      "failed": "Не удалось скачать выбранные проекты.",
+      "modpackHint": "Пакетом можно скачивать моды, ресурспаки и шейдеры — не сборки."
+    },
     "source": {
       "catalog": "Каталог",
       "favorites": "Избранное",
@@ -896,12 +908,15 @@
     "backups": {
       "title": "Бэкапы сборки",
       "hint": "Снимки «{{name}}». Восстановление создаёт новую сборку.",
+      "total": "{{count}} · {{size}}",
+      "loading": "Загрузка бэкапов…",
       "create": "Создать бэкап",
       "creating": "Создание…",
       "created": "Бэкап создан.",
       "createFailed": "Не удалось создать бэкап: {{msg}}",
       "loadFailed": "Не удалось загрузить список бэкапов.",
-      "empty": "Бэкапов пока нет.",
+      "empty": "Бэкапов пока нет",
+      "emptyHint": "Создайте снимок сборки, чтобы потом быстро восстановить её как новую копию.",
       "restore": "Восстановить",
       "restoring": "Восстановление…",
       "restored": "Сборка восстановлена как «{{name}}».",
@@ -955,13 +970,24 @@
       "bulkDeleteConfirm": "Удалить {{count}} файл(ов)?",
       "selectAll": "Выбрать все",
       "clearSelection": "Снять выбор",
+      "worldsTitle": "Миры",
+      "worldsHint": "Управление сохранениями и быстрый доступ к конфигу сборки.",
       "worldsEmpty": "Миров пока нет.",
       "worldsLoading": "Загрузка миров…",
       "worldsOpen": "Открыть",
+      "worldsSearch": "Поиск мира…",
+      "worldsNoSearchResults": "Ничего не найдено.",
+      "worldsTotal": "{{count}} · {{size}}",
+      "worldsDelete": "Удалить",
+      "worldsDeleting": "Удаление…",
+      "worldsDeleteConfirm": "Удалить {{count}} мир(ов)? Это нельзя отменить.",
+      "worldsDeleted": "Удалено миров: {{count}}.",
+      "worldsDeleteFailed": "Не удалось удалить миры: {{msg}}",
       "openSaves": "Папка saves",
       "openConfig": "Папка config",
       "openFailed": "Не удалось открыть папку.",
       "lastPlayed": "Играли: {{date}}",
+      "cleanupFiles": "Файлов: {{count}}",
       "backupBeforeChange": "Создать бэкап перед сменой версии",
       "backupBeforeChangeHint": "Рекомендуется — можно откатить сборку, если что-то пойдёт не так.",
       "backingUp": "Создание бэкапа…",
@@ -993,13 +1019,22 @@
       "title": "Конфликты",
       "loading": "Проверка…",
       "count": "{{count}}",
-      "none": "Конфликтов не найдено.",
+      "none": "Явных конфликтов не найдено. Проверены дубликаты, зависимости, breaks и совместимость с версией.",
+      "noneTitle": "Всё чисто",
+      "hint": "Анализ читает fabric.mod.json / mods.toml, ищет дубликаты по mod id, отсутствующие зависимости, объявленные breaks и несовместимость с версией Minecraft.",
+      "refresh": "Перепроверить",
+      "summaryErrors": "Ошибок: {{count}}",
+      "summaryWarnings": "Предупреждений: {{count}}",
+      "openFromContent": "Открыть конфликты",
       "actions": {
         "disableExtra": "Отключить лишнее",
         "keepLatest": "Оставить последнюю",
         "disableWrongLoader": "Отключить чужой загрузчик",
         "disableAll": "Отключить все",
-        "disableIncompatible": "Отключить"
+        "disableIncompatible": "Отключить",
+        "disableDependents": "Отключить зависимые",
+        "disableFirst": "Отключить первый",
+        "disableSecond": "Отключить второй"
       },
       "severity": {
         "error": "Ошибка",
@@ -1007,11 +1042,25 @@
       },
       "affected": "Затронуто",
       "solutions": "Возможные решения",
+      "groupsCount": "Групп: {{count}}",
+      "groupSummary": "{{count}} · ошибок: {{errors}}",
+      "groups": {
+        "duplicate": "Дубликаты",
+        "breaks": "Несовместимости",
+        "dependency": "Зависимости",
+        "loader": "Загрузчик",
+        "incompatible": "Версия Minecraft",
+        "other": "Прочее"
+      },
       "duplicate": {
         "title": "Дубликаты модов",
         "reason": "Найдено несколько включённых файлов, похожих на один и тот же мод: {{name}}.",
         "solutionDisableExtra": "Отключите или удалите лишние версии (оставьте одну).",
         "solutionKeepLatest": "Оставьте самую новую версию, подходящую под вашу версию Minecraft."
+      },
+      "duplicateId": {
+        "title": "Одинаковый mod id",
+        "reason": "Несколько файлов объявляют один и тот же мод «{{name}}» (id: {{id}})."
       },
       "mixedVariants": {
         "title": "Смешанные варианты загрузчика",
@@ -1024,6 +1073,18 @@
         "reason": "В сборке выбран {{loader}}, но по имени файла мод похож на вариант: {{variants}}.",
         "solutionPickCorrect": "Поставьте версию мода под {{loader}} (или универсальную сборку).",
         "solutionSwitchLoader": "Или смените загрузчик сборки под этот набор модов."
+      },
+      "missingDep": {
+        "title": "Нет обязательной зависимости",
+        "reason": "Требуется мод «{{id}}», но среди включённых файлов он не найден.",
+        "solutionInstall": "Установите недостающий мод из каталога.",
+        "solutionDisable": "Или отключите моды, которым он нужен."
+      },
+      "breaks": {
+        "title": "Моды конфликтуют друг с другом",
+        "reason": "«{{a}}» объявляет несовместимость с «{{b}}».",
+        "solutionDisableOne": "Оставьте только один из этих модов.",
+        "solutionFindAlt": "Или найдите совместимые версии / альтернативы."
       },
       "incompatible": {
         "title": "Несовместимо с версией",

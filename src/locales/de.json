@@ -87,6 +87,18 @@
     "curseforgeModpackHint": "CurseForge-Modpack als Archiv gespeichert. Der automatische .mrpack-Import ist nur für Modrinth verfügbar.",
     "quickInstall": "Installieren",
     "installing": "Installieren…",
+    "batch": {
+      "hint": "Mehrere Projekte anhaken und als Stapel herunterladen.",
+      "selectOne": "{{title}} auswählen",
+      "selected": "Ausgewählt: {{count}}",
+      "clear": "Auswahl aufheben",
+      "download": "{{count}} herunterladen",
+      "installing": "Stapel wird heruntergeladen…",
+      "success": "{{count}} Projekt(e) installiert.",
+      "partial": "{{ok}} installiert, fehlgeschlagen: {{failed}}.",
+      "failed": "Ausgewählte Projekte konnten nicht heruntergeladen werden.",
+      "modpackHint": "Stapel-Download gilt für Mods, Ressourcenpakete und Shader — nicht für Modpacks."
+    },
     "source": {
       "catalog": "Katalog",
       "favorites": "Favoriten",
@@ -924,12 +936,15 @@
     "backups": {
       "title": "Profil-Backups",
       "hint": "Snapshots von „{{name}}“. Wiederherstellung erstellt ein neues Profil.",
+      "total": "{{count}} · {{size}}",
+      "loading": "Backups werden geladen…",
       "create": "Backup erstellen",
       "creating": "Erstellen…",
       "created": "Backup erstellt.",
       "createFailed": "Backup fehlgeschlagen: {{msg}}",
       "loadFailed": "Backups konnten nicht geladen werden.",
-      "empty": "Noch keine Backups.",
+      "empty": "Noch keine Backups",
+      "emptyHint": "Erstelle einen Snapshot dieser Build, um sie später als neue Kopie wiederherzustellen.",
       "restore": "Wiederherstellen",
       "restoring": "Wiederherstellen…",
       "restored": "Wiederhergestellt als „{{name}}“.",
@@ -956,7 +971,23 @@
       "title": "Konflikte",
       "loading": "Prüfe…",
       "count": "{{count}}",
-      "none": "Keine Konflikte gefunden.",
+      "none": "Keine offensichtlichen Konflikte. Duplikate, Abhängigkeiten, Breaks und Versionskompatibilität wurden geprüft.",
+      "noneTitle": "Alles in Ordnung",
+      "hint": "Die Analyse liest fabric.mod.json / mods.toml und sucht doppelte Mod-IDs, fehlende Abhängigkeiten, Breaks und Minecraft-Versionsprobleme.",
+      "refresh": "Erneut prüfen",
+      "summaryErrors": "Fehler: {{count}}",
+      "summaryWarnings": "Warnungen: {{count}}",
+      "openFromContent": "Konflikte öffnen",
+      "actions": {
+        "disableExtra": "Extras deaktivieren",
+        "keepLatest": "Neueste behalten",
+        "disableWrongLoader": "Falschen Loader deaktivieren",
+        "disableAll": "Alle deaktivieren",
+        "disableIncompatible": "Deaktivieren",
+        "disableDependents": "Abhängige deaktivieren",
+        "disableFirst": "Ersten deaktivieren",
+        "disableSecond": "Zweiten deaktivieren"
+      },
       "severity": {
         "error": "Fehler",
         "warning": "Warnung"
@@ -969,11 +1000,38 @@
         "solutionDisableExtra": "Deaktiviere oder entferne die zusätzlichen Versionen (eine behalten).",
         "solutionKeepLatest": "Behalte die neueste Version, die zu deiner Minecraft-Version passt."
       },
+      "duplicateId": {
+        "title": "Gleiche Mod-ID",
+        "reason": "Mehrere Dateien deklarieren denselben Mod „{{name}}“ (id: {{id}})."
+      },
+      "mixedVariants": {
+        "title": "Gemischte Loader-Varianten",
+        "reason": "Für einen Mod scheinen mehrere Loader-Builds aktiviert: {{variants}}.",
+        "solutionKeepOne": "Behalte nur die Variante, die zum Profil-Loader passt.",
+        "solutionUseUniversal": "Nutze ggf. eine universelle Version statt getrennter Varianten."
+      },
       "loaderMismatch": {
         "title": "Loader passt nicht (wahrscheinlich)",
         "reason": "Das Profil nutzt {{loader}}, aber der Dateiname deutet auf: {{variants}}.",
         "solutionPickCorrect": "Installiere die {{loader}}-Version des Mods (oder eine universelle Build).",
         "solutionSwitchLoader": "Oder stelle den Profil-Loader passend zum Mod-Set um."
+      },
+      "missingDep": {
+        "title": "Fehlende Pflichtabhängigkeit",
+        "reason": "Mod „{{id}}“ wird benötigt, ist aber nicht unter den aktivierten Dateien.",
+        "solutionInstall": "Installiere den fehlenden Mod aus dem Katalog.",
+        "solutionDisable": "Oder deaktiviere die Mods, die ihn brauchen."
+      },
+      "breaks": {
+        "title": "Mods sind inkompatibel",
+        "reason": "„{{a}}“ erklärt Inkompatibilität mit „{{b}}“.",
+        "solutionDisableOne": "Behalte nur einen dieser Mods.",
+        "solutionFindAlt": "Oder finde kompatible Versionen / Alternativen."
+      },
+      "incompatible": {
+        "title": "Inkompatibel mit Version",
+        "reason": "Mod „{{name}}“ passt nicht zur aktuellen Minecraft-/Loader-Version.",
+        "solutionDisable": "Deaktiviere den Mod oder finde eine passende Version."
       }
     },
     "exportModal": {

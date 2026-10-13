@@ -213,6 +213,48 @@ pub fn list_profile_worlds(profile_id: String) -> Result<Vec<ProfileWorldInfo>, 
 }
 
 #[command]
+pub fn delete_profile_worlds(
+    profile_id: String,
+    world_paths: Vec<String>,
+) -> Result<u32, String> {
+    if world_paths.is_empty() {
+        return Ok(0);
+    }
+    let dir = instance_dir(&profile_id)?;
+    let saves = dir.join("saves");
+    if !saves.is_dir() {
+        return Err("Папка saves не найдена".to_string());
+    }
+    let saves_canon = saves
+        .canonicalize()
+        .map_err(|e| format!("Не удалось разрешить путь saves: {e}"))?;
+
+    let mut removed = 0u32;
+    for raw in world_paths {
+        let path = PathBuf::from(&raw);
+        let canon = path
+            .canonicalize()
+            .map_err(|e| format!("Не удалось разрешить путь мира «{raw}»: {e}"))?;
+        if !canon.starts_with(&saves_canon) {
+            return Err(format!("Путь «{raw}» вне папки saves сборки"));
+        }
+        if !canon.is_dir() {
+            return Err(format!("Мир «{raw}» не найден"));
+        }
+        let parent = canon
+            .parent()
+            .ok_or_else(|| format!("Некорректный путь мира «{raw}»"))?;
+        if parent != saves_canon {
+            return Err(format!("Путь «{raw}» вне папки saves сборки"));
+        }
+        std::fs::remove_dir_all(&canon)
+            .map_err(|e| format!("Не удалось удалить мир «{raw}»: {e}"))?;
+        removed += 1;
+    }
+    Ok(removed)
+}
+
+#[command]
 pub fn get_profile_disk_usage(profile_id: String) -> Result<ProfileDiskUsage, String> {
     let dir = instance_dir(&profile_id)?;
     if !dir.is_dir() {

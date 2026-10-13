@@ -48,6 +48,15 @@
   outline-offset: 1px;
 }
 
+.accent-checkbox-lg {
+  height: 1.125rem;
+  width: 1.125rem;
+  border-radius: 0.35rem;
+  border-width: 1.5px;
+  background-size: 0.75rem 0.75rem;
+  box-shadow: none;
+}
+
 .sidebar-icon {
   width: 2.75rem;
   height: 2.75rem;

@@ -87,6 +87,18 @@
     "curseforgeModpackHint": "Modpack de CurseForge guardado como archivo. La importación automática de .mrpack solo está disponible para Modrinth.",
     "quickInstall": "Instalar",
     "installing": "Instalando…",
+    "batch": {
+      "hint": "Marca varios proyectos y descárgalos en lote.",
+      "selectOne": "Seleccionar {{title}}",
+      "selected": "Seleccionados: {{count}}",
+      "clear": "Quitar selección",
+      "download": "Descargar {{count}}",
+      "installing": "Descargando lote…",
+      "success": "Se instalaron {{count}} proyecto(s).",
+      "partial": "Instalados {{ok}}, fallidos: {{failed}}.",
+      "failed": "No se pudieron descargar los proyectos seleccionados.",
+      "modpackHint": "La descarga en lote sirve para mods, paquetes de recursos y shaders — no para modpacks."
+    },
     "source": {
       "catalog": "Catálogo",
       "favorites": "Favoritos",
@@ -924,12 +936,15 @@
     "backups": {
       "title": "Copias de seguridad",
       "hint": "Instantáneas de «{{name}}». Restaurar crea un perfil nuevo.",
+      "total": "{{count}} · {{size}}",
+      "loading": "Cargando copias…",
       "create": "Crear copia",
       "creating": "Creando…",
       "created": "Copia creada.",
       "createFailed": "No se pudo crear la copia: {{msg}}",
       "loadFailed": "No se pudieron cargar las copias.",
-      "empty": "Aún no hay copias.",
+      "empty": "Aún no hay copias",
+      "emptyHint": "Crea una instantánea de esta build para restaurarla después como una copia nueva.",
       "restore": "Restaurar",
       "restoring": "Restaurando…",
       "restored": "Restaurado como «{{name}}».",
@@ -956,7 +971,23 @@
       "title": "Conflictos",
       "loading": "Comprobando…",
       "count": "{{count}}",
-      "none": "No se detectaron conflictos.",
+      "none": "No hay conflictos obvios. Se revisaron duplicados, dependencias, breaks y compatibilidad de versión.",
+      "noneTitle": "Todo limpio",
+      "hint": "El análisis lee fabric.mod.json / mods.toml: ids duplicados, dependencias faltantes, breaks declarados e incompatibilidad con Minecraft.",
+      "refresh": "Volver a comprobar",
+      "summaryErrors": "Errores: {{count}}",
+      "summaryWarnings": "Avisos: {{count}}",
+      "openFromContent": "Abrir conflictos",
+      "actions": {
+        "disableExtra": "Desactivar extras",
+        "keepLatest": "Dejar la más nueva",
+        "disableWrongLoader": "Desactivar loader incorrecto",
+        "disableAll": "Desactivar todos",
+        "disableIncompatible": "Desactivar",
+        "disableDependents": "Desactivar dependientes",
+        "disableFirst": "Desactivar el primero",
+        "disableSecond": "Desactivar el segundo"
+      },
       "severity": {
         "error": "Error",
         "warning": "Advertencia"
@@ -969,11 +1000,38 @@
         "solutionDisableExtra": "Deshabilite o elimine las versiones extra (deje una).",
         "solutionKeepLatest": "Conserve la versión más nueva que coincida con su versión de Minecraft."
       },
+      "duplicateId": {
+        "title": "Mismo mod id",
+        "reason": "Varios archivos declaran el mismo mod «{{name}}» (id: {{id}})."
+      },
+      "mixedVariants": {
+        "title": "Variantes de loader mezcladas",
+        "reason": "Parece que hay builds de distintos loaders activados a la vez: {{variants}}.",
+        "solutionKeepOne": "Deje solo la variante que coincida con el loader del perfil.",
+        "solutionUseUniversal": "Si existe, use una versión universal."
+      },
       "loaderMismatch": {
         "title": "Incompatibilidad de loader (probable)",
         "reason": "El perfil usa {{loader}}, pero el nombre del archivo sugiere: {{variants}}.",
         "solutionPickCorrect": "Instale la versión del mod para {{loader}} (o una compilación universal).",
         "solutionSwitchLoader": "O cambie el loader del perfil para que coincida con el conjunto de mods."
+      },
+      "missingDep": {
+        "title": "Falta dependencia obligatoria",
+        "reason": "Se requiere el mod «{{id}}», pero no está entre los archivos activos.",
+        "solutionInstall": "Instale el mod que falta desde el catálogo.",
+        "solutionDisable": "O desactive los mods que lo necesitan."
+      },
+      "breaks": {
+        "title": "Mods incompatibles entre sí",
+        "reason": "«{{a}}» declara incompatibilidad con «{{b}}».",
+        "solutionDisableOne": "Deje solo uno de estos mods.",
+        "solutionFindAlt": "O busque versiones / alternativas compatibles."
+      },
+      "incompatible": {
+        "title": "Incompatible con la versión",
+        "reason": "El mod «{{name}}» no coincide con la versión actual de Minecraft / loader.",
+        "solutionDisable": "Desactive el mod o busque una versión compatible."
       }
     },
     "exportModal": {

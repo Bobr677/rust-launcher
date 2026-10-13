@@ -34,11 +34,17 @@ type CatalogGridProps = {
   provider: ContentProvider;
   selectedKey: string | null;
   installedKeys: Set<string>;
-  installingKey?: string | null;
+  installingKeys?: Set<string>;
+  batchSelectedKeys?: Set<string>;
+  batchInstalling?: boolean;
+  allowBatchSelect?: boolean;
   contentTypeIsModpack: boolean;
   activeProfileId?: string | null;
   onSelect: (key: string) => void;
   onQuickInstall?: (key: string) => void;
+  onToggleBatchSelect?: (key: string) => void;
+  onClearBatchSelection?: () => void;
+  onBatchInstall?: () => void;
   page: number;
   totalHits: number;
   pageSize: number;
@@ -55,11 +61,17 @@ export function CatalogGrid({
   provider,
   selectedKey,
   installedKeys,
-  installingKey = null,
+  installingKeys = new Set(),
+  batchSelectedKeys = new Set(),
+  batchInstalling = false,
+  allowBatchSelect = false,
   contentTypeIsModpack,
   activeProfileId,
   onSelect,
   onQuickInstall,
+  onToggleBatchSelect,
+  onClearBatchSelection,
+  onBatchInstall,
   page,
   totalHits,
   pageSize,
@@ -73,12 +85,17 @@ export function CatalogGrid({
   const canNextPage = currentPage < totalPages;
   const showSkeletons = loading && projects.length === 0;
   const skeletonCount = layout === "grid" ? 8 : 5;
+  const batchCount = batchSelectedKeys.size;
+  const showBatchBar = allowBatchSelect && batchCount > 0;
 
   return (
     <div className="glass-panel relative z-0 flex min-h-0 flex-1 flex-col overflow-hidden p-3">
       <div className="mb-2 flex items-center justify-between text-xs text-white/60">
         <div className="flex items-center gap-2">
           {error ? <span className="text-rose-300">{error}</span> : null}
+          {allowBatchSelect && !error ? (
+            <span className="text-white/45">{tt("mods.batch.hint")}</span>
+          ) : null}
         </div>
       </div>
       <div className="custom-scrollbar -mr-2 min-h-0 flex-1 overflow-y-auto pr-2">
@@ -112,28 +129,50 @@ export function CatalogGrid({
                 activeProfileId != null &&
                 !contentTypeIsModpack &&
                 installedKeys.has(p.key);
-              const isInstalling = installingKey === p.key;
+              const isInstalling = installingKeys.has(p.key);
+              const isBatchSelected = batchSelectedKeys.has(p.key);
+              const canSelect =
+                allowBatchSelect &&
+                !isInstalledInProfile &&
+                Boolean(onToggleBatchSelect);
+
               return (
                 <div
                   key={p.key}
                   className={`group relative w-full rounded-2xl border text-left transition ${
                     layout === "grid" ? "flex flex-col" : "flex items-stretch"
                   } ${
-                    isInstalledInProfile
-                      ? isActive
-                        ? "border-emerald-400 bg-white/12"
-                        : "border-emerald-500/80 bg-black/35 hover:border-emerald-400 hover:bg-black/55"
-                      : isActive
-                        ? "border-white/60 bg-white/12"
-                        : "border-white/10 bg-black/35 hover:border-white/40 hover:bg-black/55"
+                    isBatchSelected
+                      ? "border-sky-400/70 bg-sky-500/10"
+                      : isInstalledInProfile
+                        ? isActive
+                          ? "border-emerald-400 bg-white/12"
+                          : "border-emerald-500/80 bg-black/35 hover:border-emerald-400 hover:bg-black/55"
+                        : isActive
+                          ? "border-white/60 bg-white/12"
+                          : "border-white/10 bg-black/35 hover:border-white/40 hover:bg-black/55"
                   }`}
                 >
+                  {canSelect ? (
+                    <label
+                      className="absolute left-2 top-2 z-10 flex h-6 w-6 cursor-pointer items-center justify-center"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isBatchSelected}
+                        onChange={() => onToggleBatchSelect?.(p.key)}
+                        className="h-4 w-4 cursor-pointer rounded border-white/30 bg-black/40 accent-sky-400"
+                        aria-label={tt("mods.batch.selectOne", { title: p.title })}
+                      />
+                    </label>
+                  ) : null}
                   <button
                     type="button"
                     onClick={() => onSelect(p.key)}
                     className={`interactive-press flex w-full min-w-0 flex-1 gap-0 px-3 py-3 text-left ${
                       layout === "grid" ? "flex-col" : "items-stretch"
-                    }`}
+                    } ${canSelect ? "pl-9" : ""}`}
                   >
                     <div className="mr-3 flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white/5">
                       {p.icon_url ? (
@@ -183,7 +222,7 @@ export function CatalogGrid({
                     <button
                       type="button"
                       title={tt("mods.quickInstall")}
-                      disabled={Boolean(installingKey)}
+                      disabled={isInstalling}
                       onClick={(e) => {
                         e.stopPropagation();
                         onQuickInstall(p.key);
@@ -214,6 +253,34 @@ export function CatalogGrid({
           <EmptyState title={emptyMessage} compact />
         )}
       </div>
+      {showBatchBar ? (
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-sky-400/25 bg-sky-500/10 px-3 py-2 text-[11px] text-white/85">
+          <span className="font-semibold">
+            {tt("mods.batch.selected", { count: batchCount })}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={batchInstalling}
+              onClick={() => onClearBatchSelection?.()}
+              className="interactive-press rounded-full bg-white/10 px-3 py-1 text-xs font-semibold hover:bg-white/20 disabled:opacity-40"
+            >
+              {tt("mods.batch.clear")}
+            </button>
+            <button
+              type="button"
+              disabled={batchInstalling}
+              onClick={() => onBatchInstall?.()}
+              className="interactive-press inline-flex items-center gap-1.5 rounded-full accent-bg px-3 py-1 text-xs font-semibold text-white disabled:opacity-60"
+            >
+              {batchInstalling ? <Spinner className="h-3 w-3" /> : null}
+              {batchInstalling
+                ? tt("mods.batch.installing")
+                : tt("mods.batch.download", { count: batchCount })}
+            </button>
+          </div>
+        </div>
+      ) : null}
       {totalHits > pageSize && (
         <div className="mt-2 flex items-center justify-between rounded-2xl bg-black/40 px-3 py-2 text-[11px] text-white/70">
           <span>

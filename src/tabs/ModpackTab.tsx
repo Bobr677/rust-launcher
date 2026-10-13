@@ -59,6 +59,23 @@ import {
   ProfileInfoModal,
   type ProfileInfoData,
 } from "../components/profile_info_modal";
+import {
+  BackupsSectionPanel,
+  CleanupPanel,
+  ConflictsPanel,
+  EditorSideNav,
+  LaunchSettingsPanel,
+  WorldsPanel,
+  type EditorSection as EditorSectionId,
+} from "../features/profile-editor/ManageEditorSections";
+import {
+  conflictAffectedSet,
+  detectProfileConflicts as detectProfileConflictsCore,
+  guessLoaderVariant,
+  type ConflictActionKind,
+  type JarModInfo,
+  type ProfileConflict,
+} from "../lib/profileConflicts";
 
 type LoaderId = "vanilla" | "fabric" | "forge" | "quilt" | "neoforge";
 type LoaderVersionChannel = "stable" | "beta" | "alpha";
@@ -237,6 +254,25 @@ type ModpackTabProps = {
 
 type ViewId = "list" | "create" | "import" | "manage";
 type ContentTab = "mods" | "resourcepacks" | "shaderpacks";
+type EditorSection = EditorSectionId;
+type ContentFilter = "all" | "enabled" | "disabled" | "updates";
+type ProfileWorldInfo = {
+  name: string;
+  path: string;
+  sizeBytes: number;
+  lastPlayed: number | null;
+};
+type ProfileDiskFolderUsage = {
+  id: string;
+  name: string;
+  sizeBytes: number;
+  fileCount: number;
+  cleanable: boolean;
+};
+type ProfileDiskUsage = {
+  totalBytes: number;
+  folders: ProfileDiskFolderUsage[];
+};
 
 type ProfileItemEntry = {
   name: string;
@@ -632,10 +668,13 @@ function filterPathsForContentTab(tab: ContentTab, paths: string[]): string[] {
 }
 
 const MANAGE_ACTION_BTN_CLASS =
-  "interactive-press inline-flex h-9 min-w-0 max-w-full items-center justify-center gap-1.5 overflow-hidden rounded-2xl px-2.5 py-2 text-xs font-semibold text-white sm:min-w-[8.75rem] sm:px-3";
+  "interactive-press inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-2xl px-3 text-xs font-semibold text-white";
 
 const MANAGE_ICON_BTN_CLASS =
-  "interactive-press inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-white";
+  "interactive-press inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl text-white";
+
+const CONTENT_CHIP_CLASS =
+  "interactive-press inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-semibold leading-none";
 
 const MODPACK_MANAGE_SPLIT_STORAGE_KEY = "modpack_manage_main_width_frac";
 const MODPACK_MANAGE_SPLIT_MIN = 0.22;
@@ -652,10 +691,10 @@ export function ModpackTab({
   initialProfiles,
   onOpenModsTab,
   onPlaySelectedProfile,
-  primaryLabel: _primaryLabel,
-  primaryColorClasses: _primaryColorClasses = "accent-bg hover:opacity-90",
-  isLaunching: _isLaunching = false,
-  isStopping: _isStopping = false,
+  primaryLabel,
+  primaryColorClasses = "accent-bg hover:opacity-90",
+  isLaunching = false,
+  isStopping = false,
   onProfilesChange,
   onTogglePinInSidebar,
   isPinnedInSidebar,
@@ -823,17 +862,23 @@ export function ModpackTab({
   const [profileEffectiveSettings, setProfileEffectiveSettings] = useState<Settings | null>(null);
   const [profileConflictsLoading, setProfileConflictsLoading] = useState(false);
   const [profileConflictsRefreshToken, setProfileConflictsRefreshToken] = useState(0);
-  const [profileConflicts, setProfileConflicts] = useState<
-    {
-      id: string;
-      severity: "warning" | "error";
-      title: string;
-      reason: string;
-      affected: string[];
-      solutions: string[];
-      actions?: { id: string; label: string; kind: "disable_all_but" | "keep_latest"; keep?: string }[];
-    }[]
-  >([]);
+  const [profileConflicts, setProfileConflicts] = useState<ProfileConflict[]>([]);
+  const [editorSection, setEditorSection] = useState<EditorSection>("content");
+  const [contentFilter, setContentFilter] = useState<ContentFilter>("all");
+  const [selectedContentNames, setSelectedContentNames] = useState<Set<string>>(new Set());
+  const [isManageMoreOpen, setIsManageMoreOpen] = useState(false);
+  const [profileResolutionWidth, setProfileResolutionWidth] = useState("");
+  const [profileResolutionHeight, setProfileResolutionHeight] = useState("");
+  const [backupBeforeVersionChange, setBackupBeforeVersionChange] = useState(true);
+  const [profileWorlds, setProfileWorlds] = useState<ProfileWorldInfo[]>([]);
+  const [profileWorldsLoading, setProfileWorldsLoading] = useState(false);
+  const [selectedWorldPaths, setSelectedWorldPaths] = useState<Set<string>>(new Set());
+  const [worldsDeleteBusy, setWorldsDeleteBusy] = useState(false);
+  const [profileDiskUsage, setProfileDiskUsage] = useState<ProfileDiskUsage | null>(null);
+  const [profileDiskLoading, setProfileDiskLoading] = useState(false);
+  const [cleanupSelected, setCleanupSelected] = useState<Set<string>>(new Set());
+  const [cleanupBusy, setCleanupBusy] = useState(false);
+  const [duplicateBusy, setDuplicateBusy] = useState(false);
   const [isChangeVersionOpen, setIsChangeVersionOpen] = useState(false);
   const [migrateGameVersion, setMigrateGameVersion] = useState("");
   const [migrateLoaderVersion, setMigrateLoaderVersion] = useState("");
@@ -878,16 +923,8 @@ export function ModpackTab({
     left: number;
     width: number;
   }>({ left: 0, width: 0 });
-  const manageContentTabRefs = useRef<
-    Partial<Record<ContentTab, HTMLButtonElement | null>>
-  >({});
-  const manageContentTabsContainerRef = useRef<HTMLDivElement | null>(null);
   const manageDropZoneRef = useRef<HTMLDivElement | null>(null);
   const [isManageDropTarget, setIsManageDropTarget] = useState(false);
-  const [manageContentIndicator, setManageContentIndicator] = useState<{
-    left: number;
-    width: number;
-  }>({ left: 0, width: 0 });
 
   const [manageConsoleExpanded, setManageConsoleExpanded] = useState(() => {
     if (typeof window === "undefined") return true;
@@ -1129,202 +1166,104 @@ export function ModpackTab({
     [profiles, selectedProfileId],
   );
 
-  const detectProfileConflicts = useCallback(
-    (
-      entries: { name: string; enabled: boolean }[],
-      profile: { loader?: string | null },
-    ) => {
-      const enabled = (entries ?? []).filter((e) => e && e.enabled && e.name);
-
-      const stripExt = (s: string) => s.replace(/\.(jar|zip|disabled)$/i, "");
-      const extractVersionParts = (filename: string): number[] | null => {
-        const base = stripExt(filename);
-        const m = base.match(/(\d+(?:\.\d+){0,4})/);
-        if (!m) return null;
-        const parts = m[1]
-          .split(".")
-          .map((p) => Number.parseInt(p, 10))
-          .filter((n) => Number.isFinite(n));
-        return parts.length > 0 ? parts : null;
-      };
-      const cmpVersionParts = (a: number[], b: number[]): number => {
-        const n = Math.max(a.length, b.length);
-        for (let i = 0; i < n; i++) {
-          const av = a[i] ?? 0;
-          const bv = b[i] ?? 0;
-          if (av !== bv) return av < bv ? -1 : 1;
-        }
-        return 0;
-      };
-      const pickLatestFilename = (files: string[]): string | null => {
-        let best: { file: string; ver: number[] | null } | null = null;
-        for (const f of files) {
-          const ver = extractVersionParts(f);
-          if (!best) {
-            best = { file: f, ver };
-            continue;
-          }
-          if (!best.ver && ver) {
-            best = { file: f, ver };
-            continue;
-          }
-          if (best.ver && ver && cmpVersionParts(best.ver, ver) < 0) {
-            best = { file: f, ver };
-          }
-        }
-        return best?.file ?? null;
-      };
-      const guessKey = (filename: string) => {
-        const base = stripExt(filename).trim();
-        const idx = base.search(/\d/);
-        const raw = (idx > 1 ? base.slice(0, idx) : base).replace(/[-_.]+$/g, "");
-        return raw.trim().toLowerCase();
-      };
-      const guessVariant = (filename: string) => {
-        const f = stripExt(filename).toLowerCase();
-        if (/(^|[-_.])(neoforge)([-_.]|$)/.test(f)) return "neoforge";
-        if (/(^|[-_.])(forge)([-_.]|$)/.test(f)) return "forge";
-        if (/(^|[-_.])(fabric)([-_.]|$)/.test(f)) return "fabric";
-        if (/(^|[-_.])(quilt)([-_.]|$)/.test(f)) return "quilt";
-        return null;
-      };
-
-      const byKey = new Map<string, string[]>();
-      const byKeyVariants = new Map<string, Set<string>>();
-      for (const e of enabled) {
-        const key = guessKey(e.name);
-        if (!key) continue;
-        const arr = byKey.get(key) ?? [];
-        arr.push(e.name);
-        byKey.set(key, arr);
-        const v = guessVariant(e.name);
-        if (v) {
-          const vs = byKeyVariants.get(key) ?? new Set<string>();
-          vs.add(v);
-          byKeyVariants.set(key, vs);
-        }
-      }
-
-      const conflicts: {
-        id: string;
-        severity: "warning" | "error";
-        title: string;
-        reason: string;
-        affected: string[];
-        solutions: string[];
-        actions?: { id: string; label: string; kind: "disable_all_but" | "keep_latest"; keep?: string }[];
-      }[] = [];
-
-      for (const [key, files] of byKey.entries()) {
-        if (files.length < 2) continue;
-        const keepLatest = pickLatestFilename(files);
-        conflicts.push({
-          id: `dup:${key}`,
-          severity: "error",
-          title: tt("modpacks.conflicts.duplicate.title"),
-          reason: tt("modpacks.conflicts.duplicate.reason", { name: key }),
-          affected: files.slice(0, 8),
-          solutions: [
-            tt("modpacks.conflicts.duplicate.solutionDisableExtra"),
-            tt("modpacks.conflicts.duplicate.solutionKeepLatest"),
-          ],
-          actions: [
-            { id: "disable_extra", label: tt("modpacks.conflicts.actions.disableExtra"), kind: "disable_all_but" },
-            ...(keepLatest
-              ? [
-                  {
-                    id: "keep_latest",
-                    label: tt("modpacks.conflicts.actions.keepLatest"),
-                    kind: "keep_latest",
-                    keep: keepLatest,
-                  } as const,
-                ]
-              : []),
-          ],
-        });
-      }
-
-      const loader = (profile.loader ?? "").toLowerCase();
-      if (loader && loader !== "vanilla") {
-        for (const [key, variants] of byKeyVariants.entries()) {
-          if (variants.size === 0) continue;
-          if (variants.size > 1) {
-            const affected = (byKey.get(key) ?? []).slice(0, 8);
-            conflicts.push({
-              id: `mixed:${key}`,
-              severity: "error",
-              title: tt("modpacks.conflicts.mixedVariants.title"),
-              reason: tt("modpacks.conflicts.mixedVariants.reason", {
-                variants: [...variants].join(", "),
-              }),
-              affected,
-              solutions: [
-                tt("modpacks.conflicts.mixedVariants.solutionKeepOne"),
-                tt("modpacks.conflicts.mixedVariants.solutionUseUniversal"),
-              ],
-            });
-            continue;
-          }
-          if (!variants.has(loader)) {
-            const affected = (byKey.get(key) ?? []).slice(0, 8);
-            conflicts.push({
-              id: `loader:${key}`,
-              severity: "warning",
-              title: tt("modpacks.conflicts.loaderMismatch.title"),
-              reason: tt("modpacks.conflicts.loaderMismatch.reason", {
-                loader,
-                variants: [...variants].join(", "),
-              }),
-              affected,
-              solutions: [
-                tt("modpacks.conflicts.loaderMismatch.solutionPickCorrect", { loader }),
-                tt("modpacks.conflicts.loaderMismatch.solutionSwitchLoader"),
-              ],
-            });
-          }
-        }
-      }
-
-      return conflicts;
-    },
-    [tt],
-  );
-
   useEffect(() => {
-    if (!isProfileSettingsOpen || !selectedProfile) {
-      setProfileConflicts([]);
-      setProfileConflictsLoading(false);
+    const shouldLoad =
+      !!selectedProfile &&
+      (isProfileSettingsOpen || activeView === "manage");
+    if (!shouldLoad || !selectedProfile) {
+      if (!isProfileSettingsOpen && activeView !== "manage") {
+        setProfileConflicts([]);
+        setProfileConflictsLoading(false);
+      }
       return;
     }
     let cancelled = false;
     setProfileConflictsLoading(true);
-    setProfileConflicts([]);
-    invoke<{ name: string; enabled: boolean }[]>("list_profile_items", {
-      id: selectedProfile.id,
-      category: "mods",
-    })
-      .then((entries) => {
+    const profile = selectedProfile;
+    void (async () => {
+      try {
+        const [entries, jarInfos] = await Promise.all([
+          invoke<{ name: string; enabled: boolean }[]>("list_profile_items", {
+            id: profile.id,
+            category: "mods",
+          }),
+          invoke<JarModInfo[]>("scan_profile_mod_jars", {
+            profileId: profile.id,
+          }).catch(() => [] as JarModInfo[]),
+        ]);
         if (cancelled) return;
-        setProfileConflicts(detectProfileConflicts(entries ?? [], selectedProfile));
-      })
-      .catch(() => {
+        const heuristic = detectProfileConflictsCore({
+          entries: entries ?? [],
+          profile,
+          jarInfos: jarInfos ?? [],
+          tt,
+        });
+        let incompatible: ProfileConflict[] = [];
+        try {
+          const apiItems = await invoke<
+            { filename: string; enabled: boolean; title?: string | null; projectId?: string | null }[]
+          >("check_profile_incompatible_content", {
+            profileId: profile.id,
+            category: "mods",
+          });
+          const claimed = new Set(
+            heuristic.flatMap((c) => c.affected.map((f) => f.toLowerCase())),
+          );
+          incompatible = (apiItems ?? [])
+            .filter((m) => m.enabled)
+            .filter((m) => !claimed.has(m.filename.toLowerCase()))
+            .map((m) => ({
+              id: `incompat:${m.filename}`,
+              severity: "warning" as const,
+              category: "incompatible" as const,
+              title: tt("modpacks.conflicts.incompatible.title"),
+              reason: tt("modpacks.conflicts.incompatible.reason", {
+                name: m.title || m.filename,
+              }),
+              affected: [m.filename],
+              solutions: [tt("modpacks.conflicts.incompatible.solutionDisable")],
+              actions: [
+                {
+                  id: "disable",
+                  label: tt("modpacks.conflicts.actions.disableIncompatible"),
+                  kind: "disable_all" as const,
+                },
+              ],
+            }));
+        } catch {
+        }
         if (cancelled) return;
-        setProfileConflicts([]);
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setProfileConflictsLoading(false);
-      });
+        const seen = new Set(heuristic.map((c) => c.id));
+        const merged = [
+          ...heuristic,
+          ...incompatible.filter((c) => !seen.has(c.id)),
+        ];
+        merged.sort((a, b) => {
+          if (a.severity !== b.severity) return a.severity === "error" ? -1 : 1;
+          return 0;
+        });
+        setProfileConflicts(merged);
+      } catch {
+        if (!cancelled) setProfileConflicts([]);
+      } finally {
+        if (!cancelled) setProfileConflictsLoading(false);
+      }
+    })();
     return () => {
       cancelled = true;
     };
   }, [
-    detectProfileConflicts,
+    activeView,
     isProfileSettingsOpen,
-    selectedProfile?.id,
-    selectedProfile?.loader,
+    selectedProfile,
     profileConflictsRefreshToken,
+    tt,
   ]);
+
+  const conflictFilenames = useMemo(
+    () => conflictAffectedSet(profileConflicts),
+    [profileConflicts],
+  );
 
   const selectedCreatePreset = useMemo(
     () => buildPresets.find((p) => p.id === createSelectedPresetId) ?? null,
@@ -1661,7 +1600,10 @@ export function ModpackTab({
     try {
       await invoke<ProfileBackupInfo>("create_profile_backup", { profileId });
       showNotification("success", tt("modpacks.backups.created"));
-      if (backupsModalProfileId === profileId) {
+      const shouldRefreshList =
+        backupsModalProfileId === profileId ||
+        (editorSection === "backups" && selectedProfileId === profileId);
+      if (shouldRefreshList) {
         await loadBackupsList(profileId);
       }
     } catch (e) {
@@ -1887,21 +1829,7 @@ export function ModpackTab({
     };
   }, [isExportOpen, language, showNotification]);
 
-  async function openProfileSettings(profileId: string) {
-    profileRamPendingRef.current = null;
-    if (profileRamSaveTimerRef.current !== null) {
-      clearTimeout(profileRamSaveTimerRef.current);
-      profileRamSaveTimerRef.current = null;
-    }
-    setSelectedProfileId(profileId);
-    setActiveView("manage");
-    setProfileSettingsTab("general");
-    setIsProfileSettingsOpen(true);
-    try {
-      void invoke("set_selected_profile", { id: profileId });
-    } catch {
-      //ignore
-    }
+  async function loadProfileLaunchSettings(profileId: string) {
     try {
       const totalGb = await invoke<number>("get_system_memory_gb");
       if (typeof totalGb === "number" && Number.isFinite(totalGb) && totalGb >= 1) {
@@ -1913,10 +1841,35 @@ export function ModpackTab({
     try {
       const s = await invoke<Settings>("get_effective_settings", { profileId });
       setProfileEffectiveSettings(s);
+      setProfileResolutionWidth(
+        s.resolution_width != null ? String(s.resolution_width) : "",
+      );
+      setProfileResolutionHeight(
+        s.resolution_height != null ? String(s.resolution_height) : "",
+      );
     } catch (e) {
       console.error(e);
       setProfileEffectiveSettings(null);
     }
+  }
+
+  async function openProfileSettings(profileId: string) {
+    profileRamPendingRef.current = null;
+    if (profileRamSaveTimerRef.current !== null) {
+      clearTimeout(profileRamSaveTimerRef.current);
+      profileRamSaveTimerRef.current = null;
+    }
+    setSelectedProfileId(profileId);
+    setActiveView("manage");
+    setEditorSection("launch");
+    setProfileSettingsTab("general");
+    setIsProfileSettingsOpen(false);
+    try {
+      void invoke("set_selected_profile", { id: profileId });
+    } catch {
+      //ignore
+    }
+    await loadProfileLaunchSettings(profileId);
   }
 
   async function patchProfileGameSettings(
@@ -1934,6 +1887,10 @@ export function ModpackTab({
       profilePatch.close_launcher_on_game_start = patch.close_launcher_on_game_start;
     if (patch.check_game_processes !== undefined)
       profilePatch.check_game_processes = patch.check_game_processes;
+    if (patch.resolution_width !== undefined)
+      profilePatch.resolution_width = patch.resolution_width;
+    if (patch.resolution_height !== undefined)
+      profilePatch.resolution_height = patch.resolution_height;
     try {
       await invoke("update_profile_settings", { id: profileId, patch: profilePatch });
       if (notifySuccess) {
@@ -1946,6 +1903,28 @@ export function ModpackTab({
         tt("modpacks.profileSettings.saveFailed"),
       );
     }
+  }
+
+  function commitProfileResolution(profileId: string) {
+    const wRaw = profileResolutionWidth.trim();
+    const hRaw = profileResolutionHeight.trim();
+    if (!wRaw && !hRaw) {
+      void patchProfileGameSettings(profileId, {
+        resolution_width: null,
+        resolution_height: null,
+      });
+      return;
+    }
+    const w = Number.parseInt(wRaw, 10);
+    const h = Number.parseInt(hRaw, 10);
+    if (!Number.isFinite(w) || !Number.isFinite(h) || w < 320 || h < 240) {
+      showNotification("warning", tt("modpacks.profileSettingsModal.resolution"));
+      return;
+    }
+    void patchProfileGameSettings(profileId, {
+      resolution_width: w,
+      resolution_height: h,
+    });
   }
 
   function clearProfileRamSaveDebounce() {
@@ -2161,6 +2140,10 @@ export function ModpackTab({
 
     setMigrateBusy(true);
     try {
+      if (backupBeforeVersionChange) {
+        showNotification("info", tt("modpacks.editor.backingUp"), { sound: false });
+        await invoke("create_profile_backup", { profileId: selectedProfile.id });
+      }
       await installGameAndLoader(
         migrateGameVersion,
         loader,
@@ -2291,7 +2274,27 @@ export function ModpackTab({
     resourcePackPointerDragRef.current = null;
     resourcePackReorderListenersRef.current?.();
     resourcePackReorderListenersRef.current = null;
+    setSelectedContentNames(new Set());
+    setContentFilter("all");
   }, [selectedProfileId, contentTab, activeView]);
+
+  useEffect(() => {
+    if (activeView !== "manage" || !selectedProfileId) return;
+    if (editorSection === "launch") {
+      void loadProfileLaunchSettings(selectedProfileId);
+    } else if (editorSection === "worlds") {
+      void refreshProfileWorlds(selectedProfileId);
+    } else if (editorSection === "cleanup") {
+      void refreshProfileDiskUsage(selectedProfileId);
+    } else if (editorSection === "backups") {
+      void loadBackupsList(selectedProfileId);
+    } else if (editorSection === "version") {
+      const p = profiles.find((x) => x.id === selectedProfileId);
+      setMigrateGameVersion(p?.game_version ?? "");
+      setMigrateLoaderVersion(p?.loader_version ?? "");
+      void ensureMigrateVersionsLoaded();
+    }
+  }, [activeView, editorSection, selectedProfileId]);
 
   useEffect(() => {
     return () => {
@@ -2445,50 +2448,6 @@ export function ModpackTab({
     exportFormat,
     exportTree,
   ]);
-
-  useLayoutEffect(() => {
-    let raf = 0;
-    let cancelled = false;
-
-    const updateIndicator = () => {
-      if (cancelled) return;
-
-      const btnEl = manageContentTabRefs.current[contentTab];
-      const containerEl = manageContentTabsContainerRef.current;
-      if (!btnEl || !containerEl) return;
-
-      const btnRect = btnEl.getBoundingClientRect();
-      const containerRect = containerEl.getBoundingClientRect();
-      setManageContentIndicator({
-        left: btnRect.left - containerRect.left,
-        width: btnRect.width,
-      });
-    };
-
-    const scheduleUpdate = () => {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(updateIndicator);
-    };
-
-    scheduleUpdate();
-    window.addEventListener("resize", scheduleUpdate);
-
-    if (typeof document !== "undefined" && (document as any).fonts?.ready) {
-      void (document as any).fonts.ready
-        .then(() => {
-          if (!cancelled) scheduleUpdate();
-        })
-        .catch(() => {
-          if (!cancelled) scheduleUpdate();
-        });
-    }
-
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(raf);
-      window.removeEventListener("resize", scheduleUpdate);
-    };
-  }, [contentTab, activeView]);
 
   useEffect(() => {
     if (!onProfileSelectionChange) return;
@@ -3476,9 +3435,15 @@ export function ModpackTab({
         filename: item.name,
       });
       setItems((prev) => prev.filter((f) => f.name !== item.name));
-      if (category === "mods" && isProfileSettingsOpen) {
+      if (category === "mods") {
         setProfileConflictsRefreshToken((v) => v + 1);
       }
+      setSelectedContentNames((prev) => {
+        if (!prev.has(item.name)) return prev;
+        const next = new Set(prev);
+        next.delete(item.name);
+        return next;
+      });
     } catch (e) {
       console.error(e);
       showNotification("error", t(language, "modpacks.toast.deleteFileFailed"));
@@ -3509,7 +3474,7 @@ export function ModpackTab({
       if (category === "resourcepacks" || category === "shaderpacks") {
         await refreshItems(selectedProfile.id, contentTab);
       }
-      if (category === "mods" && isProfileSettingsOpen) {
+      if (category === "mods") {
         setProfileConflictsRefreshToken((v) => v + 1);
       }
     } catch (e) {
@@ -3519,6 +3484,252 @@ export function ModpackTab({
         tt("modpacks.manage.toggleFailed"),
       );
     }
+  }
+
+  function contentCategory(): "mods" | "resourcepacks" | "shaderpacks" {
+    return contentTab === "mods"
+      ? "mods"
+      : contentTab === "resourcepacks"
+        ? "resourcepacks"
+        : "shaderpacks";
+  }
+
+  async function applyConflictAction(
+    conflict: ProfileConflict,
+    action: { kind: ConflictActionKind; keep?: string },
+  ) {
+    if (!selectedProfile) return;
+    const affected = conflict.affected.slice();
+    let toDisable: string[] = [];
+    if (action.kind === "disable_all") {
+      toDisable = affected;
+    } else if (action.kind === "disable_wrong_loader") {
+      const loader = (selectedProfile.loader ?? "").toLowerCase();
+      toDisable = affected.filter((f) => {
+        const v = guessLoaderVariant(f);
+        return v != null && v !== loader;
+      });
+      if (toDisable.length === 0) toDisable = affected.slice(1);
+    } else {
+      const keep = action.keep ?? affected[0];
+      if (!keep) return;
+      toDisable = affected.filter((f) => f && f !== keep);
+    }
+    if (toDisable.length === 0) return;
+    try {
+      for (const f of toDisable) {
+        await invoke("set_profile_item_enabled", {
+          id: selectedProfile.id,
+          category: "mods",
+          filename: f,
+          enabled: false,
+        });
+      }
+      await refreshItems(selectedProfile.id, "mods");
+      setProfileConflictsRefreshToken((v) => v + 1);
+      showNotification("success", tt("modpacks.profileSettings.saved"));
+    } catch (e) {
+      console.error(e);
+      showNotification("error", tt("modpacks.manage.toggleFailed"));
+    }
+  }
+
+  async function handleBulkSetEnabled(enabled: boolean) {
+    if (!selectedProfile || selectedContentNames.size === 0) return;
+    const category = contentCategory();
+    const names = [...selectedContentNames];
+    try {
+      for (const filename of names) {
+        await invoke("set_profile_item_enabled", {
+          id: selectedProfile.id,
+          category,
+          filename,
+          enabled,
+        });
+      }
+      await refreshItems(selectedProfile.id, contentTab);
+      setSelectedContentNames(new Set());
+      if (category === "mods") setProfileConflictsRefreshToken((v) => v + 1);
+    } catch (e) {
+      console.error(e);
+      showNotification("error", tt("modpacks.manage.toggleFailed"));
+    }
+  }
+
+  async function handleBulkDelete() {
+    if (!selectedProfile || selectedContentNames.size === 0) return;
+    const count = selectedContentNames.size;
+    if (!window.confirm(tt("modpacks.editor.bulkDeleteConfirm", { count }))) return;
+    const category = contentCategory();
+    const names = [...selectedContentNames];
+    try {
+      for (const filename of names) {
+        await invoke("delete_item", {
+          id: selectedProfile.id,
+          category,
+          filename,
+        });
+      }
+      await refreshItems(selectedProfile.id, contentTab);
+      setSelectedContentNames(new Set());
+      if (category === "mods") setProfileConflictsRefreshToken((v) => v + 1);
+      void refreshProfiles();
+    } catch (e) {
+      console.error(e);
+      showNotification("error", t(language, "modpacks.toast.deleteFileFailed"));
+    }
+  }
+
+  async function handleDuplicateProfile(profile: InstanceProfile) {
+    if (duplicateBusy) return;
+    setDuplicateBusy(true);
+    try {
+      const created = await invoke<InstanceProfile>("duplicate_profile", {
+        profileId: profile.id,
+      });
+      setProfiles((prev) => {
+        const next = [created, ...prev.filter((p) => p.id !== created.id)];
+        onProfilesChange?.(next);
+        return next;
+      });
+      showNotification(
+        "success",
+        tt("modpacks.editor.duplicated", { name: created.name }),
+      );
+    } catch (e) {
+      console.error(e);
+      const msg = e instanceof Error ? e.message : String(e);
+      showNotification("error", tt("modpacks.editor.duplicateFailed", { msg }));
+    } finally {
+      setDuplicateBusy(false);
+    }
+  }
+
+  async function refreshProfileWorlds(profileId: string) {
+    setProfileWorldsLoading(true);
+    try {
+      const list = await invoke<ProfileWorldInfo[]>("list_profile_worlds", {
+        profileId,
+      });
+      setProfileWorlds(list ?? []);
+      setSelectedWorldPaths((prev) => {
+        if (prev.size === 0) return prev;
+        const valid = new Set((list ?? []).map((w) => w.path));
+        const next = new Set<string>();
+        for (const p of prev) {
+          if (valid.has(p)) next.add(p);
+        }
+        return next;
+      });
+    } catch (e) {
+      console.error(e);
+      setProfileWorlds([]);
+      setSelectedWorldPaths(new Set());
+    } finally {
+      setProfileWorldsLoading(false);
+    }
+  }
+
+  async function handleDeleteSelectedWorlds() {
+    if (!selectedProfileId || selectedWorldPaths.size === 0) return;
+    const count = selectedWorldPaths.size;
+    if (!window.confirm(tt("modpacks.editor.worldsDeleteConfirm", { count }))) return;
+    setWorldsDeleteBusy(true);
+    try {
+      await invoke("delete_profile_worlds", {
+        profileId: selectedProfileId,
+        worldPaths: Array.from(selectedWorldPaths),
+      });
+      showNotification("success", tt("modpacks.editor.worldsDeleted", { count }));
+      setSelectedWorldPaths(new Set());
+      await refreshProfileWorlds(selectedProfileId);
+    } catch (e) {
+      showNotification(
+        "error",
+        tt("modpacks.editor.worldsDeleteFailed", {
+          msg: e instanceof Error ? e.message : String(e),
+        }),
+      );
+    } finally {
+      setWorldsDeleteBusy(false);
+    }
+  }
+
+  async function refreshProfileDiskUsage(profileId: string) {
+    setProfileDiskLoading(true);
+    try {
+      const usage = await invoke<ProfileDiskUsage>("get_profile_disk_usage", {
+        profileId,
+      });
+      setProfileDiskUsage(usage);
+      setCleanupSelected(
+        new Set((usage.folders ?? []).filter((f) => f.cleanable).map((f) => f.id)),
+      );
+    } catch (e) {
+      console.error(e);
+      setProfileDiskUsage(null);
+    } finally {
+      setProfileDiskLoading(false);
+    }
+  }
+
+  async function handleCleanupProfile() {
+    if (!selectedProfile || cleanupBusy) return;
+    const targets = [...cleanupSelected];
+    if (targets.length === 0) {
+      showNotification("info", tt("modpacks.editor.cleanupNothing"));
+      return;
+    }
+    setCleanupBusy(true);
+    try {
+      const result = await invoke<{ freedBytes: number; removed: string[] }>(
+        "cleanup_profile",
+        { profileId: selectedProfile.id, targets },
+      );
+      showNotification(
+        "success",
+        tt("modpacks.editor.cleanupDone", {
+          size: formatByteSize(language, result.freedBytes ?? 0),
+        }),
+      );
+      await refreshProfileDiskUsage(selectedProfile.id);
+    } catch (e) {
+      console.error(e);
+      const msg = e instanceof Error ? e.message : String(e);
+      showNotification("error", tt("modpacks.editor.cleanupFailed", { msg }));
+    } finally {
+      setCleanupBusy(false);
+    }
+  }
+
+  async function openProfileSubfolder(sub: "saves" | "config") {
+    if (!selectedProfile) return;
+    try {
+      const base = selectedProfile.directory.replace(/[\\/]+$/, "");
+      const sep = selectedProfile.directory.includes("\\") ? "\\" : "/";
+      await revealItemInDir(`${base}${sep}${sub}`);
+    } catch (e) {
+      console.error(e);
+      showNotification("error", tt("modpacks.editor.openFailed"));
+    }
+  }
+
+  function diskFolderLabel(id: string): string {
+    const map: Record<string, string> = {
+      mods: "modpacks.editor.folderMods",
+      resourcepacks: "modpacks.editor.folderResourcepacks",
+      shaderpacks: "modpacks.editor.folderShaderpacks",
+      saves: "modpacks.editor.folderSaves",
+      config: "modpacks.editor.folderConfig",
+      datapacks: "modpacks.editor.folderDatapacks",
+      logs: "modpacks.editor.folderLogs",
+      "crash-reports": "modpacks.editor.folderCrashReports",
+      cache: "modpacks.editor.folderCache",
+      ".cache": "modpacks.editor.folderCache",
+      ".fabric": "modpacks.editor.folderFabric",
+      other: "modpacks.editor.folderOther",
+    };
+    return tt(map[id] ?? "modpacks.editor.folderOther");
   }
 
   function cleanupResourcePackReorderListeners() {
@@ -4072,6 +4283,7 @@ export function ModpackTab({
             return;
           }
           setSelectedProfileId(p.id);
+          setEditorSection("content");
           setActiveView("manage");
           void invoke("set_selected_profile", { id: p.id });
         }}
@@ -5205,13 +5417,38 @@ export function ModpackTab({
     if (!selectedProfile) return renderListView();
 
     const searchValue = itemsSearch.trim().toLowerCase();
+    let filteredItems = items;
+    if (contentFilter === "enabled") {
+      filteredItems = filteredItems.filter((i) => i.enabled);
+    } else if (contentFilter === "disabled") {
+      filteredItems = filteredItems.filter((i) => !i.enabled);
+    } else if (contentFilter === "updates") {
+      filteredItems = filteredItems.filter((i) =>
+        contentUpdatesAvailableFilenames.has(i.name),
+      );
+    }
     const visibleItems =
       searchValue.length === 0
-        ? items
-        : items.filter((item) => item.name.toLowerCase().includes(searchValue));
+        ? filteredItems
+        : filteredItems.filter((item) => {
+            if (item.name.toLowerCase().includes(searchValue)) return true;
+            const meta = itemMetadataByFilename[item.name];
+            const title = meta?.title?.toLowerCase() ?? "";
+            return title.includes(searchValue);
+          });
+
+    const editorNav = (
+      <EditorSideNav
+        section={editorSection}
+        onChange={setEditorSection}
+        conflictCount={profileConflicts.length}
+        conflictsLoading={profileConflictsLoading}
+        tt={tt}
+      />
+    );
 
     return (
-      <div className="custom-scrollbar flex min-h-0 w-full flex-1 flex-col gap-4 overflow-y-auto pr-1">
+      <div className="custom-scrollbar flex min-h-0 w-full flex-1 flex-col gap-3 overflow-y-auto pr-1">
         <div className="sticky top-0 z-20 -mx-1 flex w-full shrink-0 flex-wrap items-start justify-between gap-3">
           {isRenaming ? (
             <div className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl border border-white/10 bg-black/55 px-4 py-3 backdrop-blur-md">
@@ -5334,62 +5571,24 @@ export function ModpackTab({
             </div>
           )}
 
-          <div className="ml-auto flex w-fit shrink-0 flex-wrap items-center justify-end gap-2 rounded-2xl border border-white/10 bg-black/55 px-2 py-2 backdrop-blur-md">
+          <div className="ml-auto flex w-fit shrink-0 items-center justify-end gap-2 rounded-2xl border border-white/10 bg-black/55 px-2 py-2 backdrop-blur-md">
+            <button
+              type="button"
+              onClick={() => onPlaySelectedProfile?.()}
+              disabled={isLaunching || isStopping}
+              className={`${MANAGE_ACTION_BTN_CLASS} disabled:cursor-not-allowed disabled:opacity-60 ${primaryColorClasses}`}
+              title={tt("modpacks.list.playSelectedTitle")}
+            >
+              {primaryLabel ?? tt("modpacks.actions.play")}
+            </button>
             <button
               type="button"
               onClick={() => setActiveView("list")}
               className={`${MANAGE_ACTION_BTN_CLASS} bg-white/10 hover:bg-white/20`}
               title={tt("modpacks.manage.backToList")}
             >
-              <span className="truncate">
-                {tt("modpacks.manage.backToList")}
-              </span>
+              {tt("modpacks.manage.backToList")}
             </button>
-            <button
-              type="button"
-              onClick={() => void handleOpenFolder()}
-              className={`${MANAGE_ICON_BTN_CLASS} bg-white/10 hover:bg-white/20`}
-              title={tt("modpacks.manage.openFolder")}
-            >
-              <FolderIcon className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => void openExportModal()}
-              className={`${MANAGE_ICON_BTN_CLASS} bg-white/10 hover:bg-white/20`}
-              title={tt("modpacks.manage.exportBuild")}
-            >
-              <ExportIcon className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (!selectedProfile) return;
-                void openBackupsModal(selectedProfile.id);
-              }}
-              className={`${MANAGE_ICON_BTN_CLASS} bg-white/10 hover:bg-white/20`}
-              title={tt("modpacks.manage.backups")}
-            >
-              <BackupIcon className="h-3.5 w-3.5 text-white/90" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsScreenshotsOpen(true)}
-              className={`${MANAGE_ICON_BTN_CLASS} bg-white/10 hover:bg-white/20`}
-              title={tt("modpacks.screenshots.title")}
-            >
-              <ScreenshotsIcon className="h-3.5 w-3.5" />
-            </button>
-            {BUILD_PRESETS_UI_ENABLED && (
-              <button
-                type="button"
-                onClick={() => void handleSaveBuildPresetFromProfile(selectedProfile)}
-                className={`${MANAGE_ACTION_BTN_CLASS} bg-white/10 hover:bg-white/20`}
-                title={tt("modpacks.presets.saveFromProfile")}
-              >
-                <span className="truncate">{tt("modpacks.presets.saveFromProfile")}</span>
-              </button>
-            )}
             <button
               type="button"
               onClick={() => void handleSelectProfile(selectedProfile)}
@@ -5397,15 +5596,256 @@ export function ModpackTab({
               title={tt("modpacks.manage.selectProfile")}
             >
               <Download className="h-4 w-4 shrink-0" />
-              <span className="truncate">
-                {selectedProfileId === selectedProfile.id
-                  ? tt("modpacks.actions.unselect")
-                  : tt("modpacks.actions.select")}
-              </span>
+              {selectedProfileId === selectedProfile.id
+                ? tt("modpacks.actions.unselect")
+                : tt("modpacks.actions.select")}
             </button>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsManageMoreOpen((v) => !v)}
+                className={`${MANAGE_ICON_BTN_CLASS} bg-white/10 hover:bg-white/20`}
+                title={tt("modpacks.editor.moreActions")}
+              >
+                <ChevronDown className="h-3.5 w-3.5" />
+              </button>
+              {isManageMoreOpen && (
+                <div className="absolute right-0 z-30 mt-1 w-52 glass-popover p-1 text-xs text-white">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsManageMoreOpen(false);
+                      void handleOpenFolder();
+                    }}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-1.5 text-left hover:bg-white/10"
+                  >
+                    <FolderIcon className="h-3.5 w-3.5" />
+                    <span>{tt("modpacks.manage.openFolder")}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsManageMoreOpen(false);
+                      void openExportModal();
+                    }}
+                    className="mt-0.5 flex w-full items-center gap-2 rounded-xl px-3 py-1.5 text-left hover:bg-white/10"
+                  >
+                    <ExportIcon className="h-3.5 w-3.5" />
+                    <span>{tt("modpacks.manage.exportBuild")}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsManageMoreOpen(false);
+                      setIsScreenshotsOpen(true);
+                    }}
+                    className="mt-0.5 flex w-full items-center gap-2 rounded-xl px-3 py-1.5 text-left hover:bg-white/10"
+                  >
+                    <ScreenshotsIcon className="h-3.5 w-3.5" />
+                    <span>{tt("modpacks.screenshots.title")}</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={duplicateBusy}
+                    onClick={() => {
+                      setIsManageMoreOpen(false);
+                      void handleDuplicateProfile(selectedProfile);
+                    }}
+                    className="mt-0.5 flex w-full items-center gap-2 rounded-xl px-3 py-1.5 text-left hover:bg-white/10 disabled:opacity-50"
+                  >
+                    <PlusIcon className="h-3.5 w-3.5" />
+                    <span>
+                      {duplicateBusy
+                        ? tt("modpacks.editor.duplicating")
+                        : tt("modpacks.editor.duplicate")}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsManageMoreOpen(false);
+                      setEditorSection("launch");
+                    }}
+                    className="mt-0.5 flex w-full items-center gap-2 rounded-xl px-3 py-1.5 text-left hover:bg-white/10"
+                  >
+                    <SettingsIcon className="h-3.5 w-3.5" />
+                    <span>{tt("modpacks.manage.profileSettings")}</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
+        <div className="flex min-h-0 w-full flex-1 flex-col gap-3 sm:flex-row sm:items-stretch">
+          {editorNav}
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {editorSection === "launch" ? (
+          <LaunchSettingsPanel
+            language={language}
+            systemMemoryGb={systemMemoryGb}
+            settings={profileEffectiveSettings}
+            profileId={selectedProfile.id}
+            resolutionWidth={profileResolutionWidth}
+            resolutionHeight={profileResolutionHeight}
+            onResolutionWidth={setProfileResolutionWidth}
+            onResolutionHeight={setProfileResolutionHeight}
+            onCommitResolution={() => commitProfileResolution(selectedProfile.id)}
+            onResetResolution={() => {
+              setProfileResolutionWidth("");
+              setProfileResolutionHeight("");
+              void patchProfileGameSettings(selectedProfile.id, {
+                resolution_width: null,
+                resolution_height: null,
+              });
+            }}
+            onPatch={(patch) =>
+              void patchProfileGameSettings(selectedProfile.id, patch as Partial<Settings>)
+            }
+            onRamChange={(gb) => {
+              const ramMb = Math.max(1, gb) * 1024;
+              setProfileEffectiveSettings((prev) =>
+                prev ? { ...prev, ram_mb: ramMb } : prev,
+              );
+              scheduleProfileRamSave(selectedProfile.id, ramMb);
+            }}
+            onRamCommit={(gb) =>
+              commitProfileRamSaveNow(selectedProfile.id, Math.max(1, gb) * 1024)
+            }
+            showNotification={showNotification}
+            tt={tt}
+          />
+        ) : editorSection === "worlds" ? (
+          <WorldsPanel
+            language={language}
+            loading={profileWorldsLoading}
+            worlds={profileWorlds}
+            selected={selectedWorldPaths}
+            onToggle={(path) => {
+              setSelectedWorldPaths((prev) => {
+                const next = new Set(prev);
+                if (next.has(path)) next.delete(path);
+                else next.add(path);
+                return next;
+              });
+            }}
+            onSelectAll={() =>
+              setSelectedWorldPaths(new Set(profileWorlds.map((w) => w.path)))
+            }
+            onClearSelection={() => setSelectedWorldPaths(new Set())}
+            onOpenWorld={(path) => {
+              void revealItemInDir(path).catch(() =>
+                showNotification("error", tt("modpacks.editor.openFailed")),
+              );
+            }}
+            onOpenSaves={() => void openProfileSubfolder("saves")}
+            onOpenConfig={() => void openProfileSubfolder("config")}
+            onDeleteSelected={() => void handleDeleteSelectedWorlds()}
+            deleteBusy={worldsDeleteBusy}
+            tt={tt}
+          />
+        ) : editorSection === "conflicts" ? (
+          <ConflictsPanel
+            loading={profileConflictsLoading}
+            conflicts={profileConflicts}
+            onRefresh={() => setProfileConflictsRefreshToken((v) => v + 1)}
+            onAction={(c, actionId) => {
+              const action = c.actions?.find((a) => a.id === actionId);
+              if (!action) return;
+              void applyConflictAction(c as ProfileConflict, {
+                kind: action.kind as ConflictActionKind,
+                keep: action.keep,
+              });
+            }}
+            tt={tt}
+          />
+        ) : editorSection === "cleanup" ? (
+          <CleanupPanel
+            language={language}
+            loading={profileDiskLoading}
+            busy={cleanupBusy}
+            usage={profileDiskUsage}
+            selected={cleanupSelected}
+            onToggle={(id) => {
+              setCleanupSelected((prev) => {
+                const next = new Set(prev);
+                if (next.has(id)) next.delete(id);
+                else next.add(id);
+                return next;
+              });
+            }}
+            onRun={() => void handleCleanupProfile()}
+            folderLabel={diskFolderLabel}
+            tt={tt}
+          />
+        ) : editorSection === "backups" ? (
+          <BackupsSectionPanel
+            language={language}
+            profileName={selectedProfile.name}
+            loading={backupsLoading}
+            creating={backupCreating}
+            restoringId={backupRestoringId}
+            backups={backupsList.map((b) => ({
+              id: b.id,
+              createdAt: b.created_at,
+              sizeBytes: b.size_bytes,
+            }))}
+            onCreate={() => void handleCreateBackup(selectedProfile.id)}
+            onRestore={(backupId) =>
+              void handleRestoreBackup(selectedProfile.id, backupId)
+            }
+            onDelete={(backupId) =>
+              void handleDeleteBackup(selectedProfile.id, backupId)
+            }
+            onOpenFolder={() =>
+              void invoke("open_profile_backups_folder", {
+                profileId: selectedProfile.id,
+              }).catch((e) => {
+                console.error(e);
+                showNotification("error", tt("modpacks.backups.openFolderFailed"));
+              })
+            }
+            tt={tt}
+          />
+        ) : editorSection === "version" ? (
+          <div className="glass-panel flex min-h-0 flex-1 flex-col gap-4 p-4">
+            <div>
+              <div className="text-sm font-semibold text-white">
+                {tt("modpacks.changeVersion.title")}
+              </div>
+              <div className="mt-1 text-xs text-white/60">
+                {tt("modpacks.changeVersion.description")}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-white/12 bg-black/35 px-4 py-3 text-sm text-white/90">
+              {tt("modpacks.changeVersion.currentVersion")}: {selectedProfile.game_version}
+              {selectedProfile.loader !== "vanilla"
+                ? ` · ${selectedProfile.loader}${selectedProfile.loader_version ? ` ${selectedProfile.loader_version}` : ""}`
+                : ""}
+            </div>
+            <label className="flex items-start gap-2 text-xs text-white/80">
+              <input
+                type="checkbox"
+                checked={backupBeforeVersionChange}
+                onChange={(e) => setBackupBeforeVersionChange(e.target.checked)}
+                className="mt-0.5 accent-checkbox"
+              />
+              <span>
+                <span className="font-semibold">{tt("modpacks.editor.backupBeforeChange")}</span>
+                <span className="mt-0.5 block text-white/50">
+                  {tt("modpacks.editor.backupBeforeChangeHint")}
+                </span>
+              </span>
+            </label>
+            <button
+              type="button"
+              onClick={openChangeVersionModal}
+              className="interactive-press rounded-2xl accent-bg px-4 py-2.5 text-sm font-semibold text-white shadow-soft hover:opacity-90"
+            >
+              {tt("modpacks.changeVersion.button")}
+            </button>
+          </div>
+        ) : (
         <div
           ref={manageSplitRowRef}
           className="flex min-h-0 w-full flex-1 flex-col gap-3 lg:flex-row lg:items-stretch lg:gap-0"
@@ -5498,18 +5938,99 @@ export function ModpackTab({
             </div>
           </div>
 
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            {(
+              [
+                ["all", "modpacks.editor.filterAll"],
+                ["enabled", "modpacks.editor.filterEnabled"],
+                ["disabled", "modpacks.editor.filterDisabled"],
+                ["updates", "modpacks.editor.filterUpdates"],
+              ] as const
+            ).map(([id, key]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setContentFilter(id)}
+                className={`${CONTENT_CHIP_CLASS} ${
+                  contentFilter === id
+                    ? "bg-white text-black"
+                    : "bg-white/10 text-white/70 hover:bg-white/20"
+                }`}
+              >
+                <span>{tt(key)}</span>
+                {id === "updates" && contentUpdatesAvailableFilenames.size > 0 ? (
+                  <span
+                    className={`inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[10px] font-bold leading-none ${
+                      contentFilter === id
+                        ? "bg-black/15 text-black"
+                        : "bg-emerald-500/30 text-emerald-100"
+                    }`}
+                  >
+                    {contentUpdatesAvailableFilenames.size}
+                  </span>
+                ) : null}
+              </button>
+            ))}
+            {profileConflicts.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setEditorSection("conflicts")}
+                className={`${CONTENT_CHIP_CLASS} bg-white/10 text-white/75 hover:bg-white/20`}
+                title={tt("modpacks.conflicts.openFromContent")}
+              >
+                <span>{tt("modpacks.editor.nav.conflicts")}</span>
+                <span className="inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-amber-500/35 px-1 text-[10px] font-bold leading-none text-amber-100">
+                  {profileConflicts.length}
+                </span>
+              </button>
+            ) : null}
+          </div>
+          {selectedContentNames.size > 0 && (
+            <div className="mb-2 flex flex-wrap items-center gap-1.5 rounded-2xl bg-black/35 px-3 py-2 text-xs">
+              <span className="text-white/70">
+                {tt("modpacks.editor.selectedCount", { count: selectedContentNames.size })}
+              </span>
+              <button
+                type="button"
+                onClick={() => void handleBulkSetEnabled(true)}
+                className={`${CONTENT_CHIP_CLASS} bg-white/10 text-white hover:bg-white/20`}
+              >
+                {tt("modpacks.editor.bulkEnable")}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleBulkSetEnabled(false)}
+                className={`${CONTENT_CHIP_CLASS} bg-white/10 text-white hover:bg-white/20`}
+              >
+                {tt("modpacks.editor.bulkDisable")}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleBulkDelete()}
+                className={`${CONTENT_CHIP_CLASS} bg-red-600/80 text-white hover:bg-red-600`}
+              >
+                {tt("modpacks.editor.bulkDelete")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedContentNames(new Set())}
+                className={`${CONTENT_CHIP_CLASS} text-white/60 hover:bg-white/10 hover:text-white`}
+              >
+                {tt("modpacks.editor.clearSelection")}
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setSelectedContentNames(new Set(visibleItems.map((i) => i.name)))
+                }
+                className={`${CONTENT_CHIP_CLASS} text-white/60 hover:bg-white/10 hover:text-white`}
+              >
+                {tt("modpacks.editor.selectAll")}
+              </button>
+            </div>
+          )}
           <div className="mb-3 flex items-center justify-between gap-3">
-            <div
-              ref={manageContentTabsContainerRef}
-              className="relative inline-flex max-w-full gap-1 overflow-x-auto rounded-full bg-white/10 p-1"
-            >
-              <div
-                className="pointer-events-none absolute top-1 bottom-1 rounded-full bg-white/90 transition-all duration-200 ease-out"
-                style={{
-                  left: `${manageContentIndicator.left}px`,
-                  width: `${manageContentIndicator.width}px`,
-                }}
-              />
+            <div className="inline-flex h-9 max-w-full items-center gap-0.5 overflow-x-auto rounded-full bg-white/10 p-0.5">
               {(["mods", "resourcepacks", "shaderpacks"] as ContentTab[]).map(
                 (tab) => {
                   const active = tab === contentTab;
@@ -5517,12 +6038,11 @@ export function ModpackTab({
                     <button
                       key={tab}
                       type="button"
-                      ref={(el) => {
-                        manageContentTabRefs.current[tab] = el;
-                      }}
                       onClick={() => setContentTab(tab)}
-                      className={`interactive-press relative z-10 rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
-                        active ? "text-black" : "text-white/70 hover:text-white"
+                      className={`interactive-press inline-flex h-full shrink-0 items-center rounded-full px-3 text-xs font-semibold leading-none ${
+                        active
+                          ? "bg-white text-black"
+                          : "text-white/70 hover:bg-white/10 hover:text-white"
                       }`}
                     >
                       {manageTabLabels[tab]}
@@ -5547,9 +6067,9 @@ export function ModpackTab({
                   });
                 }}
                 disabled={itemsLoading || items.filter((item) => item.enabled).length < 2}
-                className={`interactive-press shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                className={`${CONTENT_CHIP_CLASS} shrink-0 disabled:cursor-not-allowed disabled:opacity-50 ${
                   isResourcePackReorderMode
-                    ? "accent-bg text-white shadow-soft"
+                    ? "accent-bg text-white"
                     : "bg-white/10 text-white hover:bg-white/20"
                 }`}
                 title={
@@ -5570,7 +6090,7 @@ export function ModpackTab({
               ref={manageDropZoneRef}
               className={`custom-scrollbar min-h-0 flex-1 overflow-y-auto rounded-2xl bg-black/35 p-2.5 shadow-inner transition-colors ${
                 isManageDropTarget
-                  ? "bg-purple-500/15 ring-2 ring-purple-400/70 ring-inset"
+                  ? "bg-emerald-500/15 ring-2 ring-emerald-400/70 ring-inset"
                   : ""
               }`}
             >
@@ -5619,22 +6139,35 @@ export function ModpackTab({
                           resourcePackRowRefs.current.delete(item.name);
                         }
                       }}
-                      className={`flex items-center justify-between gap-2 rounded-2xl bg-black/45 px-3 py-3 text-xs transition-opacity ${
+                      className={`flex items-center justify-between gap-2.5 rounded-2xl bg-black/45 px-3 py-3 text-xs transition-opacity ${
                         item.enabled ? "text-white/85" : "text-white/45 opacity-75"
                       } ${isDragging ? "opacity-50" : ""} ${
-                        isDropTarget ? "ring-2 ring-purple-400/70 ring-inset" : ""
+                        isDropTarget ? "ring-2 ring-emerald-400/70 ring-inset" : ""
                       }`}
                     >
-                      <div className="flex min-w-0 items-center gap-2">
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <input
+                          type="checkbox"
+                          checked={selectedContentNames.has(item.name)}
+                          onChange={() => {
+                            setSelectedContentNames((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(item.name)) next.delete(item.name);
+                              else next.add(item.name);
+                              return next;
+                            });
+                          }}
+                          className="accent-checkbox accent-checkbox-lg"
+                        />
                         {reorderable && canReorder ? (
                           <button
                             type="button"
                             onPointerDown={(e) => handleResourcePackGripPointerDown(index, e)}
-                            className="interactive-press shrink-0 cursor-grab touch-none rounded-md p-0.5 text-white/35 hover:bg-white/10 hover:text-white/60 active:cursor-grabbing"
+                            className="interactive-press shrink-0 cursor-grab touch-none rounded-md p-1 text-white/35 hover:bg-white/10 hover:text-white/60 active:cursor-grabbing"
                             title={tt("modpacks.manage.dragToReorder")}
                             aria-label={tt("modpacks.manage.dragToReorder")}
                           >
-                            <span className="text-sm leading-none" aria-hidden="true">
+                            <span className="text-base leading-none" aria-hidden="true">
                               ⠿
                             </span>
                           </button>
@@ -5660,7 +6193,7 @@ export function ModpackTab({
                           role="switch"
                           aria-checked={item.enabled}
                           onClick={() => void handleToggleItemEnabled(item)}
-                          className={`interactive-press relative h-6 w-10 rounded-full transition-colors ${
+                          className={`interactive-press relative h-7 w-12 rounded-full transition-colors ${
                             item.enabled ? "bg-emerald-500/90" : "bg-white/20"
                           }`}
                           title={
@@ -5674,18 +6207,18 @@ export function ModpackTab({
                           }
                         >
                           <span
-                            className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[left] ${
-                              item.enabled ? "left-[1.125rem]" : "left-0.5"
+                            className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-[left] ${
+                              item.enabled ? "left-[1.375rem]" : "left-0.5"
                             }`}
                           />
                         </button>
                         <button
                           type="button"
                           onClick={() => void handleDeleteItem(item)}
-                          className="interactive-press rounded-full bg-white/10 p-1.5 text-white/80 hover:bg-red-600 hover:text-white"
+                          className="interactive-press rounded-full bg-white/10 p-2 text-white/80 hover:bg-red-600 hover:text-white"
                           title={tt("common.delete")}
                         >
-                          <DeleteIcon className="h-3.5 w-3.5" />
+                          <DeleteIcon className="h-4 w-4" />
                         </button>
                       </div>
                     </div>
@@ -5720,14 +6253,30 @@ export function ModpackTab({
               })()
             ) : (
               <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
-                {visibleItems.map((item) => (
+                {visibleItems.map((item) => {
+                  const hasConflict =
+                    contentTab === "mods" && conflictFilenames.has(item.name);
+                  return (
                   <div
                     key={item.name}
-                    className={`flex items-center justify-between gap-2 rounded-2xl bg-black/45 px-3 py-3 text-xs transition-opacity ${
+                    className={`flex items-center justify-between gap-2.5 rounded-2xl bg-black/45 px-3 py-3 text-xs transition-opacity ${
                       item.enabled ? "text-white/85" : "text-white/45 opacity-75"
-                    }`}
+                    } ${hasConflict ? "bg-amber-500/10" : ""}`}
                   >
-                    <div className="flex min-w-0 items-center gap-2">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <input
+                        type="checkbox"
+                        checked={selectedContentNames.has(item.name)}
+                        onChange={() => {
+                          setSelectedContentNames((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(item.name)) next.delete(item.name);
+                            else next.add(item.name);
+                            return next;
+                          });
+                        }}
+                        className="accent-checkbox accent-checkbox-lg"
+                      />
                       <ProfileItemIcon
                         contentTab={contentTab}
                         metadata={itemMetadataByFilename[item.name]}
@@ -5742,12 +6291,22 @@ export function ModpackTab({
                       />
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
+                      {hasConflict ? (
+                        <button
+                          type="button"
+                          onClick={() => setEditorSection("conflicts")}
+                          className="interactive-press rounded-full bg-amber-500/25 px-2.5 py-1.5 text-xs font-bold text-amber-100 hover:bg-amber-500/40"
+                          title={tt("modpacks.conflicts.openFromContent")}
+                        >
+                          !
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         role="switch"
                         aria-checked={item.enabled}
                         onClick={() => void handleToggleItemEnabled(item)}
-                        className={`interactive-press relative h-6 w-10 rounded-full transition-colors ${
+                        className={`interactive-press relative h-7 w-12 rounded-full transition-colors ${
                           item.enabled ? "bg-emerald-500/90" : "bg-white/20"
                         }`}
                         title={
@@ -5757,8 +6316,8 @@ export function ModpackTab({
                         }
                       >
                         <span
-                          className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[left] ${
-                            item.enabled ? "left-[1.125rem]" : "left-0.5"
+                          className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-[left] ${
+                            item.enabled ? "left-[1.375rem]" : "left-0.5"
                           }`}
                         />
                       </button>
@@ -5773,13 +6332,13 @@ export function ModpackTab({
                             contentUpdatesChecking ||
                             contentUpdatesSingleApplyingFilename === item.name
                           }
-                          className="interactive-press rounded-full bg-white/10 p-1.5 text-white/80 hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
+                          className="interactive-press rounded-full bg-white/10 p-2 text-white/80 hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
                           title={tt("modpacks.manage.update")}
                         >
                           <img
                             src="/launcher-assets/download.png"
                             alt=""
-                            className="h-3.5 w-3.5 object-contain"
+                            className="h-4 w-4 object-contain"
                             aria-hidden="true"
                           />
                         </button>
@@ -5787,14 +6346,15 @@ export function ModpackTab({
                       <button
                         type="button"
                         onClick={() => void handleDeleteItem(item)}
-                        className="interactive-press rounded-full bg-white/10 p-1.5 text-white/80 hover:bg-red-600 hover:text-white"
+                        className="interactive-press rounded-full bg-white/10 p-2 text-white/80 hover:bg-red-600 hover:text-white"
                         title={tt("common.delete")}
                       >
-                        <DeleteIcon className="h-3.5 w-3.5" />
+                        <DeleteIcon className="h-4 w-4" />
                       </button>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
             </div>
@@ -5913,6 +6473,9 @@ export function ModpackTab({
           )}
         </div>
         </div>
+        )}
+          </div>
+        </div>
       </div>
     );
   }
@@ -5981,6 +6544,24 @@ export function ModpackTab({
             >
               <img src="/launcher-assets/edit.png" alt="" className="h-3.5 w-3.5 object-contain" />
               <span>{tt("modpacks.profile.changeIconTitle")}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const profile = profiles.find((p) => p.id === contextMenu.profileId);
+                setContextMenu(null);
+                if (!profile) return;
+                void handleDuplicateProfile(profile);
+              }}
+              className="mt-0.5 flex w-full items-center gap-2 rounded-xl px-3 py-1.5 text-left hover:bg-white/10"
+              disabled={duplicateBusy}
+            >
+              <PlusIcon className="h-3.5 w-3.5" />
+              <span>
+                {duplicateBusy
+                  ? tt("modpacks.editor.duplicating")
+                  : tt("modpacks.editor.duplicate")}
+              </span>
             </button>
             <button
               type="button"
@@ -6070,6 +6651,7 @@ export function ModpackTab({
                 setContextMenu(null);
                 if (!profile) return;
                 setSelectedProfileId(profile.id);
+                setEditorSection("content");
                 setActiveView("manage");
                 setRenameValue(profile.name);
                 setIsRenaming(true);
@@ -6882,31 +7464,10 @@ export function ModpackTab({
                                   type="button"
                                   className="interactive-press rounded-xl border border-white/15 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white/85 hover:bg-white/15"
                                   onClick={() => {
-                                    const affected = (c.affected ?? []).slice();
-                                    const keep =
-                                      a.kind === "keep_latest"
-                                        ? a.keep ?? affected[0]
-                                        : affected[0];
-                                    if (!keep) return;
-                                    const toDisable =
-                                      a.kind === "disable_all_but" || a.kind === "keep_latest"
-                                        ? affected.filter((f) => f && f !== keep)
-                                        : [];
-                                    if (toDisable.length === 0) return;
-                                    void (async () => {
-                                      try {
-                                        for (const f of toDisable) {
-                                          await invoke("set_profile_item_enabled", {
-                                            id: selectedProfile.id,
-                                            category: "mods",
-                                            filename: f,
-                                            enabled: false,
-                                          });
-                                        }
-                                        setProfileConflictsRefreshToken((v) => v + 1);
-                                      } catch {
-                                      }
-                                    })();
+                                    void applyConflictAction(c, {
+                                      kind: a.kind,
+                                      keep: a.keep,
+                                    });
                                   }}
                                 >
                                   {a.label}
@@ -7108,6 +7669,22 @@ export function ModpackTab({
                 </div>
               )}
             </div>
+
+            <label className="mt-4 flex items-start gap-2 text-xs text-white/80">
+              <input
+                type="checkbox"
+                checked={backupBeforeVersionChange}
+                onChange={(e) => setBackupBeforeVersionChange(e.target.checked)}
+                disabled={migrateBusy}
+                className="mt-0.5 accent-checkbox"
+              />
+              <span>
+                <span className="font-semibold">{tt("modpacks.editor.backupBeforeChange")}</span>
+                <span className="mt-0.5 block text-white/50">
+                  {tt("modpacks.editor.backupBeforeChangeHint")}
+                </span>
+              </span>
+            </label>
 
             <div className="mt-5 flex flex-wrap justify-end gap-2">
               <button
