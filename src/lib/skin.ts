@@ -62,12 +62,10 @@ const SKIN_FRONT = {
   hat: { x: 40, y: 8, w: 8, h: 8 } as UvRect,
   body: { x: 20, y: 20, w: 8, h: 12 } as UvRect,
   jacket: { x: 20, y: 36, w: 8, h: 12 } as UvRect,
-  // classic arms
   rightArm: { x: 44, y: 20, w: 4, h: 12 } as UvRect,
   rightSleeve: { x: 44, y: 36, w: 4, h: 12 } as UvRect,
   leftArm: { x: 36, y: 52, w: 4, h: 12 } as UvRect,
   leftSleeve: { x: 52, y: 52, w: 4, h: 12 } as UvRect,
-  // slim arms
   rightArmSlim: { x: 44, y: 20, w: 3, h: 12 } as UvRect,
   rightSleeveSlim: { x: 44, y: 36, w: 3, h: 12 } as UvRect,
   leftArmSlim: { x: 36, y: 52, w: 3, h: 12 } as UvRect,
@@ -111,7 +109,6 @@ function blit(
   );
 }
 
-/** Front-view assembled player sprite from a raw skin texture. */
 export async function renderAssembledSkinThumbnail(
   url: string,
   options?: { variant?: string; size?: number },
@@ -154,7 +151,6 @@ export async function renderAssembledSkinThumbnail(
     const torsoY = oy + 8 * scale;
     const legsY = oy + (8 + 12) * scale;
 
-    // Base layers
     blit(ctx, bitmap, SKIN_FRONT.head, headX, headY, scale);
     blit(ctx, bitmap, SKIN_FRONT.body, bodyX, torsoY, scale);
     blit(
@@ -166,7 +162,6 @@ export async function renderAssembledSkinThumbnail(
       scale,
     );
     if (isLegacy) {
-      // Legacy 64x32: mirror right arm/leg for left side
       ctx.save();
       ctx.translate(leftArmX + armW * scale, torsoY);
       ctx.scale(-1, 1);
@@ -191,7 +186,6 @@ export async function renderAssembledSkinThumbnail(
       blit(ctx, bitmap, SKIN_FRONT.leftLeg, leftLegX, legsY, scale);
     }
 
-    // Overlay layers
     blit(ctx, bitmap, SKIN_FRONT.hat, headX, headY, scale);
     if (!isLegacy) {
       blit(ctx, bitmap, SKIN_FRONT.jacket, bodyX, torsoY, scale);

@@ -2,10 +2,13 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures_util::stream::{self, StreamExt};
 use rand::Rng;
 use serde::Deserialize;
+use sha1::{Digest, Sha1};
+use sha2::Sha512;
 use tauri::{AppHandle, Emitter};
 
 use crate::app::paths::{game_root_dir, instance_dir};
@@ -13,10 +16,12 @@ use crate::infra::http::http_client;
 use crate::models::events::{MrpackImportProgressPayload, EVENT_MRPACK_IMPORT_PROGRESS};
 use crate::models::profile::InstanceProfileSummary;
 use crate::services::game::cache as cache_service;
+use crate::services::game::core::{is_retryable_status, retry_delay, safe_join};
 use crate::services::game::profiles::{create_profile_impl, delete_profile, set_profile_icon_path};
 use crate::services::game::state::{CANCEL_DOWNLOAD, DEFAULT_DOWNLOAD_CONCURRENCY};
 
 const DOWNLOAD_CANCELLED_MSG: &str = "Загрузка отменена пользователем";
+const FETCH_ATTEMPTS_PER_URL: usize = 3;
 
 fn check_download_cancelled() -> Result<(), String> {
     if CANCEL_DOWNLOAD.load(Ordering::SeqCst) {
@@ -26,11 +31,34 @@ fn check_download_cancelled() -> Result<(), String> {
     }
 }
 
+#[derive(Debug, Default, Deserialize)]
+pub(crate) struct MrpackFileEnv {
+    #[serde(default)]
+    pub(crate) client: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 pub(crate) struct MrpackFileEntry {
     pub(crate) path: String,
     #[serde(default)]
     pub(crate) downloads: Vec<String>,
+    #[serde(default)]
+    pub(crate) hashes: HashMap<String, String>,
+    #[serde(default)]
+    pub(crate) env: Option<MrpackFileEnv>,
+}
+
+impl MrpackFileEntry {
+    fn is_client_unsupported(&self) -> bool {
+        self.env
+            .as_ref()
+            .and_then(|e| e.client.as_deref())
+            .is_some_and(|c| c.eq_ignore_ascii_case("unsupported"))
+    }
+
+    fn should_download(&self) -> bool {
+        !self.is_client_unsupported() && self.downloads.iter().any(|u| !u.trim().is_empty())
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -75,21 +103,309 @@ pub(crate) fn resolve_file_path(path_or_uri: &str) -> PathBuf {
     }
 }
 
+enum FetchError {
+    /// Эта ссылка не подойдёт (4xx, неверный хеш): пробуем следующее зеркало.
+    Fatal(String),
+    /// Временный сбой: повторяем ту же ссылку.
+    Retry(String),
+}
+
+/// Скачивает файл в `<dest>.part`, считает SHA1/SHA512 на лету, сверяет с ожидаемыми и
+/// только потом атомарно переименовывает. Перебирает зеркала и повторяет временные сбои.
+/// Файл целиком в память не загружается.
+pub(crate) async fn fetch_verified(
+    client: &reqwest::Client,
+    urls: &[String],
+    dest: &Path,
+    sha1: Option<&str>,
+    sha512: Option<&str>,
+) -> Result<(), String> {
+    if let Some(parent) = dest.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| format!("Не удалось создать папку {}: {e}", parent.display()))?;
+    }
+
+    let mut last_err = "Нет ссылок для скачивания".to_string();
+    for url in urls.iter().map(|u| u.trim()).filter(|u| !u.is_empty()) {
+        for attempt in 0..FETCH_ATTEMPTS_PER_URL {
+            check_download_cancelled()?;
+            match fetch_once(client, url, dest, sha1, sha512, attempt).await {
+                Ok(()) => return Ok(()),
+                Err(FetchError::Fatal(e)) => {
+                    last_err = e;
+                    break;
+                }
+                Err(FetchError::Retry(e)) => {
+                    last_err = e;
+                    if attempt + 1 < FETCH_ATTEMPTS_PER_URL {
+                        tokio::time::sleep(retry_delay(attempt)).await;
+                    }
+                }
+            }
+        }
+        check_download_cancelled()?;
+    }
+    Err(last_err)
+}
+
+async fn fetch_once(
+    client: &reqwest::Client,
+    url: &str,
+    dest: &Path,
+    sha1: Option<&str>,
+    sha512: Option<&str>,
+    attempt: usize,
+) -> Result<(), FetchError> {
+    use tokio::io::AsyncWriteExt;
+
+    let resp = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| FetchError::Retry(format!("Ошибка скачивания {url}: {e}")))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let msg = format!("Сервер вернул ошибку {status} при скачивании {url}");
+        return Err(if is_retryable_status(status.as_u16(), attempt) {
+            FetchError::Retry(msg)
+        } else {
+            FetchError::Fatal(msg)
+        });
+    }
+    let content_len = resp.content_length().unwrap_or(0);
+
+    let mut tmp_name = dest.as_os_str().to_owned();
+    tmp_name.push(format!(".part-{}", rand::thread_rng().gen::<u32>()));
+    let tmp_path = PathBuf::from(tmp_name);
+
+    let result = async {
+        let mut file = tokio::fs::File::create(&tmp_path)
+            .await
+            .map_err(|e| FetchError::Fatal(format!("Не удалось создать {}: {e}", tmp_path.display())))?;
+        let mut h1 = sha1.map(|_| Sha1::new());
+        let mut h512 = sha512.map(|_| Sha512::new());
+        let mut received: u64 = 0;
+        let mut stream = resp.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            check_download_cancelled().map_err(FetchError::Fatal)?;
+            let chunk = chunk.map_err(|e| FetchError::Retry(format!("Обрыв загрузки {url}: {e}")))?;
+            if let Some(h) = h1.as_mut() {
+                h.update(&chunk);
+            }
+            if let Some(h) = h512.as_mut() {
+                h.update(&chunk);
+            }
+            received += chunk.len() as u64;
+            file.write_all(&chunk).await.map_err(|e| {
+                FetchError::Fatal(format!("Ошибка записи на диск: {e}. Проверьте свободное место."))
+            })?;
+        }
+        file.flush()
+            .await
+            .map_err(|e| FetchError::Fatal(format!("Ошибка записи на диск: {e}")))?;
+        drop(file);
+
+        if content_len > 0 && received != content_len {
+            return Err(FetchError::Retry(format!(
+                "Файл {url} получен не полностью ({received} из {content_len} байт)"
+            )));
+        }
+        if let (Some(h), Some(expected)) = (h1, sha1) {
+            let actual = format!("{:x}", h.finalize());
+            if !actual.eq_ignore_ascii_case(expected) {
+                return Err(FetchError::Retry(format!(
+                    "SHA1 не совпал для {url} (ожидалось {expected}, получено {actual})"
+                )));
+            }
+        }
+        if let (Some(h), Some(expected)) = (h512, sha512) {
+            let actual = format!("{:x}", h.finalize());
+            if !actual.eq_ignore_ascii_case(expected) {
+                return Err(FetchError::Retry(format!(
+                    "SHA512 не совпал для {url} (ожидалось {expected}, получено {actual})"
+                )));
+            }
+        }
+
+        let mut last = None;
+        for i in 0..4u64 {
+            match tokio::fs::rename(&tmp_path, dest).await {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    last = Some(e);
+                    tokio::time::sleep(Duration::from_millis(150 * (i + 1))).await;
+                }
+            }
+        }
+        Err(FetchError::Fatal(format!(
+            "Не удалось сохранить {}: {}",
+            dest.display(),
+            last.map(|e| e.to_string()).unwrap_or_default()
+        )))
+    }
+    .await;
+
+    if result.is_err() {
+        let _ = tokio::fs::remove_file(&tmp_path).await;
+    }
+    result
+}
+
+/// Читает `modrinth.index.json`, не распаковывая остальное.
+fn read_mrpack_index(pack_path: &Path) -> Result<MrpackIndex, String> {
+    use std::io::Read;
+    let file = std::fs::File::open(pack_path)
+        .map_err(|e| format!("Не удалось открыть .mrpack: {e}"))?;
+    let mut archive =
+        zip::ZipArchive::new(file).map_err(|e| format!("Ошибка чтения .mrpack: {e}"))?;
+    let mut entry = archive
+        .by_name("modrinth.index.json")
+        .map_err(|_| "В .mrpack нет modrinth.index.json".to_string())?;
+    let mut buf = String::new();
+    entry
+        .read_to_string(&mut buf)
+        .map_err(|e| format!("Ошибка чтения modrinth.index.json: {e}"))?;
+    serde_json::from_str(&buf).map_err(|e| format!("Ошибка разбора modrinth.index.json: {e}"))
+}
+
+/// Распаковывает `overrides/`, затем `client-overrides/` (они имеют приоритет).
+/// Пути, выходящие за пределы папки сборки (`../`, абсолютные), пропускаются.
+fn extract_mrpack_overrides(pack_path: &Path, dir: &Path) -> Result<(), String> {
+    let file = std::fs::File::open(pack_path)
+        .map_err(|e| format!("Не удалось открыть .mrpack: {e}"))?;
+    let mut archive =
+        zip::ZipArchive::new(file).map_err(|e| format!("Ошибка чтения .mrpack: {e}"))?;
+
+    for prefix in ["overrides/", "client-overrides/"] {
+        for i in 0..archive.len() {
+            check_download_cancelled()?;
+            let mut entry = archive
+                .by_index(i)
+                .map_err(|e| format!("Ошибка чтения entry .mrpack: {e}"))?;
+            if entry.is_dir() {
+                continue;
+            }
+            let name = entry.name().to_string();
+            let Some(rel) = name.strip_prefix(prefix) else {
+                continue;
+            };
+            if rel.is_empty() {
+                continue;
+            }
+            let Some(dest) = safe_join(dir, rel) else {
+                eprintln!("[Mrpack] Пропущен небезопасный путь в архиве: {name}");
+                continue;
+            };
+            if let Some(parent) = dest.parent() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| format!("Не удалось создать папку override: {e}"))?;
+            }
+            let mut out = std::fs::File::create(&dest)
+                .map_err(|e| format!("Не удалось создать файл override {rel}: {e}"))?;
+            std::io::copy(&mut entry, &mut out)
+                .map_err(|e| format!("Ошибка распаковки override {rel}: {e}"))?;
+        }
+    }
+    Ok(())
+}
+
+fn emit_mrpack_progress(
+    app: &AppHandle,
+    phase: &str,
+    current: Option<u32>,
+    total: Option<u32>,
+    message: Option<String>,
+) {
+    let _ = app.emit(
+        EVENT_MRPACK_IMPORT_PROGRESS,
+        MrpackImportProgressPayload {
+            phase: phase.to_string(),
+            current,
+            total,
+            message,
+        },
+    );
+}
+
+/// Общая часть импорта: overrides + параллельная загрузка файлов сборки с проверкой хешей.
+async fn install_mrpack_contents(
+    app: &AppHandle,
+    pack_path: &Path,
+    dir: &Path,
+    index: &MrpackIndex,
+) -> Result<(), String> {
+    emit_mrpack_progress(app, "overrides", None, None, None);
+    {
+        let pack_path = pack_path.to_path_buf();
+        let dir = dir.to_path_buf();
+        tokio::task::spawn_blocking(move || extract_mrpack_overrides(&pack_path, &dir))
+            .await
+            .map_err(|e| format!("Ошибка распаковки .mrpack: {e}"))??;
+    }
+
+    struct Job {
+        dest: PathBuf,
+        filename: String,
+        urls: Vec<String>,
+        sha1: Option<String>,
+        sha512: Option<String>,
+    }
+    let mut jobs: Vec<Job> = Vec::new();
+    for f in index.files.iter().filter(|f| f.should_download()) {
+        let dest = safe_join(dir, &f.path)
+            .ok_or_else(|| format!("Небезопасный путь файла в сборке: {}", f.path))?;
+        jobs.push(Job {
+            dest,
+            filename: f.path.rsplit('/').next().unwrap_or(&f.path).to_string(),
+            urls: f.downloads.clone(),
+            sha1: f.hashes.get("sha1").cloned(),
+            sha512: f.hashes.get("sha512").cloned(),
+        });
+    }
+    let total = jobs.len() as u32;
+    emit_mrpack_progress(app, "files", Some(0), Some(total), None);
+
+    let client = http_client(false);
+    let completed = Arc::new(AtomicU32::new(0));
+
+    let mut downloads = stream::iter(jobs.into_iter())
+        .map(|job| {
+            let client = client.clone();
+            let completed = Arc::clone(&completed);
+            async move {
+                check_download_cancelled()?;
+                fetch_verified(
+                    &client,
+                    &job.urls,
+                    &job.dest,
+                    job.sha1.as_deref(),
+                    job.sha512.as_deref(),
+                )
+                .await
+                .map_err(|e| format!("{}: {e}", job.filename))?;
+                let current = completed.fetch_add(1, Ordering::SeqCst) + 1;
+                Ok::<(u32, String), String>((current, job.filename))
+            }
+        })
+        .buffer_unordered(DEFAULT_DOWNLOAD_CONCURRENCY);
+
+    // При первой же ошибке выходим: оставшиеся незавершённые загрузки отбрасываются.
+    while let Some(res) = downloads.next().await {
+        let (current, filename) = res?;
+        emit_mrpack_progress(app, "files", Some(current), Some(total), Some(filename));
+    }
+
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn import_mrpack(
     app: AppHandle,
     profile_id: String,
     mrpack_path: String,
 ) -> Result<(), String> {
-    let _ = app.emit(
-        EVENT_MRPACK_IMPORT_PROGRESS,
-        MrpackImportProgressPayload {
-            phase: "start".to_string(),
-            current: None,
-            total: None,
-            message: None,
-        },
-    );
+    emit_mrpack_progress(&app, "start", None, None, None);
 
     let dir = instance_dir(&profile_id)?;
     if !dir.exists() {
@@ -101,144 +417,15 @@ pub async fn import_mrpack(
         return Err("Файл .mrpack не найден".to_string());
     }
 
-    let file = std::fs::File::open(&pack_path)
-        .map_err(|e| format!("Не удалось открыть .mrpack: {e}"))?;
-    let mut archive =
-        zip::ZipArchive::new(file).map_err(|e| format!("Ошибка чтения .mrpack: {e}"))?;
-
-    let _ = app.emit(
-        EVENT_MRPACK_IMPORT_PROGRESS,
-        MrpackImportProgressPayload {
-            phase: "overrides".to_string(),
-            current: None,
-            total: None,
-            message: None,
-        },
-    );
-
-    let mut index_json = None;
-
-    for i in 0..archive.len() {
-        check_download_cancelled()?;
-        let mut entry = archive
-            .by_index(i)
-            .map_err(|e| format!("Ошибка чтения entry .mrpack: {e}"))?;
-        let name = entry.name().to_string();
-        if name == "modrinth.index.json" {
-            let mut buf = String::new();
-            use std::io::Read;
-            entry
-                .read_to_string(&mut buf)
-                .map_err(|e| format!("Ошибка чтения modrinth.index.json: {e}"))?;
-            index_json = Some(buf);
-        } else if name.starts_with("overrides/") && !name.ends_with('/') {
-            let rel = &name["overrides/".len()..];
-            if rel.is_empty() {
-                continue;
-            }
-            let dest = dir.join(rel);
-            if let Some(parent) = dest.parent() {
-                std::fs::create_dir_all(parent)
-                    .map_err(|e| format!("Не удалось создать папку override: {e}"))?;
-            }
-            let mut out =
-                std::fs::File::create(&dest).map_err(|e| format!("Не удалось создать файл override: {e}"))?;
-            std::io::copy(&mut entry, &mut out)
-                .map_err(|e| format!("Ошибка распаковки override: {e}"))?;
-        }
-    }
-
-    let Some(index_text) = index_json else {
-        return Ok(());
+    let index = {
+        let p = pack_path.clone();
+        tokio::task::spawn_blocking(move || read_mrpack_index(&p))
+            .await
+            .map_err(|e| format!("Ошибка чтения .mrpack: {e}"))??
     };
 
-    let index: MrpackIndex =
-        serde_json::from_str(&index_text).map_err(|e| format!("Ошибка разбора modrinth.index.json: {e}"))?;
-
-    let files_to_download: Vec<(String, String)> = index
-        .files
-        .iter()
-        .filter(|f| !f.downloads.is_empty() && !f.downloads[0].is_empty())
-        .map(|f| (f.path.clone(), f.downloads[0].clone()))
-        .collect();
-    let total = files_to_download.len() as u32;
-
-    let _ = app.emit(
-        EVENT_MRPACK_IMPORT_PROGRESS,
-        MrpackImportProgressPayload {
-            phase: "files".to_string(),
-            current: Some(0),
-            total: Some(total),
-            message: None,
-        },
-    );
-
-    let client = http_client(false);
-    let completed = Arc::new(AtomicU32::new(0));
-    let app = app.clone();
-    let dir = dir.clone();
-
-    let results: Vec<Result<(), String>> = stream::iter(files_to_download.into_iter())
-        .map(|(path, url)| {
-            let client = client.clone();
-            let dir = dir.clone();
-            let app = app.clone();
-            let completed = Arc::clone(&completed);
-            async move {
-                check_download_cancelled()?;
-                let filename = path.rsplit('/').next().unwrap_or(&path).to_string();
-                let dest = dir.join(&path);
-                if let Some(parent) = dest.parent() {
-                    tokio::fs::create_dir_all(parent)
-                        .await
-                        .map_err(|e| format!("Не удалось создать папку для файла сборки: {e}"))?;
-                }
-                let resp = client
-                    .get(&url)
-                    .send()
-                    .await
-                    .map_err(|e| format!("Ошибка скачивания файла из Modrinth: {e}"))?;
-                check_download_cancelled()?;
-                if !resp.status().is_success() {
-                    return Err(format!(
-                        "Modrinth вернул ошибку {} при скачивании {}",
-                        resp.status(),
-                        url
-                    ));
-                }
-                let bytes = resp
-                    .bytes()
-                    .await
-                    .map_err(|e| format!("Ошибка чтения тела ответа Modrinth: {e}"))?;
-                check_download_cancelled()?;
-                tokio::fs::write(&dest, &bytes)
-                    .await
-                    .map_err(|e| format!("Не удалось сохранить файл сборки: {e}"))?;
-
-                let current = completed.fetch_add(1, Ordering::SeqCst) + 1;
-                let _ = app.emit(
-                    EVENT_MRPACK_IMPORT_PROGRESS,
-                    MrpackImportProgressPayload {
-                        phase: "files".to_string(),
-                        current: Some(current),
-                        total: Some(total),
-                        message: Some(filename),
-                    },
-                );
-                Ok(())
-            }
-        })
-        .buffer_unordered(DEFAULT_DOWNLOAD_CONCURRENCY)
-        .collect()
-        .await;
-
-    for result in results {
-        result?;
-    }
-
-    Ok(())
+    install_mrpack_contents(&app, &pack_path, &dir, &index).await
 }
-
 
 async fn save_profile_icon_from_url(profile_id: &str, icon_url: &str) -> Result<Option<String>, String> {
     let trimmed = icon_url.trim();
@@ -250,25 +437,12 @@ async fn save_profile_icon_from_url(profile_id: &str, icon_url: &str) -> Result<
     let dest = dir.join("icon.png");
 
     let client = http_client(false);
-    let resp = client
-        .get(trimmed)
-        .send()
+    if fetch_verified(&client, &[trimmed.to_string()], &dest, None, None)
         .await
-        .map_err(|e| format!("Ошибка загрузки иконки сборки: {e}"))?;
-    if !resp.status().is_success() {
+        .is_err()
+    {
         return Ok(None);
     }
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| format!("Ошибка чтения иконки сборки: {e}"))?;
-    if bytes.is_empty() {
-        return Ok(None);
-    }
-
-    tokio::fs::write(&dest, &bytes)
-        .await
-        .map_err(|e| format!("Не удалось сохранить иконку сборки: {e}"))?;
 
     let icon_path = dest.to_str().map(|s| s.to_string());
     set_profile_icon_path(profile_id, icon_path.clone())?;
@@ -281,50 +455,24 @@ pub async fn import_mrpack_as_new_profile(
     mrpack_path: String,
     icon_url: Option<String>,
 ) -> Result<InstanceProfileSummary, String> {
-    let _ = app.emit(
-        EVENT_MRPACK_IMPORT_PROGRESS,
-        MrpackImportProgressPayload {
-            phase: "start".to_string(),
-            current: None,
-            total: None,
-            message: None,
-        },
-    );
+    emit_mrpack_progress(&app, "start", None, None, None);
 
     let pack_path = resolve_file_path(&mrpack_path);
     if !pack_path.exists() {
         return Err("Файл .mrpack не найден".to_string());
     }
 
-    let file = std::fs::File::open(&pack_path)
-        .map_err(|e| format!("Не удалось открыть .mrpack: {e}"))?;
-    let mut archive =
-        zip::ZipArchive::new(file).map_err(|e| format!("Ошибка чтения .mrpack: {e}"))?;
-
-    let mut index_json = None;
-    for i in 0..archive.len() {
-        check_download_cancelled()?;
-        let mut entry = archive
-            .by_index(i)
-            .map_err(|e| format!("Ошибка чтения entry .mrpack: {e}"))?;
-        if entry.name() == "modrinth.index.json" {
-            let mut buf = String::new();
-            use std::io::Read;
-            entry
-                .read_to_string(&mut buf)
-                .map_err(|e| format!("Ошибка чтения modrinth.index.json: {e}"))?;
-            index_json = Some(buf);
-            break;
-        }
-    }
-
-    let index_text = index_json.ok_or("В .mrpack нет modrinth.index.json".to_string())?;
-    let index: MrpackIndex =
-        serde_json::from_str(&index_text).map_err(|e| format!("Ошибка разбора modrinth.index.json: {e}"))?;
+    let index = {
+        let p = pack_path.clone();
+        tokio::task::spawn_blocking(move || read_mrpack_index(&p))
+            .await
+            .map_err(|e| format!("Ошибка чтения .mrpack: {e}"))??
+    };
 
     let (game_version, loader) = mrpack_game_version_and_loader(&index.dependencies);
     let name = index
         .name
+        .clone()
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| {
             pack_path
@@ -338,119 +486,10 @@ pub async fn import_mrpack_as_new_profile(
     let profile_id = profile.id.clone();
     let dir = instance_dir(&profile.id)?;
 
-    let _ = app.emit(
-        EVENT_MRPACK_IMPORT_PROGRESS,
-        MrpackImportProgressPayload {
-            phase: "overrides".to_string(),
-            current: None,
-            total: None,
-            message: None,
-        },
-    );
-
-    let file2 = std::fs::File::open(&pack_path)
-        .map_err(|e| format!("Не удалось открыть .mrpack: {e}"))?;
-    let mut archive2 =
-        zip::ZipArchive::new(file2).map_err(|e| format!("Ошибка чтения .mrpack: {e}"))?;
-
-    for i in 0..archive2.len() {
-        if let Err(e) = check_download_cancelled() {
-            let _ = delete_profile(profile_id.clone());
-            return Err(e);
-        }
-        let mut entry = archive2
-            .by_index(i)
-            .map_err(|e| format!("Ошибка чтения entry .mrpack: {e}"))?;
-        let name_entry = entry.name().to_string();
-        if name_entry.starts_with("overrides/") && !name_entry.ends_with('/') {
-            let rel = &name_entry["overrides/".len()..];
-            if rel.is_empty() {
-                continue;
-            }
-            let dest = dir.join(rel);
-            if let Some(parent) = dest.parent() {
-                std::fs::create_dir_all(parent)
-                    .map_err(|e| format!("Не удалось создать папку override: {e}"))?;
-            }
-            let mut out =
-                std::fs::File::create(&dest).map_err(|e| format!("Не удалось создать файл override: {e}"))?;
-            std::io::copy(&mut entry, &mut out)
-                .map_err(|e| format!("Ошибка распаковки override: {e}"))?;
-        }
-    }
-
-    let files_to_download: Vec<_> = index
-        .files
-        .iter()
-        .filter(|f| !f.downloads.is_empty() && !f.downloads[0].is_empty())
-        .collect();
-    let total = files_to_download.len() as u32;
-
-    let _ = app.emit(
-        EVENT_MRPACK_IMPORT_PROGRESS,
-        MrpackImportProgressPayload {
-            phase: "files".to_string(),
-            current: Some(0),
-            total: Some(total),
-            message: None,
-        },
-    );
-
-    let client = http_client(false);
-    let mut current_file: u32 = 0;
-    for f in index.files.iter() {
-        if let Err(e) = check_download_cancelled() {
-            let _ = delete_profile(profile_id.clone());
-            return Err(e);
-        }
-        if f.downloads.is_empty() || f.downloads[0].is_empty() {
-            continue;
-        }
-        current_file += 1;
-        let url = &f.downloads[0];
-        let filename = f.path.rsplit('/').next().unwrap_or(&f.path).to_string();
-        let _ = app.emit(
-            EVENT_MRPACK_IMPORT_PROGRESS,
-            MrpackImportProgressPayload {
-                phase: "files".to_string(),
-                current: Some(current_file),
-                total: Some(total),
-                message: Some(filename),
-            },
-        );
-        let dest = dir.join(&f.path);
-        if let Some(parent) = dest.parent() {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .map_err(|e| format!("Не удалось создать папку для файла сборки: {e}"))?;
-        }
-        let resp = client
-            .get(url)
-            .send()
-            .await
-            .map_err(|e| format!("Ошибка скачивания файла из Modrinth: {e}"))?;
-        if let Err(e) = check_download_cancelled() {
-            let _ = delete_profile(profile_id.clone());
-            return Err(e);
-        }
-        if !resp.status().is_success() {
-            return Err(format!(
-                "Modrinth вернул ошибку {} при скачивании {}",
-                resp.status(),
-                url
-            ));
-        }
-        let bytes = resp
-            .bytes()
-            .await
-            .map_err(|e| format!("Ошибка чтения тела ответа Modrinth: {e}"))?;
-        if let Err(e) = check_download_cancelled() {
-            let _ = delete_profile(profile_id.clone());
-            return Err(e);
-        }
-        tokio::fs::write(&dest, &bytes)
-            .await
-            .map_err(|e| format!("Не удалось сохранить файл сборки: {e}"))?;
+    // Любой сбой (не только отмена) не должен оставлять наполовину собранный профиль.
+    if let Err(e) = install_mrpack_contents(&app, &pack_path, &dir, &index).await {
+        let _ = delete_profile(profile_id);
+        return Err(e);
     }
 
     if !dir.join("icon.png").exists() {
@@ -495,8 +534,6 @@ pub async fn import_mrpack_as_new_profile(
     })
 }
 
-
-
 #[tauri::command]
 pub async fn download_modrinth_modpack_and_import(
     app: AppHandle,
@@ -520,44 +557,23 @@ pub async fn download_modrinth_modpack_and_import(
     check_download_cancelled()?;
 
     let client = http_client(false);
-    let resp = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("Ошибка загрузки Modrinth .mrpack: {e}"))?;
+    let downloaded = fetch_verified(&client, &[url], &dest, None, None).await;
 
-    check_download_cancelled()?;
+    let result = match downloaded {
+        Ok(()) => match dest.to_str() {
+            Some(dest_str) => {
+                import_mrpack_as_new_profile(app.clone(), dest_str.to_string(), icon_url).await
+            }
+            None => Err("Путь к временной .mrpack не в UTF-8".to_string()),
+        },
+        Err(e) => Err(format!("Ошибка загрузки Modrinth .mrpack: {e}")),
+    };
 
-    if !resp.status().is_success() {
-        return Err(format!(
-            "Modrinth вернул ошибку {} при скачивании .mrpack",
-            resp.status()
-        ));
-    }
-
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| format!("Ошибка чтения тела ответа Modrinth: {e}"))?;
-
-    check_download_cancelled()?;
-
-    tokio::fs::write(&dest, &bytes)
-        .await
-        .map_err(|e| format!("Не удалось сохранить .mrpack во временный файл: {e}"))?;
-
-    let dest_str = dest
-        .to_str()
-        .ok_or_else(|| "Путь к временной .mrpack не в UTF-8".to_string())?
-        .to_string();
-
-    let imported = import_mrpack_as_new_profile(app.clone(), dest_str, icon_url).await?;
-
+    // Временный файл убираем при любом исходе, а не только при успехе.
     let _ = tokio::fs::remove_file(&dest).await;
 
-    Ok(imported)
+    result
 }
-
 
 pub(crate) fn modrinth_content_subdir(category: &str) -> Result<&'static str, String> {
     match category {
@@ -589,41 +605,19 @@ pub async fn save_modrinth_file(
         .await
         .map_err(|e| format!("Не удалось создать папку '{subdir}': {e}"))?;
 
-    let dest_path = target_dir.join(filename);
+    // Имя файла приходит из внешнего API/UI — берём только последний компонент,
+    // чтобы `../` не вывело запись за пределы папки контента.
+    let safe_name = Path::new(filename)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .filter(|n| !n.is_empty())
+        .ok_or_else(|| format!("Некорректное имя файла: {filename}"))?;
+    let dest_path = target_dir.join(safe_name);
 
     let client = http_client(false);
-    let resp = client
-        .get(url)
-        .send()
+    fetch_verified(&client, &[url.to_string()], &dest_path, expected_sha1, None)
         .await
-        .map_err(|e| format!("Ошибка загрузки файла Modrinth: {e}"))?;
-
-    if !resp.status().is_success() {
-        return Err(format!(
-            "Сервер Modrinth вернул ошибку {} при скачивании файла.",
-            resp.status()
-        ));
-    }
-
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| format!("Ошибка чтения тела ответа Modrinth: {e}"))?;
-
-    if let Some(expected) = expected_sha1 {
-        let actual = crate::services::game::core::sha1_hex_of_bytes(&bytes);
-        if !actual.eq_ignore_ascii_case(expected) {
-            return Err(format!(
-                "SHA1 не совпал для {filename} (ожидалось {expected}, получено {actual})"
-            ));
-        }
-    }
-
-    tokio::fs::write(&dest_path, &bytes)
-        .await
-        .map_err(|e| format!("Не удалось сохранить файл в {:?}: {e}", dest_path))?;
-
-    Ok(())
+        .map_err(|e| format!("Ошибка загрузки файла Modrinth ({safe_name}): {e}"))
 }
 
 #[tauri::command]

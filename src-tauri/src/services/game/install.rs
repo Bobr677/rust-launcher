@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::time::Duration;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -7,10 +8,10 @@ use tauri::AppHandle;
 use tokio::sync::Semaphore;
 
 use crate::app::paths::{game_root_dir, libraries_dir, versions_dir};
-use crate::infra::process::hide_console;
+use crate::infra::process::{hide_console, run_with_timeout};
 use crate::infra::http::{http_client, http_client_for_binary_download};
 use crate::services::game::core::{
-    current_os_name, download_text_with_retries, fabric_library_path,
+    current_os_name, download_text_with_retries, fabric_library_path, file_len_matches,
     is_probably_native_jar_path,
     library_applies, resolve_native_artifact, try_fetch_remote_sha1,
 };
@@ -44,10 +45,32 @@ async fn ensure_base_version_json(
     if base_json_path.is_file() {
         return Ok(());
     }
-    tokio::fs::write(&base_json_path, version_json)
-        .await
+    crate::infra::fs_atomic::write_atomic(&base_json_path, version_json.as_bytes())
         .map_err(|e| format!("Ошибка записи version.json: {e}"))?;
     Ok(())
+}
+
+/// Профиль Fabric/Quilt приходит JSON-ом; при 404/HTML-заглушке `resp.json()` давал
+/// невнятную ошибку разбора. Здесь — ретраи и читаемое сообщение.
+async fn fetch_loader_profile(
+    client: &reqwest::Client,
+    url: &str,
+    label: &str,
+) -> Result<FabricProfile, String> {
+    let text = download_text_with_retries(client, url, DEFAULT_DOWNLOAD_RETRIES)
+        .await
+        .map_err(|e| format!("Ошибка загрузки профиля {label}: {e}"))?;
+    serde_json::from_str(&text).map_err(|e| {
+        let head: String = text.chars().take(200).collect();
+        format!("Ошибка разбора профиля {label}: {e}. Начало ответа: {head}")
+    })
+}
+
+fn write_profile_json(profile_dir: &std::path::Path, profile: &FabricProfile) -> Result<(), String> {
+    let profile_json =
+        serde_json::to_string(profile).map_err(|e| format!("Ошибка сериализации: {e}"))?;
+    crate::infra::fs_atomic::write_atomic(&profile_dir.join("profile.json"), profile_json.as_bytes())
+        .map_err(|e| format!("Ошибка записи профиля: {e}"))
 }
 
 fn extract_version_natives(
@@ -58,7 +81,20 @@ fn extract_version_natives(
     artifact_path: &str,
 ) {
     let out_dir = resolve_natives_extract_dir(natives_root, game_version, lib_name, artifact_path);
-    let _ = extract_natives_jar(jar_path, &out_dir);
+    if let Err(e) = extract_natives_jar(jar_path, &out_dir) {
+        eprintln!("[Install] Не удалось распаковать natives {lib_name}: {e}");
+    }
+}
+
+const FORGE_INSTALLER_TIMEOUT: Duration = Duration::from_secs(20 * 60);
+
+async fn extract_natives_logged(jar: PathBuf, out_dir: PathBuf, lib_name: String) {
+    let res = tokio::task::spawn_blocking(move || extract_natives_jar(&jar, &out_dir)).await;
+    match res {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => eprintln!("[Install] Не удалось распаковать natives {lib_name}: {e}"),
+        Err(e) => eprintln!("[Install] Задача распаковки natives {lib_name} упала: {e}"),
+    }
 }
 
 #[tauri::command]
@@ -75,25 +111,10 @@ pub async fn install_fabric(
             "[Fabric] Начало установки Fabric для Minecraft {game_version}, loader {loader_version}"
         ),
     );
-    crate::services::game::version_remove::remove_fabric_profiles_for_game_version(&game_version)?;
-    log_to_console(
-        &app,
-        &format!("[Fabric] Удалены старые профили Fabric для {game_version}"),
-    );
     let profile_url =
         format!("{FABRIC_META_PROFILE}/{game_version}/{loader_version}/profile/json");
     log_to_console(&app, &format!("[Fabric] Загрузка профиля с {profile_url}"));
-    let resp = client
-        .get(&profile_url)
-        .send()
-        .await
-        .map_err(|e| format!("Ошибка загрузки профиля Fabric: {e}"))?;
-    let status = resp.status();
-    log_to_console(&app, &format!("[Fabric] Ответ профиля: HTTP {status}"));
-    let mut profile: FabricProfile = resp
-        .json()
-        .await
-        .map_err(|e| format!("Ошибка разбора профиля Fabric: {e}"))?;
+    let mut profile = fetch_loader_profile(&client, &profile_url, "Fabric").await?;
 
     let intermediary_name = format!("net.fabricmc:intermediary:{}", profile.inherits_from);
     if !profile
@@ -319,11 +340,18 @@ pub async fn install_fabric(
 
     let profile_dir = vers_root.join(&profile_id);
     tokio::fs::create_dir_all(&profile_dir).await.map_err(|e| format!("{e}"))?;
-    let profile_path = profile_dir.join("profile.json");
-    let profile_json = serde_json::to_string(&profile).map_err(|e| format!("Ошибка сериализации: {e}"))?;
-    tokio::fs::write(&profile_path, profile_json)
-        .await
-        .map_err(|e| format!("Ошибка записи профиля: {e}"))?;
+    write_profile_json(&profile_dir, &profile)?;
+
+    // Старые профили убираем только после успешной установки нового: при обрыве загрузки
+    // у пользователя остаётся рабочая версия, а не пустое место.
+    crate::services::game::version_remove::remove_fabric_profiles_for_game_version(
+        &game_version,
+        Some(&profile_id),
+    )?;
+    log_to_console(
+        &app,
+        &format!("[Fabric] Установка завершена, старые профили для {game_version} убраны"),
+    );
 
     Ok(profile_id)
 }
@@ -357,18 +385,7 @@ pub async fn install_quilt(
     );
     log_to_console(&app, &format!("[Quilt] Загрузка профиля с {profile_url}"));
 
-    let resp = client
-        .get(&profile_url)
-        .send()
-        .await
-        .map_err(|e| format!("Ошибка загрузки профиля Quilt: {e}"))?;
-    let status = resp.status();
-    log_to_console(&app, &format!("[Quilt] Ответ профиля: HTTP {status}"));
-
-    let profile: FabricProfile = resp
-        .json()
-        .await
-        .map_err(|e| format!("Ошибка разбора профиля Quilt: {e}"))?;
+    let profile = fetch_loader_profile(&client, &profile_url, "Quilt").await?;
 
     let mojang_url = get_mojang_version_url(&profile.inherits_from).await?;
     log_to_console(
@@ -409,15 +426,8 @@ pub async fn install_quilt(
         if let Some(ref a) = lib.downloads.artifact {
             total_size = total_size.saturating_add(a.size);
         }
-        let native_classifier = match os_name {
-            "windows" => "natives-windows",
-            "osx" => "natives-macos",
-            _ => "natives-linux",
-        };
-        if let Some(ref classifiers) = lib.downloads.classifiers {
-            if let Some(ref nat) = classifiers.get(native_classifier) {
-                total_size = total_size.saturating_add(nat.size);
-            }
+        if let Some(nat) = resolve_native_artifact(lib, os_name) {
+            total_size = total_size.saturating_add(nat.size);
         }
     }
     if let Some(ref ai) = mojang_detail.asset_index {
@@ -589,12 +599,7 @@ pub async fn install_quilt(
 
     let profile_dir = vers_root.join(&profile_id);
     tokio::fs::create_dir_all(&profile_dir).await.map_err(|e| format!("{e}"))?;
-    let profile_path = profile_dir.join("profile.json");
-    let profile_json =
-        serde_json::to_string(&profile).map_err(|e| format!("Ошибка сериализации: {e}"))?;
-    tokio::fs::write(&profile_path, profile_json)
-        .await
-        .map_err(|e| format!("Ошибка записи профиля: {e}"))?;
+    write_profile_json(&profile_dir, &profile)?;
 
     Ok(profile_id)
 }
@@ -768,17 +773,14 @@ pub async fn install_forge(
     let app_for_forge_install = app.clone();
     let forge_java_bin_for_thread = forge_java_bin.clone();
     let output = tokio::task::spawn_blocking(move || {
-        use std::process::{Command, Stdio};
+        use std::process::Command;
 
         let mut help_cmd = Command::new(&forge_java_bin_for_thread);
-        help_cmd
-            .arg("-jar")
-            .arg(&java_installer)
-            .arg("--help")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+        help_cmd.arg("-jar").arg(&java_installer).arg("--help");
         hide_console(&mut help_cmd);
-        let help_output = help_cmd.output();
+        let help_output = run_with_timeout(help_cmd, Duration::from_secs(60), || {
+            CANCEL_DOWNLOAD.load(Ordering::SeqCst)
+        });
 
         let help_text = help_output
             .as_ref()
@@ -814,9 +816,11 @@ pub async fn install_forge(
             if has_mirror_flag {
                 cmd.arg("--mirror").arg(FORGE_INSTALLER_MIRROR_URL);
             }
-            cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
             hide_console(&mut cmd);
-            cmd.output()
+            // Установщик сам качает библиотеки и может зависнуть на сети — не ждём вечно.
+            run_with_timeout(cmd, FORGE_INSTALLER_TIMEOUT, || {
+                CANCEL_DOWNLOAD.load(Ordering::SeqCst)
+            })
         };
 
         if has_install_client {
@@ -839,9 +843,18 @@ pub async fn install_forge(
     .await
     .map_err(|e| format!("Ошибка запуска Forge installer (spawn_blocking): {e}"))?;
 
-    let output = output.map_err(|e| format!("Ошибка запуска Forge installer: {e}"))?;
+    let output = output.map_err(|e| format!("Ошибка запуска Forge installer: {e}"));
+    let output = match output {
+        Ok(o) => o,
+        Err(e) => {
+            // Мог быть оборван/повреждён — следующая попытка скачает installer заново.
+            let _ = tokio::fs::remove_file(&installer_path).await;
+            return Err(e);
+        }
+    };
 
     if !output.status.success() {
+        let _ = tokio::fs::remove_file(&installer_path).await;
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
         let installer_log = tokio::fs::read_to_string(root.join("installer.jar.log"))
@@ -884,8 +897,7 @@ pub async fn install_forge(
             .await
             .map_err(|e| format!("Не удалось прочитать JSON Forge: {e}"))?;
         json_content = json_content.replace(&alt_folder_name, &version_id);
-        tokio::fs::write(&expected_version_json_path, &json_content)
-            .await
+        crate::infra::fs_atomic::write_atomic(&expected_version_json_path, json_content.as_bytes())
             .map_err(|e| format!("Не удалось записать JSON версии: {e}"))?;
         let _ = tokio::fs::remove_dir_all(&alt_dir).await;
         return Ok(());
@@ -904,8 +916,7 @@ pub async fn install_forge(
                 .await
                 .map_err(|e| format!("Не удалось прочитать JSON NeoForge: {e}"))?;
             json_content = json_content.replace(&neo_folder_name, &version_id);
-            tokio::fs::write(&expected_version_json_path, &json_content)
-                .await
+            crate::infra::fs_atomic::write_atomic(&expected_version_json_path, json_content.as_bytes())
                 .map_err(|e| format!("Не удалось записать JSON версии: {e}"))?;
             let _ = tokio::fs::remove_dir_all(&neo_dir).await;
             return Ok(());
@@ -972,8 +983,7 @@ pub async fn install_forge(
             .await
             .map_err(|e| format!("Не удалось прочитать JSON установленной версии: {e}"))?;
         json_content = json_content.replace(&source_folder_name, &version_id);
-        tokio::fs::write(&expected_version_json_path, &json_content)
-            .await
+        crate::infra::fs_atomic::write_atomic(&expected_version_json_path, json_content.as_bytes())
             .map_err(|e| format!("Не удалось записать JSON версии: {e}"))?;
         return Ok(());
     }
@@ -1067,15 +1077,8 @@ async fn install_version_from_json(
         if let Some(ref a) = lib.downloads.artifact {
             total_size = total_size.saturating_add(a.size);
         }
-        let native_classifier = match os_name {
-            "windows" => "natives-windows",
-            "osx" => "natives-macos",
-            _ => "natives-linux",
-        };
-        if let Some(ref classifiers) = lib.downloads.classifiers {
-            if let Some(ref nat) = classifiers.get(native_classifier) {
-                total_size = total_size.saturating_add(nat.size);
-            }
+        if let Some(nat) = resolve_native_artifact(lib, os_name) {
+            total_size = total_size.saturating_add(nat.size);
         }
     }
     if let Some(ref ai) = detail.asset_index {
@@ -1124,6 +1127,7 @@ async fn install_version_from_json(
     log_to_console(&app, "[Vanilla] Загрузка библиотек и natives (параллельно)");
     let sem = Arc::new(Semaphore::new(DEFAULT_DOWNLOAD_CONCURRENCY));
     let mut tasks = futures_util::stream::FuturesUnordered::new();
+    let mut aborts: Vec<tokio::task::AbortHandle> = Vec::new();
 
     for lib in &detail.libraries {
         if !library_applies(lib, os_name) {
@@ -1132,7 +1136,7 @@ async fn install_version_from_json(
 
         if let Some(ref artifact) = lib.downloads.artifact {
             let dest = libs_root.join(&artifact.path);
-            if dest.exists() {
+            if file_len_matches(&dest, artifact.size) {
                 if is_probably_native_jar_path(&artifact.path) {
                     let natives_dir2 = natives_dir.clone();
                     let dest2 = dest.clone();
@@ -1163,7 +1167,7 @@ async fn install_version_from_json(
             let lib_name = lib.name.clone();
             let natives_dir_dl = natives_dir.clone();
             let version_id_dl = version_id.clone();
-            tasks.push(tokio::spawn(async move {
+            let handle = tokio::spawn(async move {
                 let _permit = sem2.acquire_owned().await.map_err(|_| "Semaphore закрыт".to_string())?;
                 let expected2 = match expected {
                     Some(s) => Some(s),
@@ -1188,15 +1192,17 @@ async fn install_version_from_json(
                         &lib_name,
                         &artifact_path,
                     );
-                    let _ = tokio::task::spawn_blocking(move || extract_natives_jar(&dest, &out_dir)).await;
+                    extract_natives_logged(dest, out_dir, lib_name).await;
                 }
                 Ok::<(), String>(())
-            }));
+            });
+            aborts.push(handle.abort_handle());
+            tasks.push(handle);
         }
 
         if let Some(nat) = resolve_native_artifact(lib, os_name) {
             let dest = libs_root.join(&nat.path);
-            if dest.exists() {
+            if file_len_matches(&dest, nat.size) {
                 let natives_dir2 = natives_dir.clone();
                 let dest2 = dest.clone();
                 let version_id2 = version_id.clone();
@@ -1224,7 +1230,7 @@ async fn install_version_from_json(
                 let version_id_dl = version_id.clone();
                 let lib_name = lib.name.clone();
                 let nat_path = nat.path.clone();
-                tasks.push(tokio::spawn(async move {
+                let handle = tokio::spawn(async move {
                     let _permit = sem2.acquire_owned().await.map_err(|_| "Semaphore закрыт".to_string())?;
                     let expected2 = match expected {
                         Some(s) => Some(s),
@@ -1248,15 +1254,25 @@ async fn install_version_from_json(
                         &lib_name,
                         &nat_path,
                     );
-                    let _ = tokio::task::spawn_blocking(move || extract_natives_jar(&dest, &out_dir)).await;
+                    extract_natives_logged(dest, out_dir, lib_name).await;
                     Ok::<(), String>(())
-                }));
+                });
+                aborts.push(handle.abort_handle());
+                tasks.push(handle);
             }
         }
     }
 
     while let Some(res) = tasks.next().await {
-        res.map_err(|e| format!("Ошибка задачи загрузки библиотек: {e}"))??;
+        let outcome = res
+            .map_err(|e| format!("Ошибка задачи загрузки библиотек: {e}"))
+            .and_then(|r| r);
+        if let Err(e) = outcome {
+            for a in &aborts {
+                a.abort();
+            }
+            return Err(e);
+        }
     }
 
     if let Some(ref asset_index) = detail.asset_index {
@@ -1289,8 +1305,9 @@ async fn install_version_from_json(
     if let Some(parent) = version_json_path.parent() {
         let _ = tokio::fs::create_dir_all(parent).await;
     }
-    tokio::fs::write(&version_json_path, &version_json_text)
-        .await
+    // version.json пишется последним и служит маркером «установка завершена»,
+    // поэтому запись должна быть атомарной.
+    crate::infra::fs_atomic::write_atomic(&version_json_path, version_json_text.as_bytes())
         .map_err(|e| format!("Не удалось сохранить описание версии: {e}"))?;
 
     Ok(())
