@@ -49,6 +49,25 @@ pub async fn index_content_dir_sha1(content_dir: &Path) -> Result<HashMap<String
     Ok(by_filename)
 }
 
+/// Как `index_content_dir_sha1`, но хэширует только файлы с нужными именами. Перед скачиванием
+/// достаточно проверить цели загрузки, а не считать SHA1 всей папки `mods/` (сотни МБ).
+pub async fn index_content_dir_sha1_for(
+    content_dir: &Path,
+    filenames: &[&str],
+) -> Result<HashMap<String, String>, String> {
+    let mut by_filename = HashMap::new();
+    for name in filenames {
+        for stored in [name.to_string(), format!("{name}{PROFILE_ITEM_DISABLED_SUFFIX}")] {
+            let path = content_dir.join(&stored);
+            if path.is_file() {
+                by_filename.insert(name.to_string(), sha1_hex_of_file(&path).await?);
+                break;
+            }
+        }
+    }
+    Ok(by_filename)
+}
+
 pub fn target_already_installed(
     installed: &HashMap<String, String>,
     target: &ModrinthDownloadTarget,

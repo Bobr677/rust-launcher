@@ -20,7 +20,7 @@ use std::path::PathBuf;
 use client::modrinth_http_client;
 use dependencies::collect_modrinth_required_downloads;
 use futures_util::stream::{self, StreamExt};
-use installed::{index_content_dir_sha1, mark_skipped_already_installed};
+use installed::{index_content_dir_sha1_for, mark_skipped_already_installed};
 
 use crate::app::paths::{game_root_dir, instance_dir};
 use crate::services::game::download::{modrinth_content_subdir, save_modrinth_file};
@@ -62,7 +62,8 @@ pub async fn download_modrinth_with_dependencies(
         collect_modrinth_required_downloads(&client, &version_id, &game_version, &loader).await?;
 
     let content_dir = modrinth_content_dir(&category, profile_id.as_deref())?;
-    let installed_index = index_content_dir_sha1(&content_dir).await?;
+    let target_names: Vec<&str> = targets.iter().map(|t| t.filename.as_str()).collect();
+    let installed_index = index_content_dir_sha1_for(&content_dir, &target_names).await?;
     mark_skipped_already_installed(&mut targets, &installed_index);
 
     let pending: Vec<(String, String, Option<String>)> = targets

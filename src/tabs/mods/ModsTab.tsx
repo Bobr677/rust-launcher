@@ -961,15 +961,17 @@ export function ModsTab({
     setBatchInstalling(true);
     keys.forEach((key) => addInstallingKey(key));
 
-    const BATCH_CONCURRENCY = 4;
+    const BATCH_CONCURRENCY = 8;
     let ok = 0;
     let failed = 0;
 
     try {
-      for (let i = 0; i < keys.length; i += BATCH_CONCURRENCY) {
-        const chunk = keys.slice(i, i + BATCH_CONCURRENCY);
-        const results = await Promise.allSettled(
-          chunk.map(async (targetKey) => {
+      // Скользящее окно вместо пачек: один медленный мод не задерживает следующие.
+      let next = 0;
+      const worker = async () => {
+        while (next < keys.length) {
+          const targetKey = keys[next++];
+          try {
             const latest = await resolveLatestCompatibleVersion({
               projectKey: targetKey,
               contentProvider,
@@ -984,13 +986,18 @@ export function ModsTab({
               latest,
               buildDownloadDeps(targetKey),
             );
-          }),
-        );
-        for (const result of results) {
-          if (result.status === "fulfilled") ok += 1;
-          else failed += 1;
+            ok += 1;
+          } catch {
+            failed += 1;
+          }
         }
-      }
+      };
+      await Promise.all(
+        Array.from(
+          { length: Math.min(BATCH_CONCURRENCY, keys.length) },
+          worker,
+        ),
+      );
 
       if (ok > 0 && failed === 0) {
         showNotification(

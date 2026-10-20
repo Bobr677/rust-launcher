@@ -136,13 +136,15 @@ impl<'a> DependencyResolver<'a> {
             stack.push((version_id.clone(), 1));
 
             let version = self.fetch_version_cached(&version_id).await?.clone();
-            let mut dep_version_ids = Vec::new();
-            for dep in &version.dependencies {
-                if dep.dependency_type != "required" {
-                    continue;
-                }
-                dep_version_ids.push(self.resolve_dependency_version_id(dep).await?);
-            }
+            // Зависимости одной версии резолвим параллельно: каждая может требовать запрос к API.
+            let dep_version_ids = futures_util::future::try_join_all(
+                version
+                    .dependencies
+                    .iter()
+                    .filter(|dep| dep.dependency_type == "required")
+                    .map(|dep| self.resolve_dependency_version_id(dep)),
+            )
+            .await?;
             for dep_vid in dep_version_ids.into_iter().rev() {
                 stack.push((dep_vid, 0));
             }
