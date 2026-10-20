@@ -189,6 +189,11 @@
       "showConsoleOnLaunch": {
         "label": "Show console on game start:"
       },
+      "graphicsAdapter": {
+        "label": "Graphics card for the game:",
+        "auto": "Automatic",
+        "hint": "Windows applies this as a power-saving or high-performance preference for Java; the exact GPU may depend on driver settings."
+      },
       "closeLauncherOnStart": {
         "label": "Close launcher when game starts:"
       },
@@ -586,7 +591,75 @@
       "detach": "Detach",
       "attach": "Attach",
       "empty": "Logs will appear after the game starts.",
-      "hint": "Controlled by the “Show console on game start” setting in the game section."
+      "hint": "Controlled by the “Show console on game start” setting in the game section.",
+      "analyzer": {
+        "title": "Log analyzer",
+        "show": "Show",
+        "hide": "Hide",
+        "noIssues": "No critical issues found in the log. If the game still crashes, share the full log or crash-report.",
+        "rules": {
+          "oom": {
+            "title": "Out of memory (OutOfMemory)",
+            "fix": "Increase allocated RAM in the profile Java settings. Close other apps and heavy shaders."
+          },
+          "wrongJava": {
+            "title": "Wrong Java version",
+            "fix": "Newer Minecraft versions need Java 17/21. Pick a matching runtime in Java settings or install one automatically."
+          },
+          "mixinConflict": {
+            "title": "Mixin / injection conflict",
+            "fix": "Disable recently added mods one by one. Two mods patching the same code is a common cause."
+          },
+          "modIncompatible": {
+            "title": "Mod loading failure",
+            "fix": "Check mod versions for your Minecraft and loader (Fabric/Forge/Quilt). Remove duplicate .jar files."
+          },
+          "missingDependency": {
+            "title": "Missing mod dependency",
+            "fix": "Install required libraries (e.g. Fabric API, Architectury, Kotlin for Forge) matching the mod version."
+          },
+          "versionMismatch": {
+            "title": "Minecraft version mismatch",
+            "fix": "Download the mod built for this pack’s Minecraft version. Mods for other versions usually won’t start."
+          },
+          "corruptJar": {
+            "title": "Corrupt JAR file",
+            "fix": "Reinstall the broken mod/library. Avoid downloading mods from untrusted sources."
+          },
+          "openglGlfw": {
+            "title": "Graphics error (OpenGL/GLFW)",
+            "fix": "Update GPU drivers, try windowed/fullscreen, and disable overlays (Discord, GeForce Experience)."
+          },
+          "authFailed": {
+            "title": "Authentication failed",
+            "fix": "Sign in again via Microsoft/Ely.by on the Accounts tab. Online servers need a valid session."
+          },
+          "exitCode": {
+            "title": "Game exited with an error",
+            "fix": "Check ERROR lines above and crash-reports in the pack folder. Raising RAM or removing the last mod often helps."
+          },
+          "diskSpace": {
+            "title": "Not enough disk space",
+            "fix": "Free space on the drive that holds the game folder and launcher cache."
+          },
+          "accessDenied": {
+            "title": "File access denied",
+            "fix": "Run the launcher with write access to the game folder. Close antivirus or apps locking files."
+          },
+          "nativeCrash": {
+            "title": "Native JVM crash",
+            "fix": "Update drivers, switch Java runtime, and temporarily disable mods with native libs (Sodium/Iris, etc.)."
+          },
+          "fabricLoader": {
+            "title": "Fabric Loader / API issue",
+            "fix": "Update Fabric Loader and Fabric API to versions compatible with your Minecraft version."
+          },
+          "forgeVersion": {
+            "title": "Forge version issue",
+            "fix": "Install the recommended Forge version for this pack, or update mods to match your Forge."
+          }
+        }
+      }
     }
   },
   "modpacks": {
@@ -1616,11 +1689,19 @@
         "standard": "Standard",
         "slim": "Slim"
       },
+      "subTab": {
+        "overview": "Overview",
+        "skins": "Skins"
+      },
       "skinLibrary": {
         "title": "Skin library",
         "empty": "You have no saved skins on this account.",
         "loading": "Loading skins…",
-        "error": "Failed to load skin library."
+        "error": "Failed to load skin library.",
+        "apply": "Apply skin",
+        "active": "Active",
+        "previewHint": "Select a skin to preview it on the right, then apply.",
+        "microsoftOnly": "Skin library is available for Microsoft accounts."
       },
       "toast": {
         "nicknameSaved": "Changes saved!",

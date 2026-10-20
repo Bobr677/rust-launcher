@@ -305,6 +305,35 @@ pub fn get_system_memory_gb() -> Result<u64, String> {
 }
 
 #[command]
+pub fn get_graphics_adapters() -> Result<Vec<String>, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let output = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name"])
+            .output()
+            .map_err(|e| format!("Не удалось получить список видеокарт: {e}"))?;
+        if !output.status.success() {
+            return Err("Не удалось получить список видеокарт".to_string());
+        }
+        let text = String::from_utf8_lossy(&output.stdout);
+        let mut adapters: Vec<String> = text
+            .lines()
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .map(ToOwned::to_owned)
+            .collect();
+        adapters.sort_by_key(|name| name.to_lowercase());
+        adapters.dedup();
+        return Ok(adapters);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok(Vec::new())
+    }
+}
+
+
+#[command]
 pub fn get_settings() -> Result<Settings, String> {
     Ok(load_settings_from_disk())
 }

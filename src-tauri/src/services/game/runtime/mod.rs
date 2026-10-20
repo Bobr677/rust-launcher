@@ -14,6 +14,7 @@ pub use lan_bridge::{
 
 #[cfg(target_os = "linux")]
 pub(crate) use env::apply_linux_display_env;
+pub(crate) use env::apply_windows_graphics_preference;
 
 pub(crate) use downloads::*;
 pub(crate) use jvm::*;

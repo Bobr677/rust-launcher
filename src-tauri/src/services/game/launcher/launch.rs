@@ -1197,6 +1197,11 @@ pub async fn launch_game(
         .stderr(std::process::Stdio::piped());
     #[cfg(target_os = "linux")]
     crate::services::game::runtime::apply_linux_display_env(&mut cmd);
+    crate::services::game::runtime::apply_windows_graphics_preference(
+        &mut cmd,
+        &java_path,
+        settings.graphics_adapter.as_deref(),
+    );
     hide_console(&mut cmd);
 
     let mut child = cmd.spawn().map_err(|e| {

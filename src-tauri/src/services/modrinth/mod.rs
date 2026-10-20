@@ -65,15 +65,16 @@ pub async fn download_modrinth_with_dependencies(
     let installed_index = index_content_dir_sha1(&content_dir).await?;
     mark_skipped_already_installed(&mut targets, &installed_index);
 
-    let pending: Vec<&ModrinthDownloadTarget> = targets.iter().filter(|t| !t.skipped).collect();
+    let pending: Vec<(String, String, Option<String>)> = targets
+        .iter()
+        .filter(|t| !t.skipped)
+        .map(|t| (t.url.clone(), t.filename.clone(), t.sha1.clone()))
+        .collect();
     if !pending.is_empty() {
         let results: Vec<Result<(), String>> = stream::iter(pending.into_iter())
-            .map(|target| {
+            .map(|(url, filename, sha1)| {
                 let category = category.clone();
                 let profile_id = profile_id.clone();
-                let url = target.url.clone();
-                let filename = target.filename.clone();
-                let sha1 = target.sha1.clone();
                 async move {
                     save_modrinth_file(
                         &category,

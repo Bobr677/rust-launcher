@@ -1,4 +1,5 @@
 pub mod accounts;
+pub mod analysis_logs;
 pub mod arguments;
 pub mod build_presets;
 pub mod cache;
@@ -68,13 +69,14 @@ pub use profile_tools::{
     cleanup_profile, delete_profile_worlds, duplicate_profile, get_profile_disk_usage,
     get_profile_instance_settings, list_profile_worlds,
 };
+pub use analysis_logs::read_instance_analysis_logs;
 pub use screenshots::{
     delete_screenshot, get_screenshot_data_uri, get_screenshot_thumbnail, list_screenshots,
     open_screenshot, open_screenshots_folder,
 };
 pub use settings::{
     detect_java_runtimes, get_effective_settings, get_java_settings,
-    get_profile_java_settings, get_settings, get_system_memory_gb, list_installed_java_runtimes,
+    get_profile_java_settings, get_graphics_adapters, get_settings, get_system_memory_gb, list_installed_java_runtimes,
     reinstall_java_runtimes, reset_settings_to_default, set_java_settings,
     set_profile_java_settings, set_settings, validate_java_args, verify_java_runtimes,
 };

@@ -6,6 +6,8 @@ pub struct Settings {
     #[serde(default)]
     pub game_directory: Option<String>,
     pub ram_mb: u32,
+    #[serde(default)]
+    pub graphics_adapter: Option<String>,
     pub show_console_on_launch: bool,
     pub close_launcher_on_game_start: bool,
     pub check_game_processes: bool,
@@ -105,6 +107,7 @@ impl Default for Settings {
         Self {
             game_directory: None,
             ram_mb: 4096,
+            graphics_adapter: None,
             show_console_on_launch: false,
             close_launcher_on_game_start: false,
             check_game_processes: true,

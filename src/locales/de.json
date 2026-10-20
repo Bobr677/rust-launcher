@@ -189,6 +189,11 @@
       "showConsoleOnLaunch": {
         "label": "Konsole beim Spielstart anzeigen:"
       },
+      "graphicsAdapter": {
+        "label": "Grafikkarte für das Spiel:",
+        "auto": "Automatisch",
+        "hint": "Windows wendet die Auswahl als Energiespar- oder Hochleistungspräferenz auf Java an; die konkrete GPU kann von den Treibereinstellungen abhängen."
+      },
       "closeLauncherOnStart": {
         "label": "Schließen Sie den Launcher, wenn das Spiel beginnt:"
       },
@@ -614,7 +619,75 @@
       "detach": "Abtrennen",
       "attach": "Befestigen",
       "empty": "Protokolle werden nach Spielstart angezeigt.",
-      "hint": "Wird durch die Einstellung „Konsole beim Spielstart anzeigen“ im Spielbereich gesteuert."
+      "hint": "Wird durch die Einstellung „Konsole beim Spielstart anzeigen“ im Spielbereich gesteuert.",
+      "analyzer": {
+        "title": "Log-Analyse",
+        "show": "Zeigen",
+        "hide": "Ausblenden",
+        "noIssues": "Keine kritischen Probleme im Log gefunden. Bei Abstürzen bitte volles Log oder Crash-Report senden.",
+        "rules": {
+          "oom": {
+            "title": "Zu wenig Speicher (OutOfMemory)",
+            "fix": "Erhöhe den RAM in den Java-Einstellungen des Profils. Schließe andere Programme und schwere Shader."
+          },
+          "wrongJava": {
+            "title": "Falsche Java-Version",
+            "fix": "Neuere Minecraft-Versionen brauchen Java 17/21. Wähle eine passende Runtime in den Java-Einstellungen."
+          },
+          "mixinConflict": {
+            "title": "Mixin-/Injektionskonflikt",
+            "fix": "Deaktiviere neue Mods einzeln. Oft patchen zwei Mods denselben Code."
+          },
+          "modIncompatible": {
+            "title": "Mod-Ladefehler",
+            "fix": "Prüfe Mod-Versionen für dein Minecraft und den Loader. Entferne doppelte .jar-Dateien."
+          },
+          "missingDependency": {
+            "title": "Fehlende Mod-Abhängigkeit",
+            "fix": "Installiere benötigte Bibliotheken (z. B. Fabric API, Architectury) in der passenden Version."
+          },
+          "versionMismatch": {
+            "title": "Minecraft-Versionskonflikt",
+            "fix": "Lade den Mod für genau diese Minecraft-Version. Andere Versionen starten meist nicht."
+          },
+          "corruptJar": {
+            "title": "Beschädigte JAR-Datei",
+            "fix": "Installiere den defekten Mod/die Bibliothek neu. Vermeide unbekannte Download-Quellen."
+          },
+          "openglGlfw": {
+            "title": "Grafikfehler (OpenGL/GLFW)",
+            "fix": "Aktualisiere GPU-Treiber, wechsle Fenster-/Vollbildmodus und deaktiviere Overlays."
+          },
+          "authFailed": {
+            "title": "Authentifizierung fehlgeschlagen",
+            "fix": "Melde dich erneut über Microsoft/Ely.by im Konto-Tab an."
+          },
+          "exitCode": {
+            "title": "Spiel mit Fehler beendet",
+            "fix": "Prüfe ERROR-Zeilen und Crash-Reports. Mehr RAM oder Entfernen des letzten Mods hilft oft."
+          },
+          "diskSpace": {
+            "title": "Zu wenig Speicherplatz",
+            "fix": "Gib Speicher auf dem Laufwerk mit Spielordner und Launcher-Cache frei."
+          },
+          "accessDenied": {
+            "title": "Dateizugriff verweigert",
+            "fix": "Starte den Launcher mit Schreibrechten auf den Spielordner. Schließe Antivirus/Sperren."
+          },
+          "nativeCrash": {
+            "title": "Nativer JVM-Absturz",
+            "fix": "Treiber aktualisieren, Java wechseln und Mods mit Natives (Sodium/Iris) testweise deaktivieren."
+          },
+          "fabricLoader": {
+            "title": "Fabric Loader / API-Problem",
+            "fix": "Aktualisiere Fabric Loader und Fabric API auf kompatible Versionen."
+          },
+          "forgeVersion": {
+            "title": "Forge-Versionsproblem",
+            "fix": "Installiere die empfohlene Forge-Version oder aktualisiere Mods für deinen Forge."
+          }
+        }
+      }
     }
   },
   "modpacks": {
@@ -1517,6 +1590,29 @@
         "loading": "Skin wird geladen…",
         "error": "Skin konnte nicht geladen werden.",
         "notFound": "Spieler nicht gefunden."
+      },
+      "skinUpload": {
+        "title": "Skin hochladen",
+        "pick": "PNG wählen",
+        "apply": "Hochladen",
+        "loading": "Skin wird hochgeladen…",
+        "error": "Skin konnte nicht hochgeladen werden.",
+        "standard": "Standard",
+        "slim": "Slim"
+      },
+      "subTab": {
+        "overview": "Übersicht",
+        "skins": "Skins"
+      },
+      "skinLibrary": {
+        "title": "Skin-Bibliothek",
+        "empty": "Auf diesem Konto sind keine gespeicherten Skins vorhanden.",
+        "loading": "Skins werden geladen…",
+        "error": "Skin-Bibliothek konnte nicht geladen werden.",
+        "apply": "Skin anwenden",
+        "active": "Aktiv",
+        "previewHint": "Skin auswählen — Vorschau rechts, dann anwenden.",
+        "microsoftOnly": "Die Skin-Bibliothek ist für Microsoft-Konten verfügbar."
       },
       "toast": {
         "nicknameSaved": "Änderungen gespeichert!",

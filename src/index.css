@@ -153,6 +153,42 @@ body {
   -webkit-backdrop-filter: blur(12px) !important;
 }
 
+
+/* Native selects keep keyboard accessibility while matching the launcher's glass controls. */
+.launcher-select {
+  appearance: none;
+  -webkit-appearance: none;
+  min-height: 2.5rem;
+  padding-right: 2.5rem;
+  color: rgba(255, 255, 255, 0.9);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-opacity='.68' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 1rem;
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.launcher-select:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+  background-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+.launcher-select:focus-visible {
+  border-color: color-mix(in srgb, var(--accent-color) 72%, white 28%);
+  outline: 2px solid color-mix(in srgb, var(--accent-color) 45%, transparent);
+  outline-offset: 1px;
+}
+
+.launcher-select option {
+  background: #10131a;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.launcher-select option:checked {
+  background: var(--accent-color);
+  color: #ffffff;
+}
+
 .glass-popover {
   background:
     linear-gradient(160deg, var(--glass-tint), transparent 45%),

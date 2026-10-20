@@ -164,6 +164,7 @@ type SettingsTabId = "game" | "versions" | "launcher";
 type Settings = {
   game_directory: string | null;
   ram_mb: number;
+  graphics_adapter: string | null;
   show_console_on_launch: boolean;
   close_launcher_on_game_start: boolean;
   check_game_processes: boolean;
@@ -2284,6 +2285,7 @@ function App() {
   const defaultSettings: Settings = {
     game_directory: null,
     ram_mb: 4096,
+    graphics_adapter: null,
     show_console_on_launch: false,
     close_launcher_on_game_start: false,
     check_game_processes: true,
@@ -3625,6 +3627,7 @@ function App() {
     enabled:
       (settings?.show_console_on_launch ?? false) || isInstalling || installPaused,
     profileName: activeInstanceProfile?.name ?? null,
+    profileId: activeInstanceProfile?.id ?? runningConsoleProfileId ?? null,
     language,
     consoleLines: playConsoleLines,
     isConsoleVisible,
@@ -4994,7 +4997,7 @@ function App() {
                   className="rounded-full border border-emerald-400/25 bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] font-semibold normal-case tracking-normal text-emerald-200"
                   title={tt("app.versionBadge.latest")}
                 >
-                  LAST
+                  LATEST
                 </span>
               ) : launcherVersionBadgeKind === "outdated" ? (
                 <span
@@ -5012,7 +5015,7 @@ function App() {
                   className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 font-mono text-[10px] font-semibold normal-case tracking-normal text-white/45"
                   title={tt("app.versionBadge.unknown")}
                 >
-                  LAST
+                  LATEST
                 </span>
               )}
             </div>

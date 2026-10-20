@@ -1412,13 +1412,25 @@ async fn apply_mc_skin_from_username(username: &str) -> Result<Vec<u8>, String> 
         }
     }
 
+    let skin_png = match download_texture_png(&skin_url, "skin").await {
+        Ok(v) => v,
+        Err(_) => fetch_mc_skin_png(&source_uuid).await?,
+    };
+
+    if let Some(mc_uuid) = current_mc_uuid() {
+        let _ = save_skin_to_local_library(&mc_uuid, &skin_png, variant, Some(trimmed));
+    }
+
     if let Ok(profile) = get_profile() {
         if let Some(uuid) = profile.mc_uuid.as_ref().filter(|s| !s.trim().is_empty()) {
             clear_mc_avatar_cache(uuid);
+            if let Ok(remote_png) = fetch_mc_skin_png(uuid).await {
+                return Ok(remote_png);
+            }
         }
     }
 
-    fetch_mc_skin_png(&source_uuid).await
+    Ok(skin_png)
 }
 
 #[tauri::command]
@@ -1714,6 +1726,156 @@ pub struct McSkinInfo {
     pub state: String,
 }
 
+const LOCAL_SKIN_ID_PREFIX: &str = "local:";
+const LOCAL_SKIN_URL_PREFIX: &str = "16launcher-skin:";
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct LocalSkinEntry {
+    id: String,
+    alias: String,
+    filename: String,
+    variant: String,
+    #[serde(default)]
+    sha1: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+struct LocalSkinIndex {
+    #[serde(default)]
+    skins: Vec<LocalSkinEntry>,
+}
+
+fn sha1_hex(bytes: &[u8]) -> String {
+    let digest = Sha1::digest(bytes);
+    digest.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn normalize_mc_uuid(uuid: &str) -> String {
+    uuid.trim().to_ascii_lowercase().replace('-', "")
+}
+
+fn local_skins_dir_for_uuid(mc_uuid: &str) -> Result<PathBuf, String> {
+    let dir = crate::app::paths::launcher_data_dir()?
+        .join("skins")
+        .join(normalize_mc_uuid(mc_uuid));
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Не удалось создать папку библиотеки скинов: {e}"))?;
+    Ok(dir)
+}
+
+fn local_skins_index_path(mc_uuid: &str) -> Result<PathBuf, String> {
+    Ok(local_skins_dir_for_uuid(mc_uuid)?.join("index.json"))
+}
+
+fn load_local_skin_index(mc_uuid: &str) -> Result<LocalSkinIndex, String> {
+    let path = local_skins_index_path(mc_uuid)?;
+    if !path.is_file() {
+        return Ok(LocalSkinIndex::default());
+    }
+    let text = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Не удалось прочитать index.json скинов: {e}"))?;
+    if text.trim().is_empty() {
+        return Ok(LocalSkinIndex::default());
+    }
+    serde_json::from_str(&text).map_err(|e| format!("Ошибка разбора index.json скинов: {e}"))
+}
+
+fn save_local_skin_index(mc_uuid: &str, index: &LocalSkinIndex) -> Result<(), String> {
+    let path = local_skins_index_path(mc_uuid)?;
+    let text = serde_json::to_string_pretty(index)
+        .map_err(|e| format!("Не удалось сериализовать index.json скинов: {e}"))?;
+    std::fs::write(&path, text)
+        .map_err(|e| format!("Не удалось сохранить index.json скинов: {e}"))
+}
+
+fn current_mc_uuid() -> Option<String> {
+    use crate::services::game::accounts::get_profile;
+    get_profile()
+        .ok()
+        .and_then(|p| p.mc_uuid)
+        .map(|u| u.trim().to_string())
+        .filter(|u| !u.is_empty())
+}
+
+fn local_skin_url(id: &str) -> String {
+    format!("{LOCAL_SKIN_URL_PREFIX}{id}")
+}
+
+fn is_local_skin_id(id: &str) -> bool {
+    id.starts_with(LOCAL_SKIN_ID_PREFIX)
+}
+
+fn parse_local_skin_url(url: &str) -> Option<String> {
+    let trimmed = url.trim();
+    trimmed
+        .strip_prefix(LOCAL_SKIN_URL_PREFIX)
+        .map(|s| s.to_string())
+        .filter(|s| is_local_skin_id(s))
+}
+
+fn read_local_skin_png(mc_uuid: &str, skin_id: &str) -> Result<Vec<u8>, String> {
+    let index = load_local_skin_index(mc_uuid)?;
+    let entry = index
+        .skins
+        .iter()
+        .find(|s| s.id == skin_id)
+        .ok_or_else(|| "Скин не найден в локальной библиотеке".to_string())?;
+    let path = local_skins_dir_for_uuid(mc_uuid)?.join(&entry.filename);
+    std::fs::read(&path).map_err(|e| format!("Не удалось прочитать файл скина: {e}"))
+}
+
+fn save_skin_to_local_library(
+    mc_uuid: &str,
+    png_bytes: &[u8],
+    variant: &str,
+    alias: Option<&str>,
+) -> Result<LocalSkinEntry, String> {
+    if png_bytes.is_empty() {
+        return Err("Файл скина пуст".to_string());
+    }
+    let hash = sha1_hex(png_bytes);
+    let mut index = load_local_skin_index(mc_uuid)?;
+    if let Some(pos) = index.skins.iter().position(|s| s.sha1 == hash) {
+        let existing = &mut index.skins[pos];
+        existing.variant = if variant.eq_ignore_ascii_case("slim") {
+            "SLIM".to_string()
+        } else {
+            "CLASSIC".to_string()
+        };
+        if let Some(name) = alias.map(str::trim).filter(|s| !s.is_empty()) {
+            existing.alias = name.to_string();
+        }
+        let cloned = existing.clone();
+        save_local_skin_index(mc_uuid, &index)?;
+        return Ok(cloned);
+    }
+
+    let id = format!("{LOCAL_SKIN_ID_PREFIX}{hash}");
+    let filename = format!("{hash}.png");
+    let path = local_skins_dir_for_uuid(mc_uuid)?.join(&filename);
+    std::fs::write(&path, png_bytes)
+        .map_err(|e| format!("Не удалось сохранить скин в библиотеку: {e}"))?;
+
+    let entry = LocalSkinEntry {
+        id,
+        alias: alias
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("Skin")
+            .to_string(),
+        filename,
+        variant: if variant.eq_ignore_ascii_case("slim") {
+            "SLIM".to_string()
+        } else {
+            "CLASSIC".to_string()
+        },
+        sha1: hash,
+    };
+    index.skins.insert(0, entry.clone());
+    save_local_skin_index(mc_uuid, &index)?;
+    Ok(entry)
+}
+
 fn map_mc_skin_info(s: McAuthSkin) -> McSkinInfo {
     McSkinInfo {
         id: s.id,
@@ -1741,7 +1903,77 @@ async fn fetch_mc_skins_with_token(access_token: &str) -> Result<Vec<McSkinInfo>
     Ok(profile.skins.into_iter().map(map_mc_skin_info).collect())
 }
 
-async fn fetch_mc_skins_resilient() -> Result<Vec<McSkinInfo>, String> {
+fn list_local_skins_only(active_sha1: Option<&str>) -> Result<Vec<McSkinInfo>, String> {
+    let Some(mc_uuid) = current_mc_uuid() else {
+        return Ok(Vec::new());
+    };
+    let index = match load_local_skin_index(&mc_uuid) {
+        Ok(index) => index,
+        Err(error) => {
+            eprintln!("[skin] local index load failed: {error}");
+            return Ok(Vec::new());
+        }
+    };
+    Ok(index
+        .skins
+        .into_iter()
+        .map(|entry| {
+            let is_active = active_sha1
+                .map(|h| h == entry.sha1.as_str())
+                .unwrap_or(false);
+            McSkinInfo {
+                id: entry.id.clone(),
+                alias: entry.alias,
+                url: local_skin_url(&entry.id),
+                variant: entry.variant,
+                state: if is_active {
+                    "ACTIVE".to_string()
+                } else {
+                    "INACTIVE".to_string()
+                },
+            }
+        })
+        .collect())
+}
+
+async fn merge_local_and_remote_skins(
+    remote: Vec<McSkinInfo>,
+) -> Result<Vec<McSkinInfo>, String> {
+    let Some(mc_uuid) = current_mc_uuid() else {
+        return Ok(remote);
+    };
+
+    // Keep the currently active Mojang skin in the local library so it is not
+    // lost when Mojang replaces the cloud wardrobe on the next upload.
+    let mut active_sha1: Option<String> = None;
+    if let Some(active) = remote.iter().find(|s| s.state == "ACTIVE") {
+        if !active.url.trim().is_empty() {
+            if let Ok(png) = download_texture_png(&active.url, "skin").await {
+                active_sha1 = Some(sha1_hex(&png));
+                let _ = save_skin_to_local_library(
+                    &mc_uuid,
+                    &png,
+                    &active.variant,
+                    Some(&active.alias),
+                );
+            }
+        }
+    }
+
+    let mut out = list_local_skins_only(active_sha1.as_deref())?;
+
+    if out.is_empty() {
+        out = remote;
+    } else if !out.iter().any(|s| s.state == "ACTIVE") {
+        if let Some(active) = remote.into_iter().find(|s| s.state == "ACTIVE") {
+            out.insert(0, active);
+        }
+    }
+
+    Ok(out)
+}
+
+async fn fetch_remote_skins_resilient() -> Result<Vec<McSkinInfo>, String> {
     use crate::services::game::accounts::{get_profile, save_full_profile};
     use crate::services::game::runtime::ensure_ms_minecraft_session;
 
@@ -1763,6 +1995,20 @@ async fn fetch_mc_skins_resilient() -> Result<Vec<McSkinInfo>, String> {
             }
         }
         Err(e) => Err(e),
+    }
+}
+
+async fn fetch_mc_skins_resilient() -> Result<Vec<McSkinInfo>, String> {
+    match fetch_remote_skins_resilient().await {
+        Ok(remote) => merge_local_and_remote_skins(remote).await,
+        Err(error) => {
+            eprintln!("[skin] remote skin library failed: {error}; falling back to local");
+            let local = list_local_skins_only(None)?;
+            if !local.is_empty() {
+                return Ok(local);
+            }
+            Err(error)
+        }
     }
 }
 
@@ -1815,6 +2061,41 @@ async fn post_mc_skin_upload(
     Ok(())
 }
 
+async fn upload_png_bytes_as_active_skin(
+    png_bytes: &[u8],
+    api_variant: &str,
+) -> Result<(), String> {
+    use crate::services::game::accounts::{get_profile, save_full_profile};
+    use crate::services::game::runtime::ensure_ms_minecraft_session;
+
+    let mut access_token = resolve_mc_access_token().await?;
+    let mut retried = false;
+    loop {
+        match post_mc_skin_upload(&access_token, png_bytes, api_variant).await {
+            Ok(()) => return Ok(()),
+            Err(e) if e == "MC_TOKEN_EXPIRED" && !retried => {
+                retried = true;
+                match ensure_ms_minecraft_session().await? {
+                    Some((_name, _uuid, new_token)) => {
+                        if let Ok(mut p) = get_profile() {
+                            p.mc_access_token = Some(new_token.clone());
+                            let _ = save_full_profile(&p);
+                        }
+                        access_token = new_token;
+                        continue;
+                    }
+                    None => {
+                        return Err(
+                            "Сессия Minecraft истекла. Войдите снова через Microsoft.".to_string(),
+                        );
+                    }
+                }
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
 async fn apply_mc_skin_from_library(skin_id: &str) -> Result<Vec<u8>, String> {
     use crate::services::game::accounts::{get_profile, save_full_profile};
     use crate::services::game::runtime::ensure_ms_minecraft_session;
@@ -1822,6 +2103,33 @@ async fn apply_mc_skin_from_library(skin_id: &str) -> Result<Vec<u8>, String> {
     let trimmed_id = skin_id.trim();
     if trimmed_id.is_empty() {
         return Err("Skin id is empty".to_string());
+    }
+
+    // Local library skin: upload PNG bytes directly to Mojang.
+    if is_local_skin_id(trimmed_id) {
+        let mc_uuid = current_mc_uuid().ok_or_else(|| {
+            "Нет UUID Minecraft. Войдите через Microsoft на вкладке «Аккаунты».".to_string()
+        })?;
+        let index = load_local_skin_index(&mc_uuid)?;
+        let entry = index
+            .skins
+            .iter()
+            .find(|s| s.id == trimmed_id)
+            .ok_or_else(|| "Skin not found in library".to_string())?
+            .clone();
+        let png_bytes = read_local_skin_png(&mc_uuid, trimmed_id)?;
+        let api_variant = mc_skin_variant_to_api(&entry.variant);
+        upload_png_bytes_as_active_skin(&png_bytes, api_variant).await?;
+
+        if let Ok(profile) = get_profile() {
+            if let Some(uuid) = profile.mc_uuid.as_ref().filter(|s| !s.trim().is_empty()) {
+                clear_mc_avatar_cache(uuid);
+                if let Ok(remote_png) = fetch_mc_skin_png(uuid).await {
+                    return Ok(remote_png);
+                }
+            }
+        }
+        return Ok(png_bytes);
     }
 
     let mut access_token = resolve_mc_access_token().await?;
@@ -1869,8 +2177,7 @@ async fn apply_mc_skin_from_library(skin_id: &str) -> Result<Vec<u8>, String> {
 }
 
 async fn upload_mc_skin_from_file(file_path: &str, variant: &str) -> Result<Vec<u8>, String> {
-    use crate::services::game::accounts::{get_profile, save_full_profile};
-    use crate::services::game::runtime::ensure_ms_minecraft_session;
+    use crate::services::game::accounts::get_profile;
 
     let path = PathBuf::from(file_path.trim());
     if !path.is_file() {
@@ -1887,37 +2194,28 @@ async fn upload_mc_skin_from_file(file_path: &str, variant: &str) -> Result<Vec<
         _ => "classic",
     };
 
-    let mut access_token = resolve_mc_access_token().await?;
-    let mut retried = false;
-    loop {
-        match post_mc_skin_upload(&access_token, &png_bytes, api_variant).await {
-            Ok(()) => break,
-            Err(e) if e == "MC_TOKEN_EXPIRED" && !retried => {
-                retried = true;
-                match ensure_ms_minecraft_session().await? {
-                    Some((_name, _uuid, new_token)) => {
-                        if let Ok(mut p) = get_profile() {
-                            p.mc_access_token = Some(new_token.clone());
-                            let _ = save_full_profile(&p);
-                        }
-                        access_token = new_token;
-                        continue;
-                    }
-                    None => {
-                        return Err(
-                            "Сессия Minecraft истекла. Войдите снова через Microsoft.".to_string(),
-                        );
-                    }
-                }
-            }
-            Err(e) => return Err(e),
-        }
+    // Always keep a local copy so previous skins stay in the library.
+    if let Some(mc_uuid) = current_mc_uuid() {
+        let alias = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_string());
+        let _ = save_skin_to_local_library(
+            &mc_uuid,
+            &png_bytes,
+            api_variant,
+            alias.as_deref(),
+        );
     }
+
+    upload_png_bytes_as_active_skin(&png_bytes, api_variant).await?;
 
     if let Ok(profile) = get_profile() {
         if let Some(uuid) = profile.mc_uuid.as_ref().filter(|s| !s.trim().is_empty()) {
             clear_mc_avatar_cache(uuid);
-            return fetch_mc_skin_png(uuid).await;
+            if let Ok(remote_png) = fetch_mc_skin_png(uuid).await {
+                return Ok(remote_png);
+            }
         }
     }
 
@@ -1929,6 +2227,19 @@ pub async fn get_mc_texture_data_url(url: String) -> Result<Option<String>, Stri
     let trimmed = url.trim();
     if trimmed.is_empty() {
         return Ok(None);
+    }
+
+    if let Some(local_id) = parse_local_skin_url(trimmed) {
+        let Some(mc_uuid) = current_mc_uuid() else {
+            return Ok(None);
+        };
+        return match read_local_skin_png(&mc_uuid, &local_id) {
+            Ok(png) => Ok(Some(png_data_url(&png))),
+            Err(error) => {
+                eprintln!("[texture] failed to read local skin '{local_id}': {error}");
+                Ok(None)
+            }
+        };
     }
 
     let png = match download_texture_png(trimmed, "texture").await {

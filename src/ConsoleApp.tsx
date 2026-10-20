@@ -14,6 +14,7 @@ const EMPTY_SYNC: GameConsoleSyncPayload = {
   isVisible: true,
   gameStatus: "idle",
   profileName: null,
+  profileId: null,
   language: "ru",
 };
 
@@ -69,6 +70,7 @@ export function ConsoleApp() {
         isConsoleVisible={sync.isVisible}
         gameStatus={sync.gameStatus as GameStatus}
         language={sync.language}
+        profileId={sync.profileId}
         isDetached
         onClearConsole={handleClearConsole}
         onToggleConsole={handleToggleConsole}

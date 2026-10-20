@@ -76,6 +76,7 @@ import {
   type JarModInfo,
   type ProfileConflict,
 } from "../lib/profileConflicts";
+import { LogAnalyzerPanel } from "../components/LogAnalyzerPanel";
 
 type LoaderId = "vanilla" | "fabric" | "forge" | "quilt" | "neoforge";
 type LoaderVersionChannel = "stable" | "beta" | "alpha";
@@ -6448,8 +6449,16 @@ export function ModpackTab({
 
           {manageConsoleExpanded && (
             <div className="mt-1 flex min-h-0 flex-1 flex-col">
+              <LogAnalyzerPanel
+                lines={displayedConsoleLines.map((e) => e.line)}
+                language={language}
+                profileId={selectedProfile?.id ?? selectedProfileId}
+                gameStatus={gameStatus}
+                compact
+                className="mb-1.5"
+              />
               {displayedConsoleLines.length > 0 ? (
-                <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto rounded-xl bg-black/80 px-3 py-2 text-[11px] font-mono text-white/80 sm:min-h-[12rem]">
+                <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto rounded-xl bg-black/80 px-3 py-2 text-[11px] font-mono text-white/80 sm:min-h-[10rem]">
                   {displayedConsoleLines.map((entry, idx) => (
                     <div
                       key={`${selectedLogSessionId}-${idx}`}

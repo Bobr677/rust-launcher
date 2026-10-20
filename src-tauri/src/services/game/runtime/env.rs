@@ -1,3 +1,38 @@
+#[cfg(target_os = "windows")]
+pub(crate) fn apply_windows_graphics_preference(
+    cmd: &mut std::process::Command,
+    java_path: &std::path::Path,
+    adapter: Option<&str>,
+) {
+    let Some(adapter) = adapter.map(str::trim).filter(|value| !value.is_empty()) else {
+        return;
+    };
+    let lower = adapter.to_lowercase();
+    let integrated = lower.contains("integrated")
+        || lower.contains("uhd")
+        || lower.contains("iris")
+        || lower.contains("vega")
+        || lower.contains("radeon graphics");
+    let preference = if integrated { "1" } else { "2" };
+    let path = java_path.to_string_lossy().replace('\\', "\\\\");
+    let key = "HKCU:\\Software\\Microsoft\\DirectX\\UserGpuPreferences";
+    let escaped_path = path.replace('\'', "''");
+    let command = format!("New-Item -Path '{key}' -Force | Out-Null; Set-ItemProperty -Path '{key}' -Name '{escaped_path}' -Value 'GpuPreference={preference};' -Type String");
+    let _ = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &command])
+        .status();
+    cmd.env("MC16_SELECTED_GRAPHICS_ADAPTER", adapter);
+}
+
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn apply_windows_graphics_preference(
+    _cmd: &mut std::process::Command,
+    _java_path: &std::path::Path,
+    _adapter: Option<&str>,
+) {
+}
+
+
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::env;

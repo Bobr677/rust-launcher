@@ -23,6 +23,7 @@ export type GameConsoleSyncPayload = {
   isVisible: boolean;
   gameStatus: GameStatus;
   profileName: string | null;
+  profileId: string | null;
   language: "ru" | "en" | "de" | "es";
 };
 

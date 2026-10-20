@@ -30,6 +30,7 @@ import {
   fetchMcSkins,
   fetchMcTextureDataUrl,
   findActiveMcSkin,
+  renderAssembledSkinThumbnail,
   selectMcSkin,
   uploadMcSkin,
   type McSkin,
@@ -65,6 +66,8 @@ function applyIdleAnimation(viewer: SkinViewer, look: { x: number; y: number }) 
 export type AccountSkinPreviewProps = {
   profile: ProfileAvatarInput;
   username: string;
+  /** Compact popovers (default) or full library layout with side panel. */
+  variant?: "default" | "library";
   showCapePicker?: boolean;
   onSettingsClick?: () => void;
   settingsTitle?: string;
@@ -91,12 +94,17 @@ export type AccountSkinPreviewProps = {
   skinLibraryEmpty?: string;
   skinLibraryLoading?: string;
   skinLibraryError?: string;
+  skinLibraryApply?: string;
+  skinLibraryActive?: string;
+  skinLibraryPreviewHint?: string;
+  skinLibraryMicrosoftOnly?: string;
   className?: string;
 };
 
 export function AccountSkinPreview({
   profile,
   username,
+  variant = "default",
   showCapePicker = false,
   onSettingsClick,
   settingsTitle,
@@ -123,8 +131,17 @@ export function AccountSkinPreview({
   skinLibraryEmpty = "You have no saved skins on this account.",
   skinLibraryLoading = "Loading skins…",
   skinLibraryError = "Failed to load skins.",
+  skinLibraryApply = "Apply",
+  skinLibraryActive = "Active",
+  skinLibraryPreviewHint = "Select a skin to preview it on the right.",
+  skinLibraryMicrosoftOnly = "Skin library is available for Microsoft accounts.",
   className,
 }: AccountSkinPreviewProps) {
+  const isLibrary = variant === "library";
+  const [libraryTool, setLibraryTool] = useState<"library" | "upload" | "username">(
+    "library",
+  );
+  const [previewSkinId, setPreviewSkinId] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<SkinViewer | null>(null);
@@ -188,7 +205,18 @@ export function AccountSkinPreview({
       setSkins(list);
     } catch (error) {
       console.debug("[skin] failed to load skin library", error);
-      setSkinsError(skinLibraryError);
+      const detail =
+        typeof error === "string"
+          ? error
+          : error instanceof Error
+            ? error.message
+            : error &&
+                typeof error === "object" &&
+                "message" in error &&
+                typeof (error as { message: unknown }).message === "string"
+              ? (error as { message: string }).message
+              : null;
+      setSkinsError(detail?.trim() || skinLibraryError);
       setSkins([]);
     } finally {
       setSkinsLoading(false);
@@ -482,6 +510,7 @@ export function AccountSkinPreview({
       setSkinOverrideLabel(null);
       setSkinUploadOpen(false);
       setSkinUploadPath(null);
+      setLibraryTool("library");
       await loadSkins();
     } catch (error) {
       console.debug("[skin] failed to upload skin", error);
@@ -489,6 +518,18 @@ export function AccountSkinPreview({
       setUploadErrorMessage(message.trim() || skinUploadError);
     } finally {
       setSkinUploadBusy(false);
+    }
+  };
+
+  const handlePreviewLibrarySkin = async (skin: McSkin) => {
+    setPreviewSkinId(skin.id);
+    setSkinsError(null);
+    try {
+      const dataUrl = (await fetchMcTextureDataUrl(skin.url)) ?? skin.url;
+      setSkinOverrideUrl(dataUrl);
+      setSkinOverrideLabel(skin.alias);
+    } catch (error) {
+      console.debug("[skin] failed to preview library skin", error);
     }
   };
 
@@ -500,6 +541,7 @@ export function AccountSkinPreview({
       const dataUrl = await selectMcSkin(skinId);
       setSkinOverrideUrl(dataUrl);
       setSkinOverrideLabel(null);
+      setPreviewSkinId(skinId);
       await loadSkins();
     } catch (error) {
       console.debug("[skin] failed to select library skin", error);
@@ -526,6 +568,8 @@ export function AccountSkinPreview({
       const dataUrl = await applyMcSkinByUsername(nextUsername);
       setSkinOverrideUrl(dataUrl);
       setSkinOverrideLabel(nextUsername);
+      setLibraryTool("library");
+      await loadSkins();
     } catch (error) {
       console.debug("[skin] failed to apply skin by username", error);
       const message = error instanceof Error ? error.message : "";
@@ -540,16 +584,119 @@ export function AccountSkinPreview({
   };
 
   const selectedCapeId = activeCape?.id ?? null;
+  const highlightedSkinId = previewSkinId ?? activeSkin?.id ?? null;
 
-  return (
+  const viewerAtmosphere = (
+    <div className="pointer-events-none absolute inset-0" aria-hidden>
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_38%,rgba(52,211,153,0.22),transparent_58%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_18%_12%,rgba(125,211,252,0.18),transparent_42%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_86%_18%,rgba(251,191,36,0.12),transparent_40%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_70%,rgba(255,255,255,0.06),transparent_45%)]" />
+      <div className="absolute inset-x-0 bottom-0 h-[48%] bg-gradient-to-t from-black/40 via-black/10 to-transparent" />
+      <div className="absolute left-1/2 bottom-[10%] h-10 w-[min(70%,18rem)] -translate-x-1/2 rounded-[100%] bg-emerald-400/30 blur-2xl" />
+      <div className="absolute left-1/2 bottom-[12%] h-2 w-[min(42%,10rem)] -translate-x-1/2 rounded-[100%] bg-white/25 blur-md" />
+      <div className="absolute inset-0 shadow-[inset_0_0_70px_rgba(0,0,0,0.35)]" />
+    </div>
+  );
+
+  const capeControls = showCapePicker ? (
+    <div className="absolute right-3 top-3 z-10 flex flex-col items-end gap-2">
+      <button
+        type="button"
+        onClick={() => {
+          closeSkinPanels();
+          setCapePickerOpen((open) => !open);
+        }}
+        className="interactive-press glass-control flex h-9 items-center gap-2 px-3 text-xs font-semibold text-white/90 transition hover:border-white/20"
+        title={capePickerTitle}
+        aria-expanded={capePickerOpen}
+      >
+        <CapeIcon />
+        <span>{capePickerTitle}</span>
+        {activeCape ? (
+          <span className="ml-0.5 h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.7)]" />
+        ) : null}
+      </button>
+
+      {capePickerOpen ? (
+        <div className="glass-popover w-[min(100vw-2rem,15.5rem)] overflow-hidden">
+          <div className="border-b border-white/[0.06] px-3 py-2.5">
+            <p className="text-[11px] font-semibold text-white/85">{capePickerTitle}</p>
+            <p className="mt-0.5 truncate text-[10px] text-white/40">
+              {activeCape ? activeCape.alias : capeNoneLabel}
+            </p>
+          </div>
+
+          <div className="max-h-[min(50vh,16rem)] overflow-y-auto py-1">
+            {capesLoading ? (
+              <div className="flex items-center justify-center gap-2 py-8 text-xs text-white/50">
+                <SpinnerIcon />
+                {capeLoadingLabel}
+              </div>
+            ) : capesError ? (
+              <div className="px-3 py-6 text-center">
+                <p className="text-xs text-amber-200/80">{capesError}</p>
+                <button
+                  type="button"
+                  onClick={() => void loadCapes()}
+                  className="interactive-press mt-2 inline-flex items-center justify-center rounded-lg border border-white/10 px-3 py-1.5 text-white/70 hover:bg-white/[0.06]"
+                >
+                  <RefreshIcon />
+                </button>
+              </div>
+            ) : (
+              <ul className="flex flex-col">
+                <CapeListItem
+                  label={capeNoneLabel}
+                  selected={selectedCapeId === null}
+                  disabled={capeApplying}
+                  onClick={() => void handleSelectCape(null)}
+                >
+                  <div className="flex h-full w-full items-center justify-center">
+                    <NoCapeIcon />
+                  </div>
+                </CapeListItem>
+
+                {capes.map((cape) => (
+                  <CapeListItem
+                    key={cape.id}
+                    label={cape.alias}
+                    selected={selectedCapeId === cape.id}
+                    disabled={capeApplying}
+                    onClick={() => void handleSelectCape(cape.id)}
+                  >
+                    <CapeThumbnail url={cape.url} />
+                  </CapeListItem>
+                ))}
+              </ul>
+            )}
+
+            {!capesLoading && !capesError && capes.length === 0 ? (
+              <p className="px-3 py-2 text-center text-[11px] leading-snug text-white/40">
+                {capeEmptyHint}
+              </p>
+            ) : null}
+          </div>
+
+          {capeApplying ? (
+            <div className="border-t border-white/[0.06] px-3 py-1.5 text-center text-[10px] text-white/40">
+              …
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  ) : null;
+
+  const viewerPanel = (
     <div
-      ref={rootRef}
       className={
-        className ??
-        "relative flex h-full min-h-[min(360px,40vh)] w-full flex-col overflow-hidden glass-panel"
+        isLibrary
+          ? "relative flex min-h-[min(360px,42vh)] min-w-0 flex-1 flex-col overflow-hidden glass-panel"
+          : "relative flex min-h-0 flex-1 flex-col"
       }
     >
-      {onSettingsClick ? (
+      {!isLibrary && onSettingsClick ? (
         <button
           type="button"
           onClick={onSettingsClick}
@@ -559,107 +706,267 @@ export function AccountSkinPreview({
           <img src="/launcher-assets/settings.png" alt="" className="h-4 w-4 object-contain" />
         </button>
       ) : null}
+      {capeControls}
+      {viewerAtmosphere}
+      <div ref={containerRef} className="relative min-h-0 flex-1" />
+    </div>
+  );
 
-      {showCapePicker ? (
-        <div className="absolute right-3 top-3 z-10 flex flex-col items-end gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              closeSkinPanels();
-              setCapePickerOpen((open) => !open);
-            }}
-            className="interactive-press glass-control flex h-9 items-center gap-2 px-3 text-xs font-semibold text-white/90 transition hover:border-white/20"
-            title={capePickerTitle}
-            aria-expanded={capePickerOpen}
-          >
-            <CapeIcon />
-            <span>{capePickerTitle}</span>
-            {activeCape ? (
-              <span className="ml-0.5 h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.7)]" />
+  if (isLibrary) {
+    return (
+      <div
+        ref={rootRef}
+        className={
+          className ??
+          "flex h-full min-h-0 w-full flex-col gap-3 lg:flex-row"
+        }
+      >
+        <aside className="glass-panel flex min-h-[280px] w-full min-w-0 flex-col overflow-hidden lg:max-w-[min(100%,28rem)] lg:flex-[1.15]">
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-white/10 px-4 py-3">
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-white/95">{skinLibraryTitle}</h2>
+              <p className="mt-0.5 truncate text-[11px] text-white/40">
+                {showCapePicker
+                  ? skinLibraryPreviewHint
+                  : skinLibraryMicrosoftOnly}
+              </p>
+            </div>
+            {showCapePicker ? (
+              <button
+                type="button"
+                onClick={() => void loadSkins()}
+                className="interactive-press inline-flex items-center justify-center rounded-lg border border-white/10 px-2.5 py-1.5 text-white/70 hover:bg-white/[0.06]"
+                title={skinLibraryLoading}
+              >
+                <RefreshIcon />
+              </button>
             ) : null}
-          </button>
+          </div>
 
-          {capePickerOpen ? (
-            <div className="glass-popover w-[min(100vw-2rem,15.5rem)] overflow-hidden">
-              <div className="border-b border-white/[0.06] px-3 py-2.5">
-                <p className="text-[11px] font-semibold text-white/85">{capePickerTitle}</p>
-                <p className="mt-0.5 truncate text-[10px] text-white/40">
-                  {activeCape ? activeCape.alias : capeNoneLabel}
-                </p>
+          {showCapePicker ? (
+            <>
+              <div className="flex shrink-0 gap-1 border-b border-white/10 px-3 pt-2">
+                {(
+                  [
+                    ["library", skinLibraryTitle],
+                    ["upload", skinUploadTitle],
+                    ["username", skinByUsernameTitle],
+                  ] as const
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setLibraryTool(id)}
+                    className={`interactive-press rounded-t-lg px-3 py-2 text-[11px] font-semibold transition ${
+                      libraryTool === id
+                        ? "bg-white/10 text-white"
+                        : "text-white/50 hover:text-white/80"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
 
-              <div className="max-h-[min(50vh,16rem)] overflow-y-auto py-1">
-                {capesLoading ? (
-                  <div className="flex items-center justify-center gap-2 py-8 text-xs text-white/50">
-                    <SpinnerIcon />
-                    {capeLoadingLabel}
-                  </div>
-                ) : capesError ? (
-                  <div className="px-3 py-6 text-center">
-                    <p className="text-xs text-amber-200/80">{capesError}</p>
+              <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto p-3">
+                {libraryTool === "library" ? (
+                  skinsLoading ? (
+                    <div className="flex items-center justify-center gap-2 py-16 text-xs text-white/50">
+                      <SpinnerIcon />
+                      {skinLibraryLoading}
+                    </div>
+                  ) : skinsError ? (
+                    <div className="px-3 py-10 text-center">
+                      <p className="text-xs text-amber-200/80">{skinsError}</p>
+                      <button
+                        type="button"
+                        onClick={() => void loadSkins()}
+                        className="interactive-press mt-3 inline-flex items-center justify-center rounded-lg border border-white/10 px-3 py-1.5 text-white/70 hover:bg-white/[0.06]"
+                      >
+                        <RefreshIcon />
+                      </button>
+                    </div>
+                  ) : skins.length === 0 ? (
+                    <p className="px-3 py-10 text-center text-xs text-white/45">
+                      {skinLibraryEmpty}
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      {skins.map((skin) => {
+                        const isActive = skin.state === "ACTIVE";
+                        const isPreview = highlightedSkinId === skin.id;
+                        return (
+                          <button
+                            key={skin.id}
+                            type="button"
+                            disabled={skinApplying}
+                            onClick={() => void handlePreviewLibrarySkin(skin)}
+                            className={`interactive-press flex flex-col overflow-hidden rounded-xl border text-left transition disabled:opacity-60 ${
+                              isPreview
+                                ? "border-emerald-400/50 bg-emerald-500/10"
+                                : "border-white/10 bg-black/30 hover:border-white/25 hover:bg-black/45"
+                            }`}
+                          >
+                            <div className="relative aspect-square bg-[#0c0c11]">
+                              <SkinLibraryThumb
+                                url={skin.url}
+                                variant={skin.variant}
+                                large
+                              />
+                              {isActive ? (
+                                <span className="absolute left-1.5 top-1.5 rounded-md bg-emerald-500/90 px-1.5 py-0.5 text-[9px] font-semibold text-white">
+                                  {skinLibraryActive}
+                                </span>
+                              ) : null}
+                            </div>
+                            <div className="flex items-center justify-between gap-1 px-2 py-1.5">
+                              <span className="truncate text-[11px] font-medium text-white/85">
+                                {skin.alias}
+                              </span>
+                              <span className="shrink-0 text-[9px] text-white/35">
+                                {skin.variant === "SLIM" ? skinModelSlim : skinModelStandard}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )
+                ) : null}
+
+                {libraryTool === "upload" ? (
+                  <div className="flex flex-col gap-3 rounded-xl border border-white/10 bg-black/25 p-3">
+                    <div className="flex items-center gap-2">
+                      <VariantToggle
+                        label={skinModelStandard}
+                        selected={skinUploadVariant === "classic"}
+                        onClick={() => setSkinUploadVariant("classic")}
+                      />
+                      <VariantToggle
+                        label={skinModelSlim}
+                        selected={skinUploadVariant === "slim"}
+                        onClick={() => setSkinUploadVariant("slim")}
+                      />
+                    </div>
                     <button
                       type="button"
-                      onClick={() => void loadCapes()}
-                      className="interactive-press mt-2 rounded-lg border border-white/10 px-3 py-1.5 text-[11px] font-semibold text-white/70 hover:bg-white/[0.06]"
+                      onClick={() => void handlePickSkinFile()}
+                      disabled={skinUploadBusy}
+                      className="interactive-press truncate rounded-lg border border-white/10 bg-black/35 px-3 py-2.5 text-left text-xs text-white/75 transition hover:bg-black/50 disabled:opacity-60"
                     >
-                      ↻
+                      {skinUploadPath ? skinUploadPath.split(/[/\\]/).pop() : skinUploadPick}
                     </button>
-                  </div>
-                ) : (
-                  <ul className="flex flex-col">
-                    <CapeListItem
-                      label={capeNoneLabel}
-                      selected={selectedCapeId === null}
-                      disabled={capeApplying}
-                      onClick={() => void handleSelectCape(null)}
+                    <button
+                      type="button"
+                      disabled={skinUploadBusy || !skinUploadPath}
+                      onClick={() => void handleUploadSkin()}
+                      className="interactive-press rounded-lg border border-emerald-400/25 bg-emerald-500/15 px-3 py-2 text-xs font-semibold text-emerald-100/95 transition hover:bg-emerald-500/25 disabled:opacity-50"
                     >
-                      <div className="flex h-full w-full items-center justify-center">
-                        <NoCapeIcon />
+                      {skinUploadBusy ? skinUploadLoading : skinUploadApply}
+                    </button>
+                    {uploadErrorMessage ? (
+                      <p className="text-[11px] text-amber-200/80">{uploadErrorMessage}</p>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {libraryTool === "username" ? (
+                  <div className="flex flex-col gap-3 rounded-xl border border-white/10 bg-black/25 p-3">
+                    <form
+                      className="flex items-center gap-2"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void handleApplySkinByUsername();
+                      }}
+                    >
+                      <div className="relative min-w-0 flex-1">
+                        <input
+                          type="text"
+                          value={skinUsernameDraft}
+                          onChange={(event) => {
+                            setSkinUsernameDraft(event.target.value);
+                            if (skinLookupError) setSkinLookupError(null);
+                          }}
+                          placeholder={skinByUsernamePlaceholder}
+                          disabled={skinLookupLoading}
+                          spellCheck={false}
+                          autoComplete="off"
+                          className={`min-w-0 w-full rounded-lg border border-white/10 bg-black/35 px-2.5 py-2 text-xs text-white/90 outline-none transition placeholder:text-white/30 focus:border-emerald-400/35 disabled:opacity-60 ${
+                            skinUsernameDraft ? "pr-8" : ""
+                          }`}
+                        />
+                        <InputClearButton
+                          value={skinUsernameDraft}
+                          onClear={() => {
+                            setSkinUsernameDraft("");
+                            if (skinLookupError) setSkinLookupError(null);
+                          }}
+                          disabled={skinLookupLoading}
+                          className="absolute right-1 top-1/2 -translate-y-1/2"
+                        />
                       </div>
-                    </CapeListItem>
-
-                    {capes.map((cape) => (
-                      <CapeListItem
-                        key={cape.id}
-                        label={cape.alias}
-                        selected={selectedCapeId === cape.id}
-                        disabled={capeApplying}
-                        onClick={() => void handleSelectCape(cape.id)}
+                      <button
+                        type="submit"
+                        disabled={skinLookupLoading || !skinUsernameDraft.trim()}
+                        className="interactive-press shrink-0 rounded-lg border border-emerald-400/25 bg-emerald-500/15 px-3 py-2 text-[11px] font-semibold text-emerald-100/95 transition hover:bg-emerald-500/25 disabled:opacity-50"
                       >
-                        <CapeThumbnail url={cape.url} />
-                      </CapeListItem>
-                    ))}
-                  </ul>
-                )}
-
-                {!capesLoading && !capesError && capes.length === 0 ? (
-                  <p className="px-3 py-2 text-center text-[11px] leading-snug text-white/40">
-                    {capeEmptyHint}
-                  </p>
+                        {skinLookupLoading ? "…" : skinByUsernameApply}
+                      </button>
+                    </form>
+                    {skinLookupError ? (
+                      <p className="text-[11px] text-amber-200/80">{skinLookupError}</p>
+                    ) : skinOverrideLabel ? (
+                      <p className="truncate text-[11px] text-emerald-200/70">{skinOverrideLabel}</p>
+                    ) : null}
+                    {skinOverrideLabel ? (
+                      <button
+                        type="button"
+                        onClick={handleResetSkinOverride}
+                        className="interactive-press self-start text-[11px] font-semibold text-emerald-300/80 hover:text-emerald-200"
+                      >
+                        {skinByUsernameReset}
+                      </button>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
 
-              {capeApplying ? (
-                <div className="border-t border-white/[0.06] px-3 py-1.5 text-center text-[10px] text-white/40">
-                  …
+              {libraryTool === "library" &&
+              highlightedSkinId &&
+              activeSkin?.id !== highlightedSkinId ? (
+                <div className="shrink-0 border-t border-white/10 px-3 py-2.5">
+                  <button
+                    type="button"
+                    disabled={skinApplying}
+                    onClick={() => void handleSelectLibrarySkin(highlightedSkinId)}
+                    className="interactive-press w-full rounded-xl border border-emerald-400/30 bg-emerald-500/20 px-3 py-2.5 text-xs font-semibold text-emerald-50 transition hover:bg-emerald-500/30 disabled:opacity-50"
+                  >
+                    {skinApplying ? "…" : skinLibraryApply}
+                  </button>
                 </div>
               ) : null}
+            </>
+          ) : (
+            <div className="flex flex-1 items-center justify-center px-6 py-10 text-center text-sm text-white/45">
+              {skinLibraryMicrosoftOnly}
             </div>
-          ) : null}
-        </div>
-      ) : null}
+          )}
+        </aside>
 
-      <div className="pointer-events-none absolute inset-0" aria-hidden>
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_38%,rgba(52,211,153,0.22),transparent_58%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_18%_12%,rgba(125,211,252,0.18),transparent_42%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_86%_18%,rgba(251,191,36,0.12),transparent_40%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_70%,rgba(255,255,255,0.06),transparent_45%)]" />
-        <div className="absolute inset-x-0 bottom-0 h-[48%] bg-gradient-to-t from-black/40 via-black/10 to-transparent" />
-        <div className="absolute left-1/2 bottom-[10%] h-10 w-[min(70%,18rem)] -translate-x-1/2 rounded-[100%] bg-emerald-400/30 blur-2xl" />
-        <div className="absolute left-1/2 bottom-[12%] h-2 w-[min(42%,10rem)] -translate-x-1/2 rounded-[100%] bg-white/25 blur-md" />
-        <div className="absolute inset-0 shadow-[inset_0_0_70px_rgba(0,0,0,0.35)]" />
+        {viewerPanel}
       </div>
-      <div ref={containerRef} className="relative min-h-0 flex-1" />
+    );
+  }
+
+  return (
+    <div
+      ref={rootRef}
+      className={
+        className ??
+        "relative flex h-full min-h-[min(360px,40vh)] w-full flex-col overflow-hidden glass-panel"
+      }
+    >
+      {viewerPanel}
 
       {showCapePicker ? (
         <div ref={skinPanelRef} className="absolute bottom-3 left-3 z-10 flex flex-col items-start gap-2">
@@ -780,9 +1087,9 @@ export function AccountSkinPreview({
                     <button
                       type="button"
                       onClick={() => void loadSkins()}
-                      className="interactive-press mt-2 rounded-lg border border-white/10 px-3 py-1.5 text-[11px] font-semibold text-white/70 hover:bg-white/[0.06]"
+                      className="interactive-press mt-2 inline-flex items-center justify-center rounded-lg border border-white/10 px-3 py-1.5 text-white/70 hover:bg-white/[0.06]"
                     >
-                      ↻
+                      <RefreshIcon />
                     </button>
                   </div>
                 ) : (
@@ -793,6 +1100,7 @@ export function AccountSkinPreview({
                         label={skin.alias}
                         variantLabel={skin.variant === "SLIM" ? skinModelSlim : skinModelStandard}
                         url={skin.url}
+                        variant={skin.variant}
                         selected={skin.state === "ACTIVE"}
                         disabled={skinApplying}
                         onClick={() => void handleSelectLibrarySkin(skin.id)}
@@ -945,27 +1253,24 @@ function SkinActionButton({
   );
 }
 
-function SkinLibraryItem({
-  label,
-  variantLabel,
+function SkinLibraryThumb({
   url,
-  selected,
-  disabled,
-  onClick,
+  variant,
+  large = false,
 }: {
-  label: string;
-  variantLabel: string;
   url: string;
-  selected: boolean;
-  disabled: boolean;
-  onClick: () => void;
+  variant?: string;
+  large?: boolean;
 }) {
   const [src, setSrc] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setSrc(null);
-    void fetchMcTextureDataUrl(url)
+    void renderAssembledSkinThumbnail(url, {
+      variant,
+      size: large ? 128 : 64,
+    })
       .then((dataUrl) => {
         if (!cancelled) setSrc(dataUrl);
       })
@@ -975,8 +1280,39 @@ function SkinLibraryItem({
     return () => {
       cancelled = true;
     };
-  }, [url]);
+  }, [url, variant, large]);
 
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt=""
+        className="h-full w-full object-contain p-1"
+        style={{ imageRendering: "pixelated" }}
+      />
+    );
+  }
+
+  return <div className="h-full w-full animate-pulse bg-white/10" aria-hidden />;
+}
+
+function SkinLibraryItem({
+  label,
+  variantLabel,
+  url,
+  variant,
+  selected,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  variantLabel: string;
+  url: string;
+  variant?: string;
+  selected: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}) {
   return (
     <li>
       <button
@@ -993,16 +1329,7 @@ function SkinLibraryItem({
             selected ? "border-emerald-400/35" : "border-white/[0.07]"
           }`}
         >
-          {src ? (
-            <img
-              src={src}
-              alt=""
-              className="h-full w-full object-cover"
-              style={{ imageRendering: "pixelated" }}
-            />
-          ) : (
-            <div className="h-full w-full animate-pulse bg-white/10" aria-hidden />
-          )}
+          <SkinLibraryThumb url={url} variant={variant} />
         </div>
         <span className={`min-w-0 flex-1 truncate text-[11px] font-medium ${selected ? "text-emerald-100/95" : "text-white/75"}`}>
           {label}
@@ -1174,4 +1501,8 @@ function SpinnerIcon() {
       />
     </svg>
   );
+}
+
+function RefreshIcon({ className = "h-4 w-4 object-contain opacity-80" }: { className?: string }) {
+  return <img src="/launcher-assets/refresh.png" alt="" className={className} aria-hidden="true" />;
 }

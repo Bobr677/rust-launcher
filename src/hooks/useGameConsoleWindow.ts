@@ -16,6 +16,7 @@ import type { Language } from "../i18n";
 type UseGameConsoleWindowOptions = {
   enabled: boolean;
   profileName: string | null;
+  profileId?: string | null;
   language: Language;
   consoleLines: GameConsoleLine[];
   isConsoleVisible: boolean;
@@ -27,6 +28,7 @@ type UseGameConsoleWindowOptions = {
 export function useGameConsoleWindow({
   enabled,
   profileName,
+  profileId = null,
   language,
   consoleLines,
   isConsoleVisible,
@@ -44,6 +46,7 @@ export function useGameConsoleWindow({
       isVisible: isConsoleVisible,
       gameStatus,
       profileName,
+      profileId,
       language,
     }),
     [
@@ -51,6 +54,7 @@ export function useGameConsoleWindow({
       gameStatus,
       isConsoleVisible,
       language,
+      profileId,
       profileName,
     ],
   );

@@ -813,6 +813,7 @@ export function PlayTab({
             isConsoleVisible={isConsoleVisible || isInstalling || installPaused}
             gameStatus={gameStatus}
             language={language}
+            profileId={selectedProfileId}
             isDetached={false}
             onClearConsole={onClearConsole}
             onToggleConsole={onToggleConsole}

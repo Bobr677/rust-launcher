@@ -19,6 +19,7 @@ type SettingsTabId = "game" | "versions" | "launcher";
 
 type SettingSearchId =
   | "game.showConsole"
+  | "game.graphicsAdapter"
   | "game.closeLauncher"
   | "game.checkProcesses"
   | "game.gameDirectory"
@@ -65,6 +66,12 @@ const SETTING_SEARCH_CATALOG: SettingSearchDef[] = [
     tab: "game",
     gameSubTab: "general",
     keys: ["settings.game.showConsoleOnLaunch.label"],
+  },
+  {
+    id: "game.graphicsAdapter",
+    tab: "game",
+    gameSubTab: "general",
+    keys: ["settings.game.graphicsAdapter.label", "settings.game.graphicsAdapter.hint"],
   },
   {
     id: "game.closeLauncher",
@@ -281,6 +288,7 @@ type SidebarItemId = "play" | "settings" | "mods" | "modpacks";
 type Settings = {
   game_directory: string | null;
   ram_mb: number;
+  graphics_adapter: string | null;
   show_console_on_launch: boolean;
   close_launcher_on_game_start: boolean;
   check_game_processes: boolean;
@@ -659,6 +667,8 @@ export function SettingsTab({
   const [isCacheLoading, setIsCacheLoading] = useState(false);
   const [isResettingSettings, setIsResettingSettings] = useState(false);
   const [isSidebarPositionDropdownOpen, setIsSidebarPositionDropdownOpen] = useState(false);
+  const [isGraphicsAdapterDropdownOpen, setIsGraphicsAdapterDropdownOpen] = useState(false);
+  const graphicsAdapterDropdownRef = useRef<HTMLDivElement | null>(null);
   const versionsLoaderDropdownRef = useRef<HTMLDivElement | null>(null);
   const versionsFilterDropdownRef = useRef<HTMLDivElement | null>(null);
   const sidebarPositionDropdownRef = useRef<HTMLDivElement | null>(null);
@@ -1062,6 +1072,12 @@ export function SettingsTab({
         !versionsFilterDropdownRef.current.contains(target)
       ) {
         setIsVersionFilterDropdownOpen(false);
+      }
+      if (
+        graphicsAdapterDropdownRef.current &&
+        !graphicsAdapterDropdownRef.current.contains(target)
+      ) {
+        setIsGraphicsAdapterDropdownOpen(false);
       }
       if (
         sidebarPositionDropdownRef.current &&
@@ -1504,8 +1520,15 @@ export function SettingsTab({
     setIsRamEditing(false);
   };
 
+  const [graphicsAdapters, setGraphicsAdapters] = useState<string[]>([]);
   const [resolutionWidthInput, setResolutionWidthInput] = useState<string>("");
   const [resolutionHeightInput, setResolutionHeightInput] = useState<string>("");
+
+  useEffect(() => {
+    void invoke<string[]>("get_graphics_adapters")
+      .then((adapters) => setGraphicsAdapters(Array.isArray(adapters) ? adapters : []))
+      .catch(() => setGraphicsAdapters([]));
+  }, []);
 
   useEffect(() => {
     setResolutionWidthInput(
@@ -2135,6 +2158,71 @@ export function SettingsTab({
                       : ""
                   }`}
                 >
+                    {showSetting("game.graphicsAdapter") && (
+                    <div className="flex flex-col gap-2">
+                      <label className="text-sm text-white/90" htmlFor="graphics-adapter-select">
+                        {tt("settings.game.graphicsAdapter.label")}
+                      </label>
+                    <div ref={graphicsAdapterDropdownRef} className="relative">
+                      <button
+                        id="graphics-adapter-select"
+                        type="button"
+                        aria-haspopup="listbox"
+                        aria-expanded={isGraphicsAdapterDropdownOpen}
+                        onClick={() => setIsGraphicsAdapterDropdownOpen((prev) => !prev)}
+                        className="interactive-press launcher-select glass-control flex w-full items-center justify-between px-3 py-2 text-left text-sm outline-none"
+                      >
+                        <span className="min-w-0 truncate">
+                          {settings?.graphics_adapter || tt("settings.game.graphicsAdapter.auto")}
+                        </span>
+                        <span className="ml-2 shrink-0 text-[10px] text-white/55">▾</span>
+                      </button>
+                      <AnimatePresence>
+                        {isGraphicsAdapterDropdownOpen && (
+                          <motion.div
+                            initial={{ opacity: 0, y: 6, scale: 0.98 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: 4, scale: 0.98 }}
+                            transition={{ duration: 0.14, ease: "easeOut" }}
+                            className="absolute left-0 right-0 z-30 mt-1 max-h-64 overflow-y-auto glass-popover p-1 text-sm"
+                            role="listbox"
+                            aria-labelledby="graphics-adapter-select"
+                          >
+                            {[
+                              { value: "", label: tt("settings.game.graphicsAdapter.auto") },
+                              ...graphicsAdapters.map((adapter) => ({ value: adapter, label: adapter })),
+                              ...(settings?.graphics_adapter && !graphicsAdapters.includes(settings.graphics_adapter)
+                                ? [{ value: settings.graphics_adapter, label: settings.graphics_adapter }]
+                                : []),
+                            ].map((adapter) => {
+                              const selected = (settings?.graphics_adapter ?? "") === adapter.value;
+                              return (
+                                <button
+                                  key={adapter.value || "auto"}
+                                  type="button"
+                                  role="option"
+                                  aria-selected={selected}
+                                  onClick={() => {
+                                    updateSettings({ graphics_adapter: adapter.value || null });
+                                    setIsGraphicsAdapterDropdownOpen(false);
+                                  }}
+                                  className={`flex w-full items-center rounded-lg px-3 py-2 text-left transition-colors ${
+                                    selected ? "bg-white/90 text-black" : "text-white/80 hover:bg-white/10"
+                                  }`}
+                                >
+                                  <span className="min-w-0 truncate">{adapter.label}</span>
+                                </button>
+                              );
+                            })}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                      <span className="text-[11px] text-white/45">
+                        {tt("settings.game.graphicsAdapter.hint")}
+                      </span>
+                    </div>
+                    )}
                     {showSetting("game.showConsole") && (
                     <SettingsToggle
                       label={tt("settings.game.showConsoleOnLaunch.label")}

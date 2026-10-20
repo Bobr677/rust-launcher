@@ -153,6 +153,7 @@ export function AccountsTab({
   const tt = useT(language);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("platform");
+  const [accountsSubTab, setAccountsSubTab] = useState<"overview" | "skins">("overview");
   const [pendingRemoveAccountId, setPendingRemoveAccountId] = useState<string | null>(null);
   const [headerNicknameEditing, setHeaderNicknameEditing] = useState(false);
   const nicknameInputFocusedRef = useRef(false);
@@ -418,7 +419,35 @@ export function AccountsTab({
           </div>
         )}
 
-        <div className="grid gap-3 md:min-h-0 md:flex-1 md:grid-cols-[minmax(180px,240px)_minmax(0,1.15fr)_minmax(180px,1fr)] md:items-stretch md:overflow-hidden md:gap-4">
+        <div className="glass-toolbar flex h-10 w-fit shrink-0 items-center gap-1 p-1">
+          {(
+            [
+              ["overview", tt("app.accounts.subTab.overview")],
+              ["skins", tt("app.accounts.subTab.skins")],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setAccountsSubTab(id)}
+              className={`interactive-press rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors ${
+                accountsSubTab === id
+                  ? "bg-white/90 text-black"
+                  : "text-white/70 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div
+          className={`grid gap-3 md:min-h-0 md:flex-1 md:items-stretch md:overflow-hidden md:gap-4 ${
+            accountsSubTab === "skins"
+              ? "md:grid-cols-[minmax(160px,200px)_minmax(0,1fr)]"
+              : "md:grid-cols-[minmax(180px,240px)_minmax(0,1.15fr)_minmax(180px,1fr)]"
+          }`}
+        >
           <aside className="glass-panel flex min-h-[200px] flex-col overflow-hidden md:min-h-0">
             <div className="flex shrink-0 items-center justify-between gap-2 border-b border-white/10 px-3.5 py-3">
               <div className="min-w-0">
@@ -526,11 +555,14 @@ export function AccountsTab({
 
           <div className="flex min-h-[min(320px,42vh)] min-w-0 flex-col md:min-h-0">
             <AccountSkinPreview
-              key={`${activeAccountId ?? ""}:${profile.ely_username ?? ""}:${profile.mc_uuid ?? ""}:${profile.nickname}`}
+              key={`${accountsSubTab}:${activeAccountId ?? ""}:${profile.ely_username ?? ""}:${profile.mc_uuid ?? ""}:${profile.nickname}`}
+              variant={accountsSubTab === "skins" ? "library" : "default"}
               profile={profileAvatarInput}
               username={displayedNickname}
               showCapePicker={activeAccountKind === "microsoft" && !!profile.mc_uuid?.trim()}
-              onSettingsClick={() => openSettings("platform")}
+              onSettingsClick={
+                accountsSubTab === "overview" ? () => openSettings("platform") : undefined
+              }
               settingsTitle={tt("app.accounts.accountSettingsTitle")}
               capePickerTitle={tt("app.accounts.cape.title")}
               capeNoneLabel={tt("app.accounts.cape.none")}
@@ -555,15 +587,21 @@ export function AccountsTab({
               skinLibraryEmpty={tt("app.accounts.skinLibrary.empty")}
               skinLibraryLoading={tt("app.accounts.skinLibrary.loading")}
               skinLibraryError={tt("app.accounts.skinLibrary.error")}
+              skinLibraryApply={tt("app.accounts.skinLibrary.apply")}
+              skinLibraryActive={tt("app.accounts.skinLibrary.active")}
+              skinLibraryPreviewHint={tt("app.accounts.skinLibrary.previewHint")}
+              skinLibraryMicrosoftOnly={tt("app.accounts.skinLibrary.microsoftOnly")}
             />
           </div>
 
-          <div className="flex min-h-[200px] min-w-0 flex-col md:min-h-0 md:overflow-hidden">
-            <AchievementsPanel
-              language={language}
-              className="glass-panel flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4"
-            />
-          </div>
+          {accountsSubTab === "overview" ? (
+            <div className="flex min-h-[200px] min-w-0 flex-col md:min-h-0 md:overflow-hidden">
+              <AchievementsPanel
+                language={language}
+                className="glass-panel flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4"
+              />
+            </div>
+          ) : null}
         </div>
       </div>
 

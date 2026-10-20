@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useT, type Language } from "../i18n";
 import { copyTextToClipboard } from "../lib/clipboard";
 import type { GameConsoleLine, GameStatus } from "../lib/gameConsoleWindow";
+import { LogAnalyzerPanel } from "./LogAnalyzerPanel";
 
 type GameConsolePanelProps = {
   consoleLines: GameConsoleLine[];
@@ -12,6 +13,8 @@ type GameConsolePanelProps = {
   onClearConsole: () => void;
   onToggleConsole: () => void;
   onToggleDetached: () => void;
+  /** Profile/instance whose latest.log + crash-reports to analyze. */
+  profileId?: string | null;
   showHint?: boolean;
   embedded?: boolean;
   className?: string;
@@ -26,6 +29,7 @@ export function GameConsolePanel({
   onClearConsole,
   onToggleConsole,
   onToggleDetached,
+  profileId = null,
   showHint = true,
   embedded = false,
   className = "",
@@ -133,10 +137,18 @@ export function GameConsolePanel({
 
       {isConsoleVisible && (
         <>
+          <LogAnalyzerPanel
+            lines={consoleLines.map((e) => e.line)}
+            language={language}
+            profileId={profileId}
+            gameStatus={gameStatus}
+            compact={embedded}
+            className={embedded ? "mt-1.5" : "mb-1.5"}
+          />
           {consoleLines.length > 0 ? (
             <div
               className={`overflow-y-auto rounded-xl bg-black/80 px-3 py-2 text-[11px] font-mono text-white/80 ${
-                embedded ? "mt-2 h-44 w-full" : "min-h-0 flex-1"
+                embedded ? "mt-1.5 h-44 w-full" : "min-h-0 flex-1"
               }`}
             >
               {consoleLines.map((entry) => (
