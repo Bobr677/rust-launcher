@@ -8,7 +8,7 @@ static SESSION_START_MS: Lazy<i64> = Lazy::new(session_start_ms);
 
 const MAX_FIELD_CHARS: usize = 128;
 const DEFAULT_DISCORD_APPLICATION_ID: &str = "1485297789692022964";
-const PRODUCT_NAME: &str = "16Launcher";
+const PRODUCT_NAME: &str = "Nexus Launcher";
 const DEFAULT_LARGE_IMAGE: &str = "launcher";
 const DEFAULT_SMALL_IMAGE: &str = "logo";
 const SITE_URL: &str = "https://16-launcher.ru";

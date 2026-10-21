@@ -46,7 +46,7 @@ pub fn setup_tray(app: &App) -> tauri::Result<()> {
         .icon(icon)
         .menu(&menu)
         .show_menu_on_left_click(false)
-        .tooltip("16Launcher")
+        .tooltip("Nexus Launcher")
         .on_menu_event(|app, event| match event.id.as_ref() {
             "show" => show_main_window(app),
             "quit" => {

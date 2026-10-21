@@ -1618,7 +1618,7 @@ export function SettingsTab({
     try {
       const path = await saveFile({
         title: tt("settings.launcher.backup.exportDialogTitle"),
-        defaultPath: "16launcher-settings.json",
+        defaultPath: "nexus-launcher-settings.json",
         filters: [{ name: "JSON", extensions: ["json"] }],
       });
       if (!path || typeof path !== "string") return;

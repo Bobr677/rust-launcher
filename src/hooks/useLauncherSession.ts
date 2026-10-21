@@ -48,7 +48,7 @@ export function useLauncherSession() {
         }
 
         const session = await createLauncherSession({
-          device_name: "16Launcher",
+          device_name: "Nexus Launcher",
           platform: navigator.platform || "unknown",
           launcher_version: version,
         });

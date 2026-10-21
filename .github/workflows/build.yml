@@ -198,13 +198,13 @@ jobs:
           includeDebug: false
           includeRelease: true
           tagName: ${{ steps.release_tag.outputs.tag }}
-          releaseName: 16Launcher ${{ steps.release_tag.outputs.tag }}
+          releaseName: Nexus Launcher ${{ steps.release_tag.outputs.tag }}
           prerelease: ${{ steps.release_tag.outputs.prerelease }}
 
       - name: Upload bundles as workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: 16Launcher-${{ matrix.label }}
+          name: Nexus Launcher-${{ matrix.label }}
           path: |
             src-tauri/target/release/bundle/**
 
