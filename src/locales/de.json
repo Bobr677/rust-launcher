@@ -1505,6 +1505,22 @@
     "continueWithDiscord": "Mit Discord fortfahren",
     "authHintLogin": "Melde dich bei deinem 16Launcher-Konto an, um Fortschritt und Freunde zu synchronisieren.",
     "authHintSignup": "Erstelle ein 16Launcher-Konto - das dauert nur ein paar Minuten.",
+    "reset": {
+      "forgotLink": "Passwort vergessen?",
+      "title": "Passwort zurücksetzen",
+      "authHint": "Zugriff auf dein 16Launcher-Konto wiederherstellen.",
+      "requestHint": "Gib die E-Mail deines Kontos ein – wir senden dir einen Code zum Zurücksetzen.",
+      "confirmHint": "Falls {{email}} registriert ist, wurde ein Code gesendet. Gib ihn ein und wähle ein neues Passwort.",
+      "newPasswordLabel": "Neues Passwort",
+      "newPasswordPlaceholder": "Neues Passwort (mindestens 8 Zeichen)",
+      "submit": "Passwort speichern"
+    },
+    "changePassword": {
+      "title": "Passwort",
+      "hint": "Nach der Änderung werden alle anderen Geräte abgemeldet.",
+      "open": "Passwort ändern",
+      "currentPlaceholder": "Aktuelles Passwort"
+    },
     "toast": {
       "accountCreated": "Konto erstellt",
       "signedIn": "Angemeldet",
@@ -1526,7 +1542,12 @@
       "enterVerificationCode": "Geben Sie den Code aus der E-Mail ein.",
       "verificationCodeSent": "Bestätigungscode wurde per E-Mail gesendet.",
       "accountDeleted": "Konto gelöscht.",
-      "acceptPrivacy": "Bitte stimmen Sie der Datenschutzerklärung zu, um ein Konto zu erstellen."
+      "acceptPrivacy": "Bitte stimmen Sie der Datenschutzerklärung zu, um ein Konto zu erstellen.",
+      "enterEmailReset": "Gib die E-Mail deines Kontos ein.",
+      "resetCodeSent": "Falls diese E-Mail registriert ist, haben wir einen Code gesendet.",
+      "passwordReset": "Passwort geändert, du bist angemeldet.",
+      "enterCurrentPassword": "Gib dein aktuelles Passwort ein.",
+      "passwordChanged": "Passwort geändert. Andere Geräte wurden abgemeldet."
     },
     "errors": {
       "connectionFailed": "Es kann keine Verbindung zum 16Launcher-Server hergestellt werden. Überprüfen Sie Internet und API-Verfügbarkeit.",
@@ -1543,7 +1564,11 @@
       "deleteNotAvailable": "Kontolöschung ist auf dem Server noch nicht verfügbar. API-Deploy erforderlich.",
       "identityAlreadyLinked": "{{provider}} ist bereits mit einem anderen 16Launcher-Konto verknüpft.",
       "discordNotConfigured": "Discord-Anmeldung ist auf dem Server noch nicht konfiguriert.",
-      "discordFailed": "Discord-Anmeldung fehlgeschlagen. Bitte erneut versuchen."
+      "discordFailed": "Discord-Anmeldung fehlgeschlagen. Bitte erneut versuchen.",
+      "invalidCurrentPassword": "Das aktuelle Passwort ist falsch.",
+      "passwordNotSet": "Dieses Konto hat noch kein Passwort. Melde dich ab und lege es über „Passwort vergessen?“ auf dem Anmeldebildschirm fest.",
+      "samePassword": "Das neue Passwort muss sich vom aktuellen unterscheiden.",
+      "serverOutdated": "Der 16Launcher-Server unterstützt das noch nicht. Bitte später erneut versuchen."
     },
     "settings": {
       "online": "Online",

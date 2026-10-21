@@ -4,6 +4,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   API_AUTH_CHANGED_EVENT,
   API_NICKNAME_KEY,
+  changePassword,
   deleteAccount,
   ensureValidAccessToken,
   fetchEmailVerificationStatus,
@@ -14,6 +15,8 @@ import {
   logoutAccount,
   mapAuthErrorMessage,
   registerAndPersist,
+  requestPasswordReset,
+  resetPasswordAndPersist,
   sendEmailVerificationCode,
   fetchDiscordAuthStatus,
   updateNickname,
@@ -160,8 +163,20 @@ export function PlatformAccountPanel({
   const [showDeletePassword, setShowDeletePassword] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [privacyHighlight, setPrivacyHighlight] = useState(false);
+  const [resetStep, setResetStep] = useState<null | "request" | "confirm">(null);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetCode, setResetCode] = useState("");
+  const [resetNewPassword, setResetNewPassword] = useState("");
+  const [showResetPassword, setShowResetPassword] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [showChangePasswords, setShowChangePasswords] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
   const [modeTabIndicator, setModeTabIndicator] = useState({ left: 0, width: 0 });
   const codeInputRef = useRef<HTMLInputElement>(null);
+  const resetCodeInputRef = useRef<HTMLInputElement>(null);
   const privacyCheckboxRef = useRef<HTMLInputElement>(null);
   const modeTabsRef = useRef<HTMLDivElement>(null);
   const modeTabButtonRefs = useRef<Partial<Record<"login" | "signup", HTMLButtonElement | null>>>({});
@@ -240,6 +255,12 @@ export function PlatformAccountPanel({
   }, [signupStep]);
 
   useEffect(() => {
+    if (resetStep !== "confirm") return;
+    const id = window.setTimeout(() => resetCodeInputRef.current?.focus(), 50);
+    return () => window.clearTimeout(id);
+  }, [resetStep]);
+
+  useEffect(() => {
     if (!accessToken) return;
     if (!isTokenExpiringSoon(accessToken)) return;
     void ensureValidAccessToken().then((token) => {
@@ -290,7 +311,7 @@ export function PlatformAccountPanel({
       window.removeEventListener("resize", scheduleUpdate);
       resizeObserver?.disconnect();
     };
-  }, [mode, accessToken, signupStep]);
+  }, [mode, accessToken, signupStep, resetStep]);
 
   const highlightPrivacyConsent = () => {
     setPrivacyHighlight(true);
@@ -448,8 +469,117 @@ export function PlatformAccountPanel({
       setPlatformUser(null);
       setDeleteOpen(false);
       setDeletePassword("");
+      closeChangePassword();
       setLoading(false);
       showNotification("info", tt("platform.toast.loggedOut"));
+    }
+  };
+
+  /** 404 here means the API on the server predates the password endpoints. */
+  const passwordErrorMessage = (e: unknown): string => {
+    if (e instanceof ApiError && e.status === 404) return tt("platform.errors.serverOutdated");
+    const rawMessage = e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e);
+    return mapAuthErrorMessage(rawMessage, "login", tt);
+  };
+
+  const openPasswordReset = () => {
+    setResetEmail(authIdentifier.includes("@") ? authIdentifier.trim() : "");
+    setResetCode("");
+    setResetNewPassword("");
+    setShowResetPassword(false);
+    setResetStep("request");
+  };
+
+  const closePasswordReset = () => {
+    setResetStep(null);
+    setResetCode("");
+    setResetNewPassword("");
+  };
+
+  const handleRequestPasswordReset = async () => {
+    const email = resetEmail.trim();
+    if (!email || !email.includes("@")) {
+      showNotification("warning", tt("platform.toast.enterEmailReset"));
+      return;
+    }
+    setResetBusy(true);
+    try {
+      await requestPasswordReset(email);
+      setResetStep("confirm");
+      showNotification("success", tt("platform.toast.resetCodeSent"));
+    } catch (e) {
+      showNotification("error", passwordErrorMessage(e));
+    } finally {
+      setResetBusy(false);
+    }
+  };
+
+  const handleConfirmPasswordReset = async () => {
+    if (resetCode.trim().length !== 6) {
+      showNotification("warning", tt("platform.toast.enterVerificationCode"));
+      return;
+    }
+    if (resetNewPassword.length < 8) {
+      showNotification("warning", tt("platform.toast.passwordTooShort"));
+      return;
+    }
+    setResetBusy(true);
+    try {
+      const me = await resetPasswordAndPersist({
+        email: resetEmail.trim(),
+        code: resetCode.trim(),
+        new_password: resetNewPassword,
+      });
+      setPlatformUser(me);
+      setAccessToken(getStoredAccessToken() ?? "");
+      setAuthPassword("");
+      closePasswordReset();
+      showNotification("success", tt("platform.toast.passwordReset"));
+    } catch (e) {
+      showNotification("error", passwordErrorMessage(e));
+    } finally {
+      setResetBusy(false);
+    }
+  };
+
+  const closeChangePassword = () => {
+    setChangePasswordOpen(false);
+    setCurrentPassword("");
+    setNewPassword("");
+    setShowChangePasswords(false);
+  };
+
+  const handleChangePassword = async () => {
+    if (!currentPassword) {
+      showNotification("warning", tt("platform.toast.enterCurrentPassword"));
+      return;
+    }
+    if (newPassword.length < 8) {
+      showNotification("warning", tt("platform.toast.passwordTooShort"));
+      return;
+    }
+    if (newPassword === currentPassword) {
+      showNotification("warning", tt("platform.errors.samePassword"));
+      return;
+    }
+    setChangingPassword(true);
+    try {
+      await changePassword(
+        { current_password: currentPassword, new_password: newPassword },
+        accessToken || undefined,
+      );
+      setAccessToken(getStoredAccessToken() ?? "");
+      closeChangePassword();
+      showNotification("success", tt("platform.toast.passwordChanged"));
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) {
+        await handleLogout();
+        showNotification("warning", tt("platform.toast.sessionExpired"));
+        return;
+      }
+      showNotification("error", passwordErrorMessage(e));
+    } finally {
+      setChangingPassword(false);
     }
   };
 
@@ -471,12 +601,13 @@ export function PlatformAccountPanel({
       setDeletePassword("");
       showNotification("success", tt("platform.toast.accountDeleted"));
     } catch (e) {
-      const rawMessage = e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e);
+      // Wrong password comes back as 400 "invalid password"; 401 means the session itself is gone.
       if (e instanceof ApiError && e.status === 401) {
-        showNotification("error", tt("platform.errors.invalidPassword"));
-      } else {
-        showNotification("error", mapAuthErrorMessage(rawMessage, "login", tt));
+        await handleLogout();
+        showNotification("warning", tt("platform.toast.sessionExpired"));
+        return;
       }
+      showNotification("error", passwordErrorMessage(e));
     } finally {
       setDeletingAccount(false);
     }
@@ -612,11 +743,119 @@ export function PlatformAccountPanel({
             {tt("platform.accountTitle")}
           </h2>
           <p className="mt-1.5 text-sm leading-relaxed text-white/50">
-            {mode === "signup" ? tt("platform.authHintSignup") : tt("platform.authHintLogin")}
+            {resetStep
+              ? tt("platform.reset.authHint")
+              : mode === "signup"
+                ? tt("platform.authHintSignup")
+                : tt("platform.authHintLogin")}
           </p>
         </div>
 
-        {mode === "signup" && signupStep === "verify" ? (
+        {resetStep ? (
+          <form
+            className="flex flex-col gap-5"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void (resetStep === "request" ? handleRequestPasswordReset() : handleConfirmPasswordReset());
+            }}
+          >
+            <div className="rounded-2xl border border-accent-to/25 bg-accent-from/10 px-5 py-6 shadow-inner">
+              <h3 className="text-center text-lg font-semibold text-white">{tt("platform.reset.title")}</h3>
+              <p className="mt-2 text-center text-sm leading-relaxed text-white/65">
+                {resetStep === "request"
+                  ? tt("platform.reset.requestHint")
+                  : tt("platform.reset.confirmHint", { email: resetEmail.trim() })}
+              </p>
+              {resetStep === "confirm" ? (
+                <p className="mt-1 text-center text-xs text-white/45">{tt("platform.emailSpamHint")}</p>
+              ) : null}
+
+              {resetStep === "request" ? (
+                <label className="mt-5 flex flex-col gap-2 text-[0.8125rem] font-semibold text-white/45">
+                  {tt("platform.emailLabel")}
+                  <div className="relative">
+                    <input
+                      type="email"
+                      autoFocus
+                      autoComplete="email"
+                      value={resetEmail}
+                      onChange={(e) => setResetEmail(e.target.value)}
+                      className={`${inputClassName} ${resetEmail ? "pr-10" : ""}`}
+                      placeholder={tt("platform.enterEmail")}
+                    />
+                    <InputClearButton
+                      value={resetEmail}
+                      onClear={() => setResetEmail("")}
+                      className="absolute right-2 top-1/2 -translate-y-1/2"
+                      aria-label={tt("common.clear")}
+                    />
+                  </div>
+                </label>
+              ) : (
+                <div className="mt-5 flex flex-col gap-4">
+                  <label className="flex flex-col gap-2 text-[0.8125rem] font-semibold text-white/45">
+                    {tt("platform.verificationCodeLabel")}
+                    <input
+                      ref={resetCodeInputRef}
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      value={resetCode}
+                      onChange={(e) => setResetCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      className="h-14 w-full rounded-2xl border border-accent-to/30 bg-ink-950/70 px-3 text-center text-2xl font-semibold tracking-[0.55em] text-white outline-none transition focus:bg-black/55"
+                      placeholder="••••••"
+                      maxLength={6}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-2 text-[0.8125rem] font-semibold text-white/45">
+                    {tt("platform.reset.newPasswordLabel")}
+                    <PasswordInput
+                      value={resetNewPassword}
+                      onChange={setResetNewPassword}
+                      visible={showResetPassword}
+                      onToggleVisible={() => setShowResetPassword((prev) => !prev)}
+                      placeholder={tt("platform.reset.newPasswordPlaceholder")}
+                      autoComplete="new-password"
+                      showLabel={tt("platform.showPassword")}
+                      hideLabel={tt("platform.hidePassword")}
+                      clearLabel={tt("common.clear")}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    disabled={resetBusy}
+                    onClick={() => void handleRequestPasswordReset()}
+                    className="interactive-press self-center text-sm font-semibold text-accent-hi/90 underline-offset-2 hover:text-white hover:underline disabled:opacity-60"
+                  >
+                    {tt("platform.resendVerificationCode")}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                disabled={resetBusy}
+                onClick={() => (resetStep === "confirm" ? setResetStep("request") : closePasswordReset())}
+                className="btn btn-soft btn-lg h-12 flex-1 rounded-2xl"
+              >
+                {tt("platform.back")}
+              </button>
+              <button
+                type="submit"
+                disabled={resetBusy || (resetStep === "confirm" && resetCode.length !== 6)}
+                className="btn btn-accent btn-lg h-12 flex-[1.5] rounded-2xl"
+              >
+                {resetBusy
+                  ? tt("common.loading")
+                  : resetStep === "request"
+                    ? tt("platform.sendVerificationCode")
+                    : tt("platform.reset.submit")}
+              </button>
+            </div>
+          </form>
+        ) : mode === "signup" && signupStep === "verify" ? (
           <div className="flex flex-col gap-5">
             <div className="rounded-2xl border border-accent-to/25 bg-accent-from/10 px-5 py-7 text-center shadow-inner">
               <p className="text-[0.75rem] font-bold text-accent-hi/70">
@@ -865,6 +1104,16 @@ export function PlatformAccountPanel({
                 </button>
               </div>
             </label>
+            {mode === "login" && emailVerificationRequired ? (
+              <button
+                type="button"
+                disabled={loading}
+                onClick={openPasswordReset}
+                className="interactive-press -mt-3 self-end text-[0.8125rem] font-semibold text-accent-hi/85 underline-offset-2 hover:text-white hover:underline disabled:opacity-60"
+              >
+                {tt("platform.reset.forgotLink")}
+              </button>
+            ) : null}
 
             <div className="relative min-h-[3.25rem]">
               <label
@@ -1099,6 +1348,68 @@ export function PlatformAccountPanel({
           {tt("platform.logout")}
         </button>
 
+        <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-3">
+          <p className="text-[0.75rem] font-bold text-white/45">{tt("platform.changePassword.title")}</p>
+          <p className="mt-1 text-xs leading-relaxed text-white/55">{tt("platform.changePassword.hint")}</p>
+          {!changePasswordOpen ? (
+            <button
+              type="button"
+              disabled={busy || changingPassword}
+              onClick={() => setChangePasswordOpen(true)}
+              className="btn btn-tint btn-sm mt-3"
+            >
+              {tt("platform.changePassword.open")}
+            </button>
+          ) : (
+            <form
+              className="mt-3 space-y-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void handleChangePassword();
+              }}
+            >
+              <PasswordInput
+                size="sm"
+                autoFocus
+                value={currentPassword}
+                onChange={setCurrentPassword}
+                visible={showChangePasswords}
+                onToggleVisible={() => setShowChangePasswords((prev) => !prev)}
+                placeholder={tt("platform.changePassword.currentPlaceholder")}
+                autoComplete="current-password"
+                showLabel={tt("platform.showPassword")}
+                hideLabel={tt("platform.hidePassword")}
+                clearLabel={tt("common.clear")}
+              />
+              <PasswordInput
+                size="sm"
+                value={newPassword}
+                onChange={setNewPassword}
+                visible={showChangePasswords}
+                onToggleVisible={() => setShowChangePasswords((prev) => !prev)}
+                placeholder={tt("platform.reset.newPasswordPlaceholder")}
+                autoComplete="new-password"
+                showLabel={tt("platform.showPassword")}
+                hideLabel={tt("platform.hidePassword")}
+                clearLabel={tt("common.clear")}
+              />
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button type="submit" disabled={changingPassword || loading} className="btn btn-accent btn-sm">
+                  {changingPassword ? tt("common.loading") : tt("common.save")}
+                </button>
+                <button
+                  type="button"
+                  disabled={changingPassword}
+                  onClick={closeChangePassword}
+                  className="btn btn-ghost btn-sm"
+                >
+                  {tt("platform.back")}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+
         <div className="mt-auto rounded-xl border border-rose-500/25 bg-rose-950/25 px-3 py-3">
           <p className="text-[0.75rem] font-bold text-rose-200/70">{tt("platform.dangerZone")}</p>
           <p className="mt-1 text-xs leading-relaxed text-white/55">{tt("platform.deleteAccountHint")}</p>
@@ -1174,6 +1485,68 @@ export function PlatformAccountPanel({
           )}
         </div>
       </section>
+    </div>
+  );
+}
+
+function PasswordInput({
+  value,
+  onChange,
+  visible,
+  onToggleVisible,
+  placeholder,
+  autoComplete,
+  autoFocus,
+  showLabel,
+  hideLabel,
+  clearLabel,
+  size = "lg",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  visible: boolean;
+  onToggleVisible: () => void;
+  placeholder: string;
+  autoComplete: "current-password" | "new-password";
+  autoFocus?: boolean;
+  showLabel: string;
+  hideLabel: string;
+  clearLabel: string;
+  size?: "sm" | "lg";
+}) {
+  const sizeClassName =
+    size === "lg" ? "h-12 rounded-2xl px-4 text-[1rem]" : "h-10 rounded-xl px-3 text-sm";
+  return (
+    <div className="relative flex items-center">
+      <input
+        type={visible ? "text" : "password"}
+        autoFocus={autoFocus}
+        autoComplete={autoComplete}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={`glass-control w-full border text-white outline-none transition placeholder:text-white/30 ${sizeClassName} ${
+          value ? "pr-[4.75rem]" : "pr-12"
+        }`}
+        placeholder={placeholder}
+      />
+      <InputClearButton
+        value={value}
+        onClear={() => onChange("")}
+        className="absolute right-11 top-1/2 -translate-y-1/2"
+        aria-label={clearLabel}
+      />
+      <button
+        type="button"
+        onClick={onToggleVisible}
+        className="interactive-press absolute inset-y-0 right-2 my-auto flex h-8 w-8 items-center justify-center rounded-lg hover:bg-white/10"
+        aria-label={visible ? hideLabel : showLabel}
+      >
+        <img
+          src={visible ? "/launcher-assets/hide.png" : "/launcher-assets/show.png"}
+          alt=""
+          className="h-4 w-4 object-contain opacity-80"
+        />
+      </button>
     </div>
   );
 }

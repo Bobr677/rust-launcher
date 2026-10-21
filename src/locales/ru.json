@@ -1597,6 +1597,22 @@
     "continueWithDiscord": "Продолжить с Discord",
     "authHintLogin": "Вход в аккаунт 16Launcher - для друзей и комнат.",
     "authHintSignup": "Регистрация аккаунта 16Launcher.",
+    "reset": {
+      "forgotLink": "Забыли пароль?",
+      "title": "Сброс пароля",
+      "authHint": "Восстановление доступа к аккаунту 16Launcher.",
+      "requestHint": "Укажите email аккаунта — мы отправим на него код для сброса пароля.",
+      "confirmHint": "Если {{email}} зарегистрирован, на него пришёл код. Введите его и придумайте новый пароль.",
+      "newPasswordLabel": "Новый пароль",
+      "newPasswordPlaceholder": "Новый пароль (минимум 8 символов)",
+      "submit": "Сохранить пароль"
+    },
+    "changePassword": {
+      "title": "Пароль",
+      "hint": "После смены пароля все остальные устройства выйдут из аккаунта.",
+      "open": "Сменить пароль",
+      "currentPlaceholder": "Текущий пароль"
+    },
     "toast": {
       "accountCreated": "Аккаунт создан",
       "signedIn": "Вход выполнен",
@@ -1618,7 +1634,12 @@
       "enterVerificationCode": "Введите код из письма.",
       "verificationCodeSent": "Код подтверждения отправлен на email.",
       "accountDeleted": "Аккаунт удалён.",
-      "acceptPrivacy": "Чтобы создать аккаунт, подтвердите согласие с Политикой конфиденциальности."
+      "acceptPrivacy": "Чтобы создать аккаунт, подтвердите согласие с Политикой конфиденциальности.",
+      "enterEmailReset": "Укажите email аккаунта.",
+      "resetCodeSent": "Если этот email зарегистрирован, мы отправили на него код.",
+      "passwordReset": "Пароль изменён, вход выполнен.",
+      "enterCurrentPassword": "Введите текущий пароль.",
+      "passwordChanged": "Пароль изменён. Остальные устройства вышли из аккаунта."
     },
     "errors": {
       "connectionFailed": "Не удается подключиться к серверу 16Launcher. Проверьте интернет и доступность API.",
@@ -1635,7 +1656,11 @@
       "deleteNotAvailable": "Удаление аккаунта на сервере ещё недоступно. Нужен деплой API.",
       "identityAlreadyLinked": "{{provider}} уже привязан к другому аккаунту 16Launcher.",
       "discordNotConfigured": "Вход через Discord пока не настроен на сервере.",
-      "discordFailed": "Не удалось войти через Discord. Попробуйте ещё раз."
+      "discordFailed": "Не удалось войти через Discord. Попробуйте ещё раз.",
+      "invalidCurrentPassword": "Текущий пароль указан неверно.",
+      "passwordNotSet": "У аккаунта ещё нет пароля. Выйдите и задайте его через «Забыли пароль?» на экране входа.",
+      "samePassword": "Новый пароль должен отличаться от текущего.",
+      "serverOutdated": "Сервер 16Launcher пока не поддерживает эту функцию. Попробуйте позже."
     },
     "settings": {
       "online": "В сети",

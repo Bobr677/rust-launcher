@@ -1505,6 +1505,22 @@
     "continueWithDiscord": "Continuar con Discord",
     "authHintLogin": "Inicia sesión en tu cuenta 16Launcher para sincronizar progreso y amigos.",
     "authHintSignup": "Crea una cuenta 16Launcher: solo te llevará un par de minutos.",
+    "reset": {
+      "forgotLink": "¿Olvidaste tu contraseña?",
+      "title": "Restablecer contraseña",
+      "authHint": "Recupera el acceso a tu cuenta 16Launcher.",
+      "requestHint": "Introduce el email de tu cuenta y te enviaremos un código para restablecer la contraseña.",
+      "confirmHint": "Si {{email}} está registrado, te hemos enviado un código. Introdúcelo y elige una nueva contraseña.",
+      "newPasswordLabel": "Nueva contraseña",
+      "newPasswordPlaceholder": "Nueva contraseña (mínimo 8 caracteres)",
+      "submit": "Guardar contraseña"
+    },
+    "changePassword": {
+      "title": "Contraseña",
+      "hint": "Al cambiar la contraseña se cerrará la sesión en los demás dispositivos.",
+      "open": "Cambiar contraseña",
+      "currentPlaceholder": "Contraseña actual"
+    },
     "toast": {
       "accountCreated": "Cuenta creada",
       "signedIn": "Sesión iniciada",
@@ -1526,7 +1542,12 @@
       "enterVerificationCode": "Introduce el código del correo.",
       "verificationCodeSent": "Código de verificación enviado al correo.",
       "accountDeleted": "Cuenta eliminada.",
-      "acceptPrivacy": "Para crear una cuenta, acepte la Política de privacidad."
+      "acceptPrivacy": "Para crear una cuenta, acepte la Política de privacidad.",
+      "enterEmailReset": "Introduce el email de tu cuenta.",
+      "resetCodeSent": "Si este email está registrado, te hemos enviado un código.",
+      "passwordReset": "Contraseña cambiada, has iniciado sesión.",
+      "enterCurrentPassword": "Introduce tu contraseña actual.",
+      "passwordChanged": "Contraseña cambiada. Se cerró la sesión en los demás dispositivos."
     },
     "errors": {
       "connectionFailed": "No se puede conectar al servidor 16Launcher. Verifique internet y disponibilidad del API.",
@@ -1543,7 +1564,11 @@
       "deleteNotAvailable": "La eliminación de cuenta aún no está disponible en el servidor. Hace falta desplegar la API.",
       "identityAlreadyLinked": "{{provider}} ya está vinculado a otra cuenta de 16Launcher.",
       "discordNotConfigured": "El inicio de sesión con Discord aún no está configurado en el servidor.",
-      "discordFailed": "No se pudo iniciar sesión con Discord. Inténtalo de nuevo."
+      "discordFailed": "No se pudo iniciar sesión con Discord. Inténtalo de nuevo.",
+      "invalidCurrentPassword": "La contraseña actual es incorrecta.",
+      "passwordNotSet": "Esta cuenta aún no tiene contraseña. Cierra sesión y créala con «¿Olvidaste tu contraseña?» en la pantalla de inicio.",
+      "samePassword": "La nueva contraseña debe ser distinta de la actual.",
+      "serverOutdated": "El servidor de 16Launcher aún no admite esta función. Inténtalo más tarde."
     },
     "settings": {
       "online": "En línea",

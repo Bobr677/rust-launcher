@@ -55,6 +55,47 @@ export async function sendEmailVerificationCode(email: string): Promise<{
   );
 }
 
+export async function requestPasswordReset(email: string): Promise<{
+  success: boolean;
+  ttl_secs: number;
+}> {
+  return apiFetch(
+    "/auth/password/forgot",
+    { method: "POST", body: JSON.stringify({ email }) },
+    null,
+  );
+}
+
+/** Sets a new password with the emailed code; the server signs out all devices and logs this one in. */
+export async function resetPasswordAndPersist(input: {
+  email: string;
+  code: string;
+  new_password: string;
+}): Promise<PlatformUser> {
+  const tokens = await apiFetch<AuthTokens>(
+    "/auth/password/reset",
+    { method: "POST", body: JSON.stringify(input) },
+    null,
+  );
+  persistApiSession(tokens.access_token, tokens.refresh_token);
+  const me = await fetchMe(tokens.access_token);
+  persistNickname(me.nickname);
+  return me;
+}
+
+/** Changes the password; other devices are signed out and this one gets fresh tokens. */
+export async function changePassword(
+  input: { current_password: string; new_password: string },
+  accessToken?: string,
+): Promise<void> {
+  const tokens = await apiFetch<AuthTokens>(
+    "/auth/password/change",
+    { method: "POST", body: JSON.stringify(input) },
+    accessToken,
+  );
+  persistApiSession(tokens.access_token, tokens.refresh_token);
+}
+
 export async function loginAccount(input: {
   login: string;
   password: string;
@@ -323,6 +364,15 @@ export function mapAuthErrorMessage(
   }
   if (lower.includes("not found")) {
     return t("platform.errors.deleteNotAvailable");
+  }
+  if (lower.includes("invalid current password")) {
+    return t("platform.errors.invalidCurrentPassword");
+  }
+  if (lower.includes("password not set")) {
+    return t("platform.errors.passwordNotSet");
+  }
+  if (lower.includes("new password must differ")) {
+    return t("platform.errors.samePassword");
   }
   if (lower.includes("unauthorized") || lower.includes("invalid login")) {
     return t("platform.errors.invalidCredentials");

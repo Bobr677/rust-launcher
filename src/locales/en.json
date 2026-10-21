@@ -1597,6 +1597,22 @@
     "continueWithDiscord": "Continue with Discord",
     "authHintLogin": "16Launcher sign-in - for friends and rooms.",
     "authHintSignup": "Create a 16Launcher account.",
+    "reset": {
+      "forgotLink": "Forgot password?",
+      "title": "Reset password",
+      "authHint": "Recover access to your 16Launcher account.",
+      "requestHint": "Enter your account email and we'll send you a password reset code.",
+      "confirmHint": "If {{email}} is registered, a code has been sent to it. Enter it and choose a new password.",
+      "newPasswordLabel": "New password",
+      "newPasswordPlaceholder": "New password (at least 8 characters)",
+      "submit": "Save password"
+    },
+    "changePassword": {
+      "title": "Password",
+      "hint": "Changing your password signs out all other devices.",
+      "open": "Change password",
+      "currentPlaceholder": "Current password"
+    },
     "toast": {
       "accountCreated": "Account created",
       "signedIn": "Signed in",
@@ -1618,7 +1634,12 @@
       "enterVerificationCode": "Enter the code from the email.",
       "verificationCodeSent": "Verification code sent to your email.",
       "accountDeleted": "Account deleted.",
-      "acceptPrivacy": "To create an account, please accept the Privacy Policy."
+      "acceptPrivacy": "To create an account, please accept the Privacy Policy.",
+      "enterEmailReset": "Enter your account email.",
+      "resetCodeSent": "If this email is registered, we've sent a code to it.",
+      "passwordReset": "Password changed, you're signed in.",
+      "enterCurrentPassword": "Enter your current password.",
+      "passwordChanged": "Password changed. Other devices have been signed out."
     },
     "errors": {
       "connectionFailed": "Cannot connect to the 16Launcher server. Check your internet connection and API availability.",
@@ -1635,7 +1656,11 @@
       "deleteNotAvailable": "Account deletion is not available on the server yet. API deploy is required.",
       "identityAlreadyLinked": "{{provider}} is already linked to another 16Launcher account.",
       "discordNotConfigured": "Discord sign-in is not configured on the server yet.",
-      "discordFailed": "Discord sign-in failed. Please try again."
+      "discordFailed": "Discord sign-in failed. Please try again.",
+      "invalidCurrentPassword": "Current password is incorrect.",
+      "passwordNotSet": "This account has no password yet. Sign out and set one via \"Forgot password?\" on the sign-in screen.",
+      "samePassword": "The new password must differ from the current one.",
+      "serverOutdated": "The 16Launcher server doesn't support this yet. Please try again later."
     },
     "settings": {
       "online": "Online",
