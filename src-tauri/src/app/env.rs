@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 fn load_dotenv_walking_up(start: &Path) {
     let mut dir = start.to_path_buf();
@@ -15,7 +16,14 @@ fn load_dotenv_walking_up(start: &Path) {
     }
 }
 
+/// Loads `.env` files into the process environment. Runs the lookup once per
+/// process; later calls are no-ops, so it is cheap to call from anywhere.
 pub fn load_dotenv_files() {
+    static LOADED: OnceLock<()> = OnceLock::new();
+    LOADED.get_or_init(load_dotenv_files_once);
+}
+
+fn load_dotenv_files_once() {
     if let Ok(cwd) = std::env::current_dir() {
         load_dotenv_walking_up(&cwd);
     }

@@ -1,9 +1,7 @@
 import {
   ApiError,
   apiFetch,
-  apiRequest,
   clearApiSession,
-  getApiBaseUrl,
   getStoredAccessToken,
   getStoredRefreshToken,
   persistApiSession,
@@ -295,16 +293,6 @@ function decodeJwtExpMs(token: string): number | null {
     return null;
   }
 }
-
-export async function checkApiHealth(): Promise<boolean> {
-  try {
-    const res = await apiRequest(`${getApiBaseUrl()}/health`);
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
 export function mapAuthErrorMessage(
   raw: string,
   mode: "login" | "signup",

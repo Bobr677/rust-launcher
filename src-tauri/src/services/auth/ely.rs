@@ -470,11 +470,6 @@ pub async fn start_ely_oauth(app: AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn handle_oauth_callback(app: AppHandle, code: String, state: String) -> Result<(), String> {
-    handle_oauth_callback_internal(&app, code, state).await
-}
-
-#[tauri::command]
 pub async fn ely_login_with_password(username: String, password: String, totp_token: Option<String>) -> Result<(), String> {
     let mut profile = get_profile().unwrap_or_default();
     let pwd = if let Some(t) = totp_token { if !t.is_empty() { format!("{password}:{t}") } else { password } } else { password };
@@ -525,9 +520,4 @@ pub async fn refresh_ely_session_internal() -> Result<(), String> {
     
     save_full_profile(&profile).map_err(|e| e.to_string())?;
     Ok(())
-}
-
-#[tauri::command]
-pub async fn refresh_ely_session() -> Result<(), String> {
-    refresh_ely_session_internal().await
 }

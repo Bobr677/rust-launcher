@@ -12,16 +12,6 @@ export type OnboardingStep =
 export type AccountProvider = "ely" | "microsoft";
 
 export type OnboardingLanguageOption = Language;
-
-export const ONBOARDING_STEP_ORDER: OnboardingStep[] = [
-  "welcome",
-  "language",
-  "account-select",
-  "account-ely",
-  "import-migration",
-  "finish",
-];
-
 export const ONBOARDING_TOTAL_STEPS = 6;
 
 export function stepProgressIndex(step: OnboardingStep): number {

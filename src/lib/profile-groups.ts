@@ -105,33 +105,10 @@ export function dedupeProfileGroupAssignments(groups: ProfileGroup[]): ProfileGr
   });
 }
 
-const profileGroupsListeners = new Set<() => void>();
-
-export function subscribeProfileGroups(listener: () => void): () => void {
-  profileGroupsListeners.add(listener);
-  return () => {
-    profileGroupsListeners.delete(listener);
-  };
-}
-
-function notifyProfileGroupsListeners(): void {
-  const run = () => {
-    for (const listener of profileGroupsListeners) {
-      listener();
-    }
-  };
-  if (typeof queueMicrotask === "function") {
-    queueMicrotask(run);
-    return;
-  }
-  setTimeout(run, 0);
-}
-
 export function saveProfileGroups(groups: ProfileGroup[]): void {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(PROFILE_GROUPS_STORAGE_KEY, JSON.stringify(groups));
-    notifyProfileGroupsListeners();
   } catch {
   }
 }

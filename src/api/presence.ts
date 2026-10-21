@@ -176,13 +176,6 @@ export async function sendPresenceOffline(): Promise<PresenceInfo> {
   });
   return unwrapPresence(data) ?? data.presence;
 }
-
-export async function fetchMyPresence(): Promise<PresenceInfo> {
-  await ensureValidAccessToken();
-  const data = await apiFetch<{ presence: PresenceInfo }>("/presence/me");
-  return unwrapPresence(data) ?? data.presence;
-}
-
 export async function fetchFriendsPresence(): Promise<PresenceInfo[]> {
   await ensureValidAccessToken();
   const data = await apiFetch<{ presence: PresenceInfo[] }>("/presence/friends");

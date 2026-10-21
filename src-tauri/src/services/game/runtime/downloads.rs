@@ -24,30 +24,6 @@ use crate::services::game::state::{
 
 use crate::services::game::version_types::{AssetIndexJson, AssetIndexRef, QuiltLoaderEntry};
 
-pub(crate) async fn download_file(
-    client: &Client,
-    url: &str,
-    path: &Path,
-    app: &AppHandle,
-    version_id: &str,
-    total_size: u64,
-    offset_downloaded: u64,
-) -> Result<u64, String> {
-
-    let total_done = Arc::new(AtomicU64::new(offset_downloaded));
-    download_file_checked(
-        client,
-        url,
-        path,
-        None,
-        app,
-        version_id,
-        total_size,
-        total_done,
-        DEFAULT_DOWNLOAD_RETRIES,
-    )
-    .await
-}
 
 
 pub(crate) async fn file_starts_with_pk(path: &Path) -> Result<bool, String> {

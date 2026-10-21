@@ -33,25 +33,8 @@ pub(crate) fn apply_windows_graphics_preference(
 }
 
 
-use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+#[cfg(target_os = "linux")]
 use std::env;
-pub fn load_project_env_for_runtime() {
-    static ENV_LOADED: OnceLock<()> = OnceLock::new();
-    let _ = ENV_LOADED.get_or_init(|| {
-        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-        let candidate_paths = [
-            manifest_dir.join(".env"),
-            manifest_dir.join("../.env"),
-            PathBuf::from(".env"),
-        ];
-        for path in candidate_paths {
-            if path.exists() {
-                let _ = dotenvy::from_path_override(path);
-            }
-        }
-    });
-}
 
 #[cfg(not(target_os = "linux"))]
 #[allow(dead_code)]

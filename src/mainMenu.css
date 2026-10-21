@@ -409,6 +409,12 @@
   animation: banner-fade-in 0.5s ease both;
 }
 
+/* A 28px blur over an oversized image is expensive to rasterize in WebKitGTK; use a plain dim instead. */
+html.launcher-linux .dock-backdrop img {
+  filter: none;
+  opacity: 0.22;
+}
+
 .dock-backdrop::after {
   content: "";
   position: absolute;

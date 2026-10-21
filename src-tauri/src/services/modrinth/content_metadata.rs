@@ -209,8 +209,8 @@ fn is_ignored_in_curseforge_fingerprint(b: u8) -> bool {
     matches!(b, b' ' | b'\t' | b'\n' | b'\r')
 }
 
-fn curseforge_file_fingerprint(buf: &[u8]) -> i32 {
-    const multiplex: u32 = 1540483477;
+pub(super) fn curseforge_file_fingerprint(buf: &[u8]) -> i32 {
+    const MULTIPLEX: u32 = 1540483477;
 
     let mut normalized_len: u32 = 0;
     for &b in buf {
@@ -232,19 +232,19 @@ fn curseforge_file_fingerprint(buf: &[u8]) -> i32 {
         num4 = num4.wrapping_add(8);
 
         if num4 == 32 {
-            let num6: u32 = num3.wrapping_mul(multiplex);
-            let num7: u32 = (num6 ^ (num6 >> 24)).wrapping_mul(multiplex);
-            num2 = num2.wrapping_mul(multiplex) ^ num7;
+            let num6: u32 = num3.wrapping_mul(MULTIPLEX);
+            let num7: u32 = (num6 ^ (num6 >> 24)).wrapping_mul(MULTIPLEX);
+            num2 = num2.wrapping_mul(MULTIPLEX) ^ num7;
             num3 = 0;
             num4 = 0;
         }
     }
 
     if num4 > 0 {
-        num2 = (num2 ^ num3).wrapping_mul(multiplex);
+        num2 = (num2 ^ num3).wrapping_mul(MULTIPLEX);
     }
 
-    let num6: u32 = (num2 ^ (num2 >> 13)).wrapping_mul(multiplex);
+    let num6: u32 = (num2 ^ (num2 >> 13)).wrapping_mul(MULTIPLEX);
     let out: u32 = num6 ^ (num6 >> 15);
     out as i32
 }

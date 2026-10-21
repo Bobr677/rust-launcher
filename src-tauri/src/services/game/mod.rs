@@ -30,20 +30,19 @@ pub use accounts::{
 };
 pub use cache::{clear_launcher_cache, get_launcher_cache_size};
 pub use download::{
-    download_modrinth_file, download_modrinth_modpack_and_import, import_modpack_files, import_mrpack,
-    import_mrpack_as_new_profile,
+    download_modrinth_file, download_modrinth_modpack_and_import,     import_mrpack_as_new_profile,
 };
-pub use files::{get_game_root_dir, open_game_folder, open_profile_folder};
+pub use files::open_game_folder;
 pub use install::{
     install_fabric, install_forge, install_local_version, install_neoforge, install_quilt,
     install_version,
 };
 pub use integrity::check_version_files_integrity;
 pub use launcher::{
-    cancel_download, is_game_running_now, is_minecraft_client_running, launch_game, reset_download_cancel, stop_game,
+    cancel_download, launch_game, reset_download_cancel, stop_game,
 };
 pub use runtime::{
-    lan_bridge_attach, lan_bridge_detach, lan_bridge_guest_port, lan_bridge_probe_port, lan_bridge_set_flow,
+    lan_bridge_attach, lan_bridge_detach, lan_bridge_probe_port, lan_bridge_set_flow,
     lan_bridge_set_host_port, lan_bridge_start_guest, lan_bridge_stop, lan_bridge_write,
 };
 pub use build_presets::{
@@ -67,7 +66,7 @@ pub use profile_backups::{
 };
 pub use profile_tools::{
     cleanup_profile, delete_profile_worlds, duplicate_profile, get_profile_disk_usage,
-    get_profile_instance_settings, list_profile_worlds,
+    list_profile_worlds,
 };
 pub use analysis_logs::read_instance_analysis_logs;
 pub use screenshots::{
@@ -84,7 +83,7 @@ pub use version_remove::{delete_minecraft_installation, get_version_install_deta
 pub use versions::{
     fetch_all_versions, fetch_fabric_loaders, fetch_forge_builds_for_game, fetch_forge_versions,
     fetch_neoforge_builds_for_game, fetch_neoforge_versions, fetch_quilt_loaders,
-    fetch_vanilla_releases, fetch_versions_for_loader, get_installed_fabric_profile_id,
+    fetch_versions_for_loader, get_installed_fabric_profile_id,
     get_installed_quilt_profile_id, import_custom_version, list_installed_fabric_game_versions,
     list_installed_quilt_game_versions, list_installed_versions,
 };

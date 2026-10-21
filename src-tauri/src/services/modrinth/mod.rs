@@ -40,16 +40,6 @@ fn modrinth_content_dir(
 }
 
 #[tauri::command]
-pub async fn resolve_modrinth_required_dependencies(
-    version_id: String,
-    game_version: String,
-    loader: String,
-) -> Result<Vec<ModrinthDownloadTarget>, String> {
-    let client = modrinth_http_client();
-    collect_modrinth_required_downloads(&client, &version_id, &game_version, &loader).await
-}
-
-#[tauri::command]
 pub async fn download_modrinth_with_dependencies(
     category: String,
     version_id: String,

@@ -379,17 +379,6 @@ fn resolve_profile_icon_file(profile_dir: &Path, cfg_icon: Option<&str>) -> Opti
     find_icon_png_in_profile(profile_dir).map(PathBuf::from)
 }
 
-pub fn profile_icon_file_path(profile_id: &str) -> Option<PathBuf> {
-    let profile_dir = instance_dir(profile_id).ok()?;
-    if !profile_dir.is_dir() {
-        return None;
-    }
-    let cfg_icon = instance_config_path(profile_id)
-        .ok()
-        .and_then(|p| read_instance_config(&p).ok())
-        .and_then(|cfg| cfg.icon_path);
-    resolve_profile_icon_file(&profile_dir, cfg_icon.as_deref())
-}
 
 fn find_icon_png_in_profile(root: &Path) -> Option<String> {
     let mut stack = vec![root.to_path_buf()];

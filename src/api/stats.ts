@@ -8,13 +8,6 @@ export type UserStats = {
   first_launch_at?: string | null;
   last_launch_at?: string | null;
 };
-
-export async function fetchMyStats(): Promise<UserStats> {
-  await ensureValidAccessToken();
-  const data = await apiFetch<{ stats: UserStats }>("/stats/me");
-  return data.stats;
-}
-
 export async function reportStats(input: {
   playtime_seconds_delta?: number;
   playtime_seconds?: number;

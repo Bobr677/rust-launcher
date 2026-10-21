@@ -1,6 +1,6 @@
 import { open as openFile, save as saveFile } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { subscribeTauriEvent } from "../lib/tauriEvents";
 import { AnimatePresence, motion } from "framer-motion";
 import { Search } from "lucide-react";
 import type { CSSProperties } from "react";
@@ -1098,27 +1098,13 @@ export function SettingsTab({
   }, []);
 
   useEffect(() => {
-    let unlistenPromise: Promise<() => void> | null = null;
-
-    unlistenPromise = listen<DownloadProgressPayload>("download-progress", (event) => {
+    return subscribeTauriEvent<DownloadProgressPayload>("download-progress", (event) => {
       const payload = event.payload;
       setDownloadProgress((prev) => ({
         ...prev,
         [payload.version_id]: payload,
       }));
     });
-
-    return () => {
-      if (unlistenPromise) {
-        unlistenPromise.then((unlisten) => {
-          try {
-            unlisten();
-          } catch {
-            //ignore
-          }
-        });
-      }
-    };
   }, []);
 
   useEffect(() => {
@@ -1127,40 +1113,23 @@ export function SettingsTab({
       return;
     }
 
-    let unlisten: (() => void) | undefined;
-    void (async () => {
-      try {
-        unlisten = await listen<{ line: string; source?: string }>("game-console-line", (event) => {
-          const payload = event.payload;
-          const text =
-            typeof payload === "string"
-              ? payload
-              : typeof payload.line === "string"
-                ? payload.line
-                : "";
-          if (!text || !isVersionInstallConsoleLine(text)) return;
-          const source: "stdout" | "stderr" =
-            typeof payload === "string"
-              ? "stdout"
-              : payload.source === "stderr"
-                ? "stderr"
-                : "stdout";
-          setInstallLogLines((prev) => [...prev.slice(-199), { line: text, source }]);
-        });
-      } catch (e) {
-        console.error("Failed to subscribe to install console:", e);
-      }
-    })();
-
-    return () => {
-      if (unlisten) {
-        try {
-          unlisten();
-        } catch {
-          //ignore
-        }
-      }
-    };
+    return subscribeTauriEvent<{ line: string; source?: string }>("game-console-line", (event) => {
+      const payload = event.payload;
+      const text =
+        typeof payload === "string"
+          ? payload
+          : typeof payload.line === "string"
+            ? payload.line
+            : "";
+      if (!text || !isVersionInstallConsoleLine(text)) return;
+      const source: "stdout" | "stderr" =
+        typeof payload === "string"
+          ? "stdout"
+          : payload.source === "stderr"
+            ? "stderr"
+            : "stdout";
+      setInstallLogLines((prev) => [...prev.slice(-199), { line: text, source }]);
+    });
   }, [installingVersionId]);
 
   useEffect(() => {

@@ -7,10 +7,7 @@ use crate::services::game::download::fetch_verified;
 
 pub mod installer;
 
-pub use installer::{
-    download_curseforge_modpack_and_import, install_curseforge_zip_as_new_profile,
-    install_curseforge_zip_into_profile,
-};
+pub use installer::download_curseforge_modpack_and_import;
 
 const MINECRAFT_GAME_ID: u32 = 432;
 
@@ -787,28 +784,6 @@ pub async fn download_curseforge_file(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
-
-    #[test]
-    fn project_dotenv_curseforge_key_is_well_formed() {
-        let env_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../.env");
-        if !env_path.is_file() {
-            return;
-        }
-        std::env::remove_var("CURSEFORGE_API_KEY");
-        dotenvy::from_path_override(&env_path).expect("load project .env");
-        let key = std::env::var("CURSEFORGE_API_KEY").expect("CURSEFORGE_API_KEY in .env");
-        assert!(
-            key.starts_with("$2a$10$"),
-            "ключ должен начинаться с $2a$10$ (без кавычек в значении)"
-        );
-        assert!(
-            key.len() >= 50,
-            "ключ слишком короткий ({} символов) — проверьте кавычки в .env",
-            key.len()
-        );
-        std::env::remove_var("CURSEFORGE_API_KEY");
-    }
 
     #[test]
     fn dotenv_preserves_curseforge_key_with_dollar_signs() {

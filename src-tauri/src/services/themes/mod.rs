@@ -275,18 +275,6 @@ pub fn get_theme_css(theme_id: String) -> Result<String, String> {
 }
 
 #[command]
-pub fn save_custom_theme_css(theme_id: String, css: String) -> Result<(), String> {
-    let dir = themes_dir()?;
-    let theme_dir = dir.join(&theme_id);
-    if !theme_dir.is_dir() {
-        return Err(format!("Тема «{theme_id}» не найдена."));
-    }
-    let style_path = theme_dir.join("style.css");
-    std::fs::write(&style_path, css)
-        .map_err(|e| format!("Не удалось сохранить style.css: {e}"))
-}
-
-#[command]
 pub fn create_empty_theme(name: String) -> Result<ThemeInfo, String> {
     let sanitized: String = name
         .chars()

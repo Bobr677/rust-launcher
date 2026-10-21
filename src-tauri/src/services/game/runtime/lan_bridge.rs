@@ -655,12 +655,6 @@ pub async fn lan_bridge_stop(session_id: Option<String>) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-pub async fn lan_bridge_guest_port(session_id: Option<String>) -> Result<Option<u16>, String> {
-    let sid = normalize_session_id(session_id.as_deref().unwrap_or("default"));
-    Ok(existing_tunnel(&sid).and_then(|t| t.guest_port()))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

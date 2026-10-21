@@ -1,12 +1,4 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
-
-export type ProfileIconSource = {
-  id: string;
-  name: string;
-  icon_path: string | null;
-  directory: string;
-};
-
 export function resolveIconSrc(iconPath: string): string {
   if (iconPath.startsWith("http://") || iconPath.startsWith("https://") || iconPath.startsWith("data:")) {
     return iconPath;
@@ -25,13 +17,6 @@ export function resolveIconSrc(iconPath: string): string {
 
   return convertFileSrc(localPath);
 }
-
-export function getProfileIconPath(profile: ProfileIconSource): string {
-  const baseDir = profile.directory.replace(/\\/g, "/").replace(/\/$/, "");
-  if (profile.icon_path) return profile.icon_path;
-  return `${baseDir}/icon.png`;
-}
-
 export function profileIconInitial(name: string): string {
   const trimmed = name.trim();
   if (!trimmed) return "?";

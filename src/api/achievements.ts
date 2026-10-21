@@ -21,12 +21,3 @@ export async function listUserAchievements(userId: string): Promise<AchievementR
   const data = await apiFetch<{ achievements: AchievementRow[] }>(`/users/${userId}/achievements`);
   return data.achievements ?? [];
 }
-
-export async function unlockAchievement(code: string): Promise<{ newly_unlocked: boolean }> {
-  await ensureValidAccessToken();
-  const data = await apiFetch<{ success: boolean; newly_unlocked?: boolean }>(
-    `/achievements/${encodeURIComponent(code)}/unlock`,
-    { method: "POST" },
-  );
-  return { newly_unlocked: Boolean(data.newly_unlocked) };
-}

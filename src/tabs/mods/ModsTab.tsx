@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { subscribeTauriEvent } from "../../lib/tauriEvents";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useT, t } from "../../i18n";
 import {
@@ -505,8 +505,6 @@ export function ModsTab({
   }, [contentType, contentProvider, sourceTab]);
 
   useEffect(() => {
-    let unlistenMrpack: (() => void) | undefined;
-    let unlistenCf: (() => void) | undefined;
     const onProgress = (payload: MrpackImportProgressPayload) => {
       setModpackImportProgress(payload);
       const jobId = modpackDownloadJobIdRef.current;
@@ -520,23 +518,17 @@ export function ModsTab({
         updateDownloadJob(jobId, (payload.current / payload.total) * 100);
       }
     };
-    void (async () => {
-      try {
-        unlistenMrpack = await listen<MrpackImportProgressPayload>(
-          "mrpack-import-progress",
-          (event) => onProgress(event.payload),
-        );
-        unlistenCf = await listen<MrpackImportProgressPayload>(
-          "curseforge-install-progress",
-          (event) => onProgress(event.payload),
-        );
-      } catch (e) {
-        console.error(e);
-      }
-    })();
+    const unlistenMrpack = subscribeTauriEvent<MrpackImportProgressPayload>(
+      "mrpack-import-progress",
+      (event) => onProgress(event.payload),
+    );
+    const unlistenCf = subscribeTauriEvent<MrpackImportProgressPayload>(
+      "curseforge-install-progress",
+      (event) => onProgress(event.payload),
+    );
     return () => {
-      if (unlistenMrpack) unlistenMrpack();
-      if (unlistenCf) unlistenCf();
+      unlistenMrpack();
+      unlistenCf();
     };
   }, [updateDownloadJob]);
 

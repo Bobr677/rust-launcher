@@ -15,6 +15,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { disposeWhenResolved, subscribeTauriEvent } from "../lib/tauriEvents";
 import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
@@ -1795,76 +1796,58 @@ export function ModpackTab({
 
   useLayoutEffect(() => {
     if (!isExportOpen) return;
-    let unlistenProgress: (() => void) | undefined;
-    let unlistenFinished: (() => void) | undefined;
-    let unlistenError: (() => void) | undefined;
-
-    (async () => {
-      try {
-        unlistenProgress = await listen<ExportProgressPayload>("export-progress", (event) => {
-          const p = event.payload;
-          setExportProgress(p);
-          const now = Date.now();
-          const prev = lastProgressRef.current;
-          if (prev && p.bytes_written >= prev.bytes) {
-            const dt = Math.max(1, now - prev.t);
-            const db = p.bytes_written - prev.bytes;
-            const bps = (db * 1000) / dt;
-            if (Number.isFinite(bps)) {
-              setExportSpeedLabel(
-                `${formatByteSize(language, bps)}${tt("modpacks.export.perSecond")}`,
-              );
-            }
-          }
-          lastProgressRef.current = { t: now, bytes: p.bytes_written };
-        });
-      } catch (e) {
-        console.error(e);
-      }
-
-      try {
-        unlistenFinished = await listen<ExportFinishedPayload>("export-finished", (event) => {
-          const p = event.payload;
-          setExportResultPath(p.path);
-          setExportSkippedFiles(Array.isArray(p.skipped_files) ? p.skipped_files : []);
-          setExportResolvedCount(
-            typeof p.resolved_count === "number" ? p.resolved_count : 0,
+    const unlistenProgress = subscribeTauriEvent<ExportProgressPayload>("export-progress", (event) => {
+      const p = event.payload;
+      setExportProgress(p);
+      const now = Date.now();
+      const prev = lastProgressRef.current;
+      if (prev && p.bytes_written >= prev.bytes) {
+        const dt = Math.max(1, now - prev.t);
+        const db = p.bytes_written - prev.bytes;
+        const bps = (db * 1000) / dt;
+        if (Number.isFinite(bps)) {
+          setExportSpeedLabel(
+            `${formatByteSize(language, bps)}${tt("modpacks.export.perSecond")}`,
           );
-          setExportOverrideCount(
-            typeof p.override_count === "number" ? p.override_count : 0,
-          );
-          setExportBusy(false);
-          setExportProgress(null);
-          showNotification(
-            "success",
-            tt("modpacks.export.finished"),
-          );
-        });
-      } catch (e) {
-        console.error(e);
+        }
       }
+      lastProgressRef.current = { t: now, bytes: p.bytes_written };
+    });
 
-      try {
-        unlistenError = await listen<ExportErrorPayload>("export-error", (event) => {
-          const p = event.payload;
-          const msg =
-            typeof p === "string"
-              ? p
-              : p && typeof p.message === "string"
-                ? p.message
-                : tt("modpacks.export.errorGeneric");
-          setExportBusy(false);
-          showNotification("error", msg);
-        });
-      } catch (e) {
-        console.error(e);
-      }
-    })();
+    const unlistenFinished = subscribeTauriEvent<ExportFinishedPayload>("export-finished", (event) => {
+      const p = event.payload;
+      setExportResultPath(p.path);
+      setExportSkippedFiles(Array.isArray(p.skipped_files) ? p.skipped_files : []);
+      setExportResolvedCount(
+        typeof p.resolved_count === "number" ? p.resolved_count : 0,
+      );
+      setExportOverrideCount(
+        typeof p.override_count === "number" ? p.override_count : 0,
+      );
+      setExportBusy(false);
+      setExportProgress(null);
+      showNotification(
+        "success",
+        tt("modpacks.export.finished"),
+      );
+    });
+
+    const unlistenError = subscribeTauriEvent<ExportErrorPayload>("export-error", (event) => {
+      const p = event.payload;
+      const msg =
+        typeof p === "string"
+          ? p
+          : p && typeof p.message === "string"
+            ? p.message
+            : tt("modpacks.export.errorGeneric");
+      setExportBusy(false);
+      showNotification("error", msg);
+    });
 
     return () => {
-      unlistenProgress?.();
-      unlistenFinished?.();
-      unlistenError?.();
+      unlistenProgress();
+      unlistenFinished();
+      unlistenError();
     };
   }, [isExportOpen, language, showNotification]);
 
@@ -3363,25 +3346,24 @@ export function ModpackTab({
 
   useEffect(() => {
     if (activeView !== "import") return;
-    let unlisten: (() => void) | undefined;
     const webview = getCurrentWebview();
-    void webview.onDragDropEvent((event: { payload: { type: string; paths?: string[] } }) => {
-      if (event.payload.type === "drop" && event.payload.paths?.length) {
-        const path = event.payload.paths.find((p: string) =>
-          p.toLowerCase().endsWith(".mrpack"),
-        );
-        if (path) void handleImportMrpack(path);
-      }
-    }).then((fn) => { unlisten = fn; }).catch(console.error);
-    return () => { unlisten?.(); };
+    return disposeWhenResolved(
+      webview.onDragDropEvent((event: { payload: { type: string; paths?: string[] } }) => {
+        if (event.payload.type === "drop" && event.payload.paths?.length) {
+          const path = event.payload.paths.find((p: string) =>
+            p.toLowerCase().endsWith(".mrpack"),
+          );
+          if (path) void handleImportMrpack(path);
+        }
+      }),
+    );
   }, [activeView]);
 
   useEffect(() => {
     if (activeView !== "manage" || !selectedProfile) return;
-    let unlisten: (() => void) | undefined;
     const webview = getCurrentWebview();
-    void webview
-      .onDragDropEvent(async (event) => {
+    const disposeDragDrop = disposeWhenResolved(
+      webview.onDragDropEvent(async (event) => {
         const p = event.payload;
         if (p.type === "leave") {
           setIsManageDropTarget(false);
@@ -3414,14 +3396,11 @@ export function ModpackTab({
           }
           await addProfileFilesFromPaths(filtered);
         }
-      })
-      .then((fn) => {
-        unlisten = fn;
-      })
-      .catch(console.error);
+      }),
+    );
     return () => {
       setIsManageDropTarget(false);
-      unlisten?.();
+      disposeDragDrop();
     };
   }, [activeView, selectedProfile?.id, contentTab, language]);
 

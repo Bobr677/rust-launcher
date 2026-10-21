@@ -79,13 +79,8 @@ pub struct ManifestFile {
     pub project_id: u32,
     #[serde(rename = "fileID")]
     pub file_id: u32,
-    #[serde(default = "default_required")]
-    pub required: bool,
 }
 
-fn default_required() -> bool {
-    true
-}
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
@@ -552,29 +547,6 @@ fn emit_progress(app: &AppHandle, p: &InstallProgress) {
 }
 
 
-#[tauri::command]
-pub async fn install_curseforge_zip_into_profile(
-    app: AppHandle,
-    profile_id: String,
-    zip_path: String,
-) -> Result<InstallationResult, String> {
-    let dir = instance_dir(&profile_id)?;
-    if !dir.exists() {
-        return Err("Папка сборки не найдена".to_string());
-    }
-    let pack_path = resolve_file_path(&zip_path);
-    if !pack_path.exists() {
-        return Err("Файл .zip CurseForge не найден".to_string());
-    }
-
-    let app2 = app.clone();
-    install_curseforge_zip(&pack_path, &dir, DEFAULT_CONCURRENCY, move |p| {
-        emit_progress(&app2, &p);
-    })
-    .await
-}
-
-#[tauri::command]
 pub async fn install_curseforge_zip_as_new_profile(
     app: AppHandle,
     zip_path: String,
