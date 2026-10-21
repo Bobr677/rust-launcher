@@ -3,14 +3,12 @@
   "productName": "Nexus Launcher",
   "version": "3.2.12",
   "identifier": "com.16steyy.16Launcher",
-
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
-
   "app": {
     "windows": [
       {
@@ -29,18 +27,28 @@
         "enable": true,
         "scope": {
           "requireLiteralLeadingDot": false,
-          "allow": ["$APPDATA/16Launcher/**", "$DATA/16Launcher/**"]
+          "allow": [
+            "$APPDATA/16Launcher/**",
+            "$DATA/16Launcher/**"
+          ]
         }
       }
     }
   },
-
   "bundle": {
     "active": true,
-    "targets": ["appimage", "deb", "rpm", "nsis", "dmg"],
+    "targets": [
+      "appimage",
+      "deb",
+      "rpm",
+      "nsis",
+      "dmg"
+    ],
     "fileAssociations": [
       {
-        "ext": ["mrpack"],
+        "ext": [
+          "mrpack"
+        ],
         "name": "Modrinth Modpack",
         "description": "Modrinth modpack (.mrpack)",
         "mimeType": "application/octet-stream"
@@ -53,7 +61,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "createUpdaterArtifacts": true,
+    "createUpdaterArtifacts": false,
     "linux": {
       "appimage": {
         "bundleMediaFramework": true
@@ -78,7 +86,6 @@
       "minimumSystemVersion": "11.0"
     }
   },
-
   "plugins": {
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEEwNzkxNTE1RDY5MzNFRDMKUldUVFBwUFdGUlY1b04yR0RvNG5FUDNpTW9nOWgzVEJsMGZiUnlPT1Y3TTNVa0NGSGp0bWUzclMK",
