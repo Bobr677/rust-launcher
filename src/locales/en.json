@@ -1306,7 +1306,9 @@
       "requestExists": "Request already exists or you are already friends.",
       "requestSent": "Request sent",
       "removed": "Friend removed"
-    }
+    },
+    "profileFriendsOnly": "Only friends can see this profile",
+    "profileFriendsOnlyHint": "Add the player as a friend to see their achievements and status."
   },
   "rooms": {
     "subtitleSignedIn": "Create rooms and invite friends to play together.",
@@ -1468,7 +1470,13 @@
     "friendAccept": "{{nick}} accepted your friend request",
     "roomInvite": "{{nick}} invited you to a room",
     "achievement": "Achievement: {{title}}",
-    "system": "System notification"
+    "system": "System notification",
+    "filterAll": "All",
+    "filterUnread": "Unread",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "emptyUnread": "All notifications are read.",
+    "allRead": "All caught up"
   },
   "achievements": {
     "title": "Achievements",
@@ -1527,6 +1535,19 @@
         "title": "Stylist",
         "description": "Submit a custom launcher theme."
       }
+    },
+    "filterAll": "All",
+    "filterUnlocked": "Unlocked",
+    "filterLocked": "Locked",
+    "unlockedNoDate": "Unlocked",
+    "noneInFilter": "Nothing here yet.",
+    "progressLaunches": "{{current}} / {{target}} launches",
+    "progressPlaytime": "{{current}} / {{target}} h",
+    "category": {
+      "profile": "Profile",
+      "game": "Game",
+      "social": "Community",
+      "other": "Other"
     }
   },
   "platform": {
@@ -1615,6 +1636,17 @@
       "identityAlreadyLinked": "{{provider}} is already linked to another 16Launcher account.",
       "discordNotConfigured": "Discord sign-in is not configured on the server yet.",
       "discordFailed": "Discord sign-in failed. Please try again."
+    },
+    "settings": {
+      "online": "Online",
+      "nicknameHint": "At least 3 characters. Friends and room members see this name.",
+      "gameNicknameHint": "Taken from the active Minecraft account.",
+      "linkedTitle": "Linked accounts",
+      "linkedHint": "Linking confirms the game account belongs to you.",
+      "notLinked": "Not linked",
+      "linkedAs": "Linked · {{name}}",
+      "sessionTitle": "Session",
+      "sessionHint": "Sign out of 16Launcher on this device. Your Minecraft accounts stay in the launcher."
     }
   },
   "app": {
@@ -1734,7 +1766,11 @@
       },
       "subTab": {
         "overview": "Overview",
-        "skins": "Skins"
+        "skins": "Skins",
+        "wardrobe": "Wardrobe",
+        "achievements": "Achievements",
+        "notifications": "Notifications",
+        "settings": "Settings"
       },
       "skinLibrary": {
         "title": "Skin library",
@@ -1760,6 +1796,39 @@
         "switched": "Active account changed.",
         "removed": "Account removed from the list.",
         "added": "New account created and selected."
+      },
+      "signIn": "Sign in",
+      "elySignIn": "Sign in with Ely.by",
+      "stats": {
+        "playtime": "Playtime",
+        "launches": "Launches",
+        "achievements": "Achievements"
+      },
+      "overview": {
+        "skinLabel": "Skin",
+        "capeLabel": "Cape",
+        "defaultSkin": "Default",
+        "allAchievements": "All",
+        "recentAchievements": "Recently unlocked",
+        "noRecent": "Nothing unlocked yet.",
+        "nextAchievements": "Next goals",
+        "allNotifications": "All",
+        "signedOutTitle": "Sign in to 16Launcher",
+        "signedOutBody": "A 16Launcher account unlocks the launcher's social features."
+      },
+      "wardrobe": {
+        "title": "Wardrobe",
+        "subtitle": "Click a skin or cape to try it on, then apply.",
+        "skins": "Skins",
+        "capes": "Capes",
+        "pendingTitle": "Try-on not saved",
+        "apply": "Apply",
+        "discard": "Discard",
+        "applied": "Look updated.",
+        "microsoftOnlyBody": "Sign in with Microsoft to change skins and capes right from the launcher.",
+        "elyBody": "Ely.by skins are changed in your account on ely.by.",
+        "openEly": "Open Ely.by",
+        "byNameHint": "The player's skin will be set on your account."
       }
     },
     "toast": {

@@ -431,7 +431,7 @@ export function ImportMigrationScreen({
               >
                 <div className="glass-control relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden">
                   <img
-                    src={inst.icon_data_uri || "/launcher-assets/modpack_icon.png"}
+                    src={inst.icon_data_uri || "/launcher-assets/modpack_icon.svg"}
                     alt=""
                     className="h-full w-full object-cover"
                   />

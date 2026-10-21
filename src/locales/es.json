@@ -1233,7 +1233,9 @@
       "requestExists": "La solicitud ya existe o ya sois amigos.",
       "requestSent": "Solicitud enviada",
       "removed": "Amigo eliminado"
-    }
+    },
+    "profileFriendsOnly": "Solo los amigos pueden ver este perfil",
+    "profileFriendsOnlyHint": "Añade al jugador como amigo para ver sus logros y su estado."
   },
   "rooms": {
     "subtitleSignedIn": "Crea salas e invita amigos para jugar juntos.",
@@ -1376,7 +1378,13 @@
     "friendAccept": "{{nick}} aceptó tu solicitud",
     "roomInvite": "{{nick}} te invitó a una sala",
     "achievement": "Logro: {{title}}",
-    "system": "Notificación del sistema"
+    "system": "Notificación del sistema",
+    "filterAll": "Todas",
+    "filterUnread": "No leídas",
+    "today": "Hoy",
+    "yesterday": "Ayer",
+    "emptyUnread": "Todas las notificaciones están leídas.",
+    "allRead": "Todo leído"
   },
   "achievements": {
     "title": "Logros",
@@ -1435,6 +1443,19 @@
         "title": "Estilista",
         "description": "Envía un tema personalizado del launcher."
       }
+    },
+    "filterAll": "Todos",
+    "filterUnlocked": "Obtenidos",
+    "filterLocked": "Bloqueados",
+    "unlockedNoDate": "Obtenido",
+    "noneInFilter": "Aquí aún no hay nada.",
+    "progressLaunches": "{{current}} / {{target}} inicios",
+    "progressPlaytime": "{{current}} / {{target}} h",
+    "category": {
+      "profile": "Perfil",
+      "game": "Juego",
+      "social": "Comunidad",
+      "other": "Otros"
     }
   },
   "platform": {
@@ -1523,6 +1544,17 @@
       "identityAlreadyLinked": "{{provider}} ya está vinculado a otra cuenta de 16Launcher.",
       "discordNotConfigured": "El inicio de sesión con Discord aún no está configurado en el servidor.",
       "discordFailed": "No se pudo iniciar sesión con Discord. Inténtalo de nuevo."
+    },
+    "settings": {
+      "online": "En línea",
+      "nicknameHint": "Mínimo 3 caracteres. Tus amigos y los miembros de las salas ven este nombre.",
+      "gameNicknameHint": "Se toma de la cuenta de Minecraft activa.",
+      "linkedTitle": "Cuentas vinculadas",
+      "linkedHint": "La vinculación confirma que la cuenta de juego es tuya.",
+      "notLinked": "Sin vincular",
+      "linkedAs": "Vinculada · {{name}}",
+      "sessionTitle": "Sesión",
+      "sessionHint": "Cierra la sesión de 16Launcher en este dispositivo. Tus cuentas de Minecraft siguen en el launcher."
     }
   },
   "app": {
@@ -1642,7 +1674,11 @@
       },
       "subTab": {
         "overview": "Resumen",
-        "skins": "Skins"
+        "skins": "Skins",
+        "wardrobe": "Vestuario",
+        "achievements": "Logros",
+        "notifications": "Notificaciones",
+        "settings": "Ajustes"
       },
       "skinLibrary": {
         "title": "Biblioteca de skins",
@@ -1668,6 +1704,39 @@
         "switched": "La cuenta activa cambió.",
         "removed": "Cuenta eliminada de la lista.",
         "added": "Nueva cuenta creada y seleccionada."
+      },
+      "signIn": "Iniciar sesión",
+      "elySignIn": "Iniciar sesión con Ely.by",
+      "stats": {
+        "playtime": "Tiempo de juego",
+        "launches": "Inicios",
+        "achievements": "Logros"
+      },
+      "overview": {
+        "skinLabel": "Skin",
+        "capeLabel": "Capa",
+        "defaultSkin": "Predeterminada",
+        "allAchievements": "Todos",
+        "recentAchievements": "Obtenidos recientemente",
+        "noRecent": "Aún no has obtenido nada.",
+        "nextAchievements": "Próximos objetivos",
+        "allNotifications": "Todas",
+        "signedOutTitle": "Inicia sesión en 16Launcher",
+        "signedOutBody": "Una cuenta de 16Launcher activa las funciones sociales del launcher."
+      },
+      "wardrobe": {
+        "title": "Vestuario",
+        "subtitle": "Haz clic en una skin o capa para probarla y luego aplícala.",
+        "skins": "Skins",
+        "capes": "Capas",
+        "pendingTitle": "Prueba sin guardar",
+        "apply": "Aplicar",
+        "discard": "Descartar",
+        "applied": "Aspecto actualizado.",
+        "microsoftOnlyBody": "Inicia sesión con Microsoft para cambiar skins y capas desde el launcher.",
+        "elyBody": "Las skins de Ely.by se cambian en tu cuenta en ely.by.",
+        "openEly": "Abrir Ely.by",
+        "byNameHint": "La skin del jugador se aplicará a tu cuenta."
       }
     },
     "toast": {

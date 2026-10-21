@@ -1,21 +1,14 @@
-import { useCallback, useEffect, useState } from "react";
+import { useMemo, useState } from "react";
+import type { AchievementRow } from "../api/achievements";
+import type { UserStats } from "../api/stats";
+import { useAchievements, type AchievementsState } from "../hooks/useAchievements";
+import { localeTag, t, useT, type Language } from "../i18n";
 import {
-  listAchievements,
-  listUserAchievements,
-  type AchievementRow,
-} from "../api/achievements";
-import { API_AUTH_CHANGED_EVENT } from "../api/auth";
-import { ApiError, getStoredAccessToken } from "../api/client";
-import { t, useT, type Language } from "../i18n";
-
-type AchievementsPanelProps = {
-  language: Language;
-  compact?: boolean;
-  userId?: string | null;
-  className?: string;
-};
-
-const HIDDEN_ACHIEVEMENT_CODES = new Set(["five_friends"]);
+  ACHIEVEMENT_CATEGORIES,
+  achievementMeta,
+  achievementProgress,
+} from "../lib/achievements";
+import { Spinner } from "./ui";
 
 export function localizedAchievementField(
   language: Language,
@@ -30,7 +23,7 @@ export function localizedAchievementField(
 
 const ACHIEVEMENTS_ICON_SRC = "/launcher-assets/achivements.png";
 
-function AchievementIcon({ className }: { className?: string }) {
+export function AchievementIcon({ className }: { className?: string }) {
   return (
     <img
       src={ACHIEVEMENTS_ICON_SRC}
@@ -42,89 +35,101 @@ function AchievementIcon({ className }: { className?: string }) {
   );
 }
 
+type Filter = "all" | "unlocked" | "locked";
+
+type AchievementsPanelProps = {
+  language: Language;
+  /** Another user's achievements; omit for the signed-in user. */
+  userId?: string | null;
+  /** Already loaded state (shared with other widgets); when omitted the panel loads on its own. */
+  state?: AchievementsState;
+  /** Own stats, used to show progress on launch / playtime achievements. */
+  stats?: UserStats | null;
+  /** Narrower cards, for the profile modal. */
+  compact?: boolean;
+  onSignIn?: () => void;
+  className?: string;
+};
+
 export function AchievementsPanel({
   language,
-  compact = false,
   userId = null,
+  state,
+  stats = null,
+  compact = false,
+  onSignIn,
   className = "",
 }: AchievementsPanelProps) {
   const tt = useT(language);
-  const [loading, setLoading] = useState(false);
-  const [accessToken, setAccessToken] = useState("");
-  const [achievements, setAchievements] = useState<AchievementRow[]>([]);
-  const [error, setError] = useState("");
-
-  const syncAuth = useCallback(() => {
-    setAccessToken(getStoredAccessToken() ?? "");
-  }, []);
-
-  const reload = useCallback(async () => {
-    if (!getStoredAccessToken()) {
-      setAchievements([]);
-      return;
-    }
-    setLoading(true);
-    setError("");
-    try {
-      const rows = userId
-        ? await listUserAchievements(userId)
-        : await listAchievements();
-      setAchievements(rows.filter((row) => !HIDDEN_ACHIEVEMENT_CODES.has(row.code)));
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [userId]);
-
-  useEffect(() => {
-    syncAuth();
-    const onChanged = () => syncAuth();
-    window.addEventListener(API_AUTH_CHANGED_EVENT, onChanged);
-    window.addEventListener("storage", onChanged);
-    return () => {
-      window.removeEventListener(API_AUTH_CHANGED_EVENT, onChanged);
-      window.removeEventListener("storage", onChanged);
-    };
-  }, [syncAuth]);
-
-  useEffect(() => {
-    if (accessToken) {
-      void reload();
-    } else {
-      setAchievements([]);
-    }
-  }, [accessToken, reload]);
+  const own = useAchievements(userId, { enabled: !state });
+  const { signedIn, achievements, loading, error, reload } = state ?? own;
+  const [filter, setFilter] = useState<Filter>("all");
 
   const unlockedCount = achievements.filter((a) => a.unlocked).length;
-  const shellClass =
-    className ||
-    "rounded-xl border border-white/10 bg-black/30 px-4 py-3";
 
-  if (!accessToken) {
+  const groups = useMemo(() => {
+    const visible = achievements.filter((a) =>
+      filter === "all" ? true : filter === "unlocked" ? a.unlocked : !a.unlocked,
+    );
+    return ACHIEVEMENT_CATEGORIES.map((category) => {
+      const all = achievements.filter((a) => achievementMeta(a.code).category === category);
+      return {
+        category,
+        total: all.length,
+        unlocked: all.filter((a) => a.unlocked).length,
+        rows: visible.filter((a) => achievementMeta(a.code).category === category),
+      };
+    }).filter((g) => g.rows.length > 0);
+  }, [achievements, filter]);
+
+  if (!signedIn) {
     return (
-      <div className={shellClass}>
-        <p className="text-[0.75rem] font-bold text-white/45">
-          {tt("achievements.title")}
-        </p>
+      <div className={className}>
+        <div className="flex items-center gap-2">
+          <AchievementIcon className="h-4 w-4 object-contain" />
+          <p className="text-[0.75rem] font-bold text-white/45">{tt("achievements.title")}</p>
+        </div>
         <p className="mt-2 text-sm text-white/55">{tt("achievements.signInFirst")}</p>
+        {onSignIn ? (
+          <button type="button" className="btn btn-tint btn-sm mt-3" onClick={onSignIn}>
+            {tt("app.accounts.signIn")}
+          </button>
+        ) : null}
       </div>
     );
   }
 
+  const filters: { id: Filter; label: string }[] = [
+    { id: "all", label: tt("achievements.filterAll") },
+    { id: "unlocked", label: tt("achievements.filterUnlocked") },
+    { id: "locked", label: tt("achievements.filterLocked") },
+  ];
+
   return (
-    <div className={shellClass}>
-      <div className="flex items-center justify-between gap-3">
+    <div className={`flex flex-col gap-4 ${className}`}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <AchievementIcon className="h-4 w-4 object-contain" />
-          <p className="text-[0.75rem] font-bold text-white/45">
-            {tt("achievements.title")}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+          <p className="text-[0.75rem] font-bold text-white/45">{tt("achievements.title")}</p>
           <span className="text-xs text-white/50">
             {tt("achievements.progress", { unlocked: unlockedCount, total: achievements.length })}
           </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="glass-toolbar flex h-8 items-center gap-1 p-1">
+            {filters.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setFilter(f.id)}
+                className={`interactive-press rounded-lg px-2.5 py-1 text-[0.75rem] font-semibold transition-colors ${
+                  filter === f.id ? "seg-on" : "text-white/60 hover:bg-white/10 hover:text-white"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
           <button
             type="button"
             disabled={loading}
@@ -136,67 +141,144 @@ export function AchievementsPanel({
         </div>
       </div>
 
-      {error ? <p className="mt-2 text-sm text-red-300/90">{error}</p> : null}
+      {error ? <p className="text-sm text-red-300/90">{error}</p> : null}
 
       {loading && achievements.length === 0 ? (
-        <p className="mt-3 text-sm text-white/55">{tt("common.loading")}</p>
+        <div className="flex items-center gap-2 py-6 text-sm text-white/55">
+          <Spinner />
+          {tt("common.loading")}
+        </div>
       ) : achievements.length === 0 ? (
-        <p className="mt-3 text-sm text-white/55">{tt("achievements.empty")}</p>
+        error ? null : <p className="text-sm text-white/55">{tt("achievements.empty")}</p>
+      ) : groups.length === 0 ? (
+        <p className="py-6 text-sm text-white/45">{tt("achievements.noneInFilter")}</p>
       ) : (
-        <div
-          className={`mt-3 grid items-stretch gap-2 ${compact ? "grid-cols-1" : "grid-cols-1 sm:grid-cols-2"}`}
-        >
-          {achievements.map((achievement) => (
+        groups.map((group) => (
+          <section key={group.category} className="flex flex-col gap-2">
+            <p className="text-[0.75rem] font-bold text-white/45">
+              {tt(`achievements.category.${group.category}`)}
+              <span className="ml-1.5 font-semibold text-white/30">
+                {group.unlocked}/{group.total}
+              </span>
+            </p>
             <div
-              key={achievement.code}
-              className={`flex h-full gap-2.5 rounded-xl border px-3 py-2.5 transition ${
-                achievement.unlocked
-                  ? "border-amber-400/25 bg-amber-500/10"
-                  : "border-white/8 bg-black/25 opacity-70"
+              className={`grid items-stretch gap-2 ${
+                compact
+                  ? "grid-cols-[repeat(auto-fill,minmax(13rem,1fr))]"
+                  : "grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]"
               }`}
             >
-              <div
-                className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                  achievement.unlocked
-                    ? "bg-amber-500/20 text-amber-200"
-                    : "bg-white/5 text-white/35"
-                }`}
-              >
-                <AchievementIcon className="h-4 w-4 object-contain" />
-              </div>
-              <div className="flex min-w-0 flex-1 flex-col">
-                <p className="min-h-[2.5rem] text-sm font-semibold leading-snug text-white/90 [overflow-wrap:anywhere]">
-                  {localizedAchievementField(
-                    language,
-                    achievement.code,
-                    "title",
-                    achievement.title,
-                  )}
-                </p>
-                <p className="mt-0.5 line-clamp-2 min-h-[2rem] text-xs leading-snug text-white/55">
-                  {localizedAchievementField(
-                    language,
-                    achievement.code,
-                    "description",
-                    achievement.description,
-                  )}
-                </p>
-                {achievement.unlocked && achievement.unlocked_at ? (
-                  <p className="mt-auto pt-1.5 whitespace-nowrap text-[0.75rem] text-amber-200/70">
-                    {tt("achievements.unlockedAt", {
-                      date: new Date(achievement.unlocked_at).toLocaleDateString(),
-                    })}
-                  </p>
-                ) : (
-                  <p className="mt-auto pt-1.5 text-[0.75rem] font-semibold text-white/35">
-                    {tt("achievements.locked")}
-                  </p>
-                )}
-              </div>
+              {group.rows.map((achievement) => (
+                <AchievementCard
+                  key={achievement.code}
+                  achievement={achievement}
+                  language={language}
+                  stats={stats}
+                />
+              ))}
             </div>
-          ))}
-        </div>
+          </section>
+        ))
       )}
+    </div>
+  );
+}
+
+export function formatAchievementDate(language: Language, iso: string | null | undefined): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString(localeTag(language));
+}
+
+export function formatAchievementProgress(
+  language: Language,
+  progress: NonNullable<ReturnType<typeof achievementProgress>>,
+): string {
+  if (progress.metric === "launches") {
+    return t(language, "achievements.progressLaunches", {
+      current: progress.current,
+      target: progress.target,
+    });
+  }
+  const hours = (seconds: number) =>
+    (seconds / 3600).toLocaleString(localeTag(language), { maximumFractionDigits: 1 });
+  return t(language, "achievements.progressPlaytime", {
+    current: hours(progress.current),
+    target: hours(progress.target),
+  });
+}
+
+export function AchievementCard({
+  achievement,
+  language,
+  stats,
+}: {
+  achievement: AchievementRow;
+  language: Language;
+  stats?: UserStats | null;
+}) {
+  const tt = useT(language);
+  const progress = achievementProgress(achievement, stats);
+  const unlockedDate = achievement.unlocked
+    ? formatAchievementDate(language, achievement.unlocked_at)
+    : "";
+
+  return (
+    <div
+      className={`flex h-full gap-2.5 rounded-xl border px-3 py-2.5 transition ${
+        achievement.unlocked
+          ? "border-amber-400/25 bg-amber-500/10"
+          : "border-white/10 bg-black/25"
+      }`}
+    >
+      <div
+        className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+          achievement.unlocked ? "bg-amber-500/20" : "bg-white/5 opacity-50"
+        }`}
+      >
+        <AchievementIcon className="h-4 w-4 object-contain" />
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <p
+          className={`text-sm font-semibold leading-snug [overflow-wrap:anywhere] ${
+            achievement.unlocked ? "text-white/90" : "text-white/60"
+          }`}
+        >
+          {localizedAchievementField(language, achievement.code, "title", achievement.title)}
+        </p>
+        <p className="mt-0.5 text-xs leading-snug text-white/50">
+          {localizedAchievementField(
+            language,
+            achievement.code,
+            "description",
+            achievement.description,
+          )}
+        </p>
+        <div className="mt-auto pt-2">
+          {achievement.unlocked ? (
+            <p className="text-[0.75rem] text-amber-200/70">
+              {unlockedDate
+                ? tt("achievements.unlockedAt", { date: unlockedDate })
+                : tt("achievements.unlockedNoDate")}
+            </p>
+          ) : progress ? (
+            <div className="flex items-center gap-2">
+              <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/10">
+                <div
+                  className="h-full rounded-full bg-amber-300/60"
+                  style={{ width: `${Math.max(3, Math.round(progress.ratio * 100))}%` }}
+                />
+              </div>
+              <span className="shrink-0 text-[0.75rem] text-white/40">
+                {formatAchievementProgress(language, progress)}
+              </span>
+            </div>
+          ) : (
+            <p className="text-[0.75rem] font-semibold text-white/35">{tt("achievements.locked")}</p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

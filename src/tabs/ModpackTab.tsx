@@ -504,7 +504,7 @@ function RefreshIcon({ className }: IconProps) {
 }
 
 function ModsIcon({ className }: IconProps) {
-  return <ImageIcon src="/launcher-assets/mods.png" className={className} />;
+  return <ImageIcon src="/launcher-assets/mods.svg" className={className} />;
 }
 
 function ProfileItemSourceIcon({
@@ -621,7 +621,7 @@ function ProfileItemIcon({
 }
 
 function SettingsIcon({ className }: IconProps) {
-  return <ImageIcon src="/launcher-assets/settings.png" className={className} />;
+  return <ImageIcon src="/launcher-assets/settings.svg" className={className} />;
 }
 
 function SearchIcon({ className }: IconProps) {
@@ -5465,7 +5465,7 @@ export function ModpackTab({
                     return a.display_name.toLowerCase().localeCompare(b.display_name.toLowerCase());
                   })
                   .map((p) => {
-                    const iconSrc = p.icon_data_uri || p.icon_path || "/launcher-assets/modpack_icon.png";
+                    const iconSrc = p.icon_data_uri || p.icon_path || "/launcher-assets/modpack_icon.svg";
                     const meta = [
                       p.loader ? p.loader : null,
                       p.game_version ? p.game_version : null,

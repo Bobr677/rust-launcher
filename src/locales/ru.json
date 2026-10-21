@@ -1306,7 +1306,9 @@
       "requestExists": "Заявка уже есть или вы уже друзья.",
       "requestSent": "Заявка отправлена",
       "removed": "Друг удалён"
-    }
+    },
+    "profileFriendsOnly": "Профиль доступен только друзьям",
+    "profileFriendsOnlyHint": "Добавьте игрока в друзья, чтобы видеть его достижения и статус."
   },
   "rooms": {
     "subtitleSignedIn": "Создавайте комнаты и зовите друзей играть вместе.",
@@ -1468,7 +1470,13 @@
     "friendAccept": "{{nick}} принял заявку в друзья",
     "roomInvite": "{{nick}} пригласил вас в комнату",
     "achievement": "Достижение: {{title}}",
-    "system": "Системное уведомление"
+    "system": "Системное уведомление",
+    "filterAll": "Все",
+    "filterUnread": "Непрочитанные",
+    "today": "Сегодня",
+    "yesterday": "Вчера",
+    "emptyUnread": "Все уведомления прочитаны.",
+    "allRead": "Всё прочитано"
   },
   "achievements": {
     "title": "Достижения",
@@ -1527,6 +1535,19 @@
         "title": "Стилист",
         "description": "Отправьте свою тему лаунчера."
       }
+    },
+    "filterAll": "Все",
+    "filterUnlocked": "Получены",
+    "filterLocked": "Не получены",
+    "unlockedNoDate": "Получено",
+    "noneInFilter": "В этом фильтре пока пусто.",
+    "progressLaunches": "{{current}} / {{target}} запусков",
+    "progressPlaytime": "{{current}} / {{target}} ч",
+    "category": {
+      "profile": "Профиль",
+      "game": "Игра",
+      "social": "Сообщество",
+      "other": "Разное"
     }
   },
   "platform": {
@@ -1615,6 +1636,17 @@
       "identityAlreadyLinked": "{{provider}} уже привязан к другому аккаунту 16Launcher.",
       "discordNotConfigured": "Вход через Discord пока не настроен на сервере.",
       "discordFailed": "Не удалось войти через Discord. Попробуйте ещё раз."
+    },
+    "settings": {
+      "online": "В сети",
+      "nicknameHint": "Минимум 3 символа. Этот ник видят друзья и участники комнат.",
+      "gameNicknameHint": "Берётся из активного аккаунта Minecraft.",
+      "linkedTitle": "Привязанные аккаунты",
+      "linkedHint": "Привязка подтверждает, что игровой аккаунт принадлежит вам.",
+      "notLinked": "Не привязан",
+      "linkedAs": "Привязан · {{name}}",
+      "sessionTitle": "Сессия",
+      "sessionHint": "Выход из аккаунта 16Launcher на этом устройстве. Аккаунты Minecraft останутся в лаунчере."
     }
   },
   "app": {
@@ -1734,7 +1766,11 @@
       },
       "subTab": {
         "overview": "Обзор",
-        "skins": "Скины"
+        "skins": "Скины",
+        "wardrobe": "Гардероб",
+        "achievements": "Достижения",
+        "notifications": "Уведомления",
+        "settings": "Настройки"
       },
       "skinLibrary": {
         "title": "Библиотека скинов",
@@ -1760,6 +1796,39 @@
         "switched": "Активный аккаунт изменён.",
         "removed": "Аккаунт удалён из списка.",
         "added": "Создан новый аккаунт и выбран."
+      },
+      "signIn": "Войти",
+      "elySignIn": "Войти через Ely.by",
+      "stats": {
+        "playtime": "В игре",
+        "launches": "Запусков",
+        "achievements": "Достижения"
+      },
+      "overview": {
+        "skinLabel": "Скин",
+        "capeLabel": "Плащ",
+        "defaultSkin": "Стандартный",
+        "allAchievements": "Все",
+        "recentAchievements": "Недавно получено",
+        "noRecent": "Пока ничего не получено.",
+        "nextAchievements": "Следующие цели",
+        "allNotifications": "Все",
+        "signedOutTitle": "Войдите в 16Launcher",
+        "signedOutBody": "Аккаунт 16Launcher открывает социальные функции лаунчера."
+      },
+      "wardrobe": {
+        "title": "Гардероб",
+        "subtitle": "Нажмите на скин или плащ, чтобы примерить, затем примените.",
+        "skins": "Скины",
+        "capes": "Плащи",
+        "pendingTitle": "Примерка не сохранена",
+        "apply": "Применить",
+        "discard": "Отменить",
+        "applied": "Образ обновлён.",
+        "microsoftOnlyBody": "Войдите через Microsoft, чтобы менять скины и плащи прямо из лаунчера.",
+        "elyBody": "Скин Ely.by меняется в личном кабинете на сайте ely.by.",
+        "openEly": "Открыть Ely.by",
+        "byNameHint": "Скин игрока будет установлен на ваш аккаунт."
       }
     },
     "toast": {

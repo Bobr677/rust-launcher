@@ -121,7 +121,7 @@ export function SelectedProfileTitleBar({
             className={ICON_BTN_CLASS}
             title={tt("app.playAction.play")}
           >
-            <img src="/launcher-assets/play.png" alt="" className="h-3.5 w-3.5 object-contain" />
+            <img src="/launcher-assets/play.svg" alt="" className="h-3.5 w-3.5 object-contain" />
           </button>
         )}
         <button
@@ -130,7 +130,7 @@ export function SelectedProfileTitleBar({
           className={ICON_BTN_CLASS}
           title={tt("modpacks.manage.profileSettings")}
         >
-          <img src="/launcher-assets/settings.png" alt="" className="h-3.5 w-3.5 object-contain" />
+          <img src="/launcher-assets/settings.svg" alt="" className="h-3.5 w-3.5 object-contain" />
         </button>
       </div>
     </div>

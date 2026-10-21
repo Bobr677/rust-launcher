@@ -256,12 +256,12 @@ type InstanceProfileCard = InstanceProfileSummary & {
 };
 
 const SIDEBAR_ICON_PATHS: Partial<Record<SidebarItemId, string>> = {
-  play: "/launcher-assets/play64.png",
-  settings: "/launcher-assets/settings.png",
-  friends: "/launcher-assets/group.png",
-  rooms: "/launcher-assets/room.png",
-  mods: "/launcher-assets/mods.png",
-  modpacks: "/launcher-assets/modpack_icon.png",
+  play: "/launcher-assets/play.svg",
+  settings: "/launcher-assets/settings.svg",
+  friends: "/launcher-assets/group.svg",
+  rooms: "/launcher-assets/room.svg",
+  mods: "/launcher-assets/mods.svg",
+  modpacks: "/launcher-assets/modpack_icon.svg",
 };
 
 const NECO_ARC_SECRET_SOUND_SRC =
@@ -4937,7 +4937,7 @@ function App() {
               }}
               className="mt-0.5 flex w-full items-center gap-2 rounded-xl px-3 py-1.5 text-left hover:bg-white/10"
             >
-              <img src="/launcher-assets/settings.png" alt="" className="h-3.5 w-3.5 object-contain" />
+              <img src="/launcher-assets/settings.svg" alt="" className="h-3.5 w-3.5 object-contain" />
               <span>{tt("modpacks.contextMenu.settings")}</span>
             </button>
             <button

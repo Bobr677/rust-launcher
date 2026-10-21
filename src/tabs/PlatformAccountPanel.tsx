@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
@@ -20,7 +20,9 @@ import {
   type PlatformUser,
 } from "../api/auth";
 import { ApiError, getStoredAccessToken } from "../api/client";
+import { fetchUserProfile } from "../api/users";
 import { InputClearButton } from "../components/ui";
+import { ElyByIcon, MicrosoftIcon } from "../features/account/icons";
 import { NicknameWithSponsor } from "../components/SponsorBadge";
 import { useT, type Language } from "../i18n";
 import { PRIVACY_POLICY_URL } from "../lib/legal";
@@ -54,7 +56,8 @@ type PlatformAccountPanelProps = {
   onMicrosoftLogin?: () => void | Promise<void>;
   onElyLogin?: () => void | Promise<void>;
   providerLoginBusy?: boolean;
-  compact?: boolean;
+  /** Called after the platform nickname changes, so other widgets can refresh. */
+  onProfileChanged?: () => void;
 };
 
 const REFRESH_AHEAD_MS = 60_000;
@@ -124,7 +127,7 @@ export function PlatformAccountPanel({
   onMicrosoftLogin,
   onElyLogin,
   providerLoginBusy = false,
-  compact = false,
+  onProfileChanged,
 }: PlatformAccountPanelProps) {
   const tt = useT(language);
 
@@ -148,6 +151,10 @@ export function PlatformAccountPanel({
   const [discordBusy, setDiscordBusy] = useState(false);
   const [linking, setLinking] = useState<null | "ely" | "minecraft">(null);
   const [linkedProviders, setLinkedProviders] = useState({ ely: false, minecraft: false });
+  const [linkedIdentity, setLinkedIdentity] = useState<{ ely: string | null; minecraft: boolean }>({
+    ely: null,
+    minecraft: false,
+  });
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deletePassword, setDeletePassword] = useState("");
   const [showDeletePassword, setShowDeletePassword] = useState(false);
@@ -180,6 +187,15 @@ export function PlatformAccountPanel({
         window.localStorage.setItem(API_NICKNAME_KEY, me.nickname);
         const fresh = getStoredAccessToken() ?? token;
         if (fresh !== token) setAccessToken(fresh);
+        // The public profile of yourself carries the linked Ely.by / Minecraft identities.
+        void fetchUserProfile(me.id)
+          .then((pub) =>
+            setLinkedIdentity({
+              ely: pub.ely_username?.trim() || null,
+              minecraft: Boolean(pub.mc_uuid?.trim()),
+            }),
+          )
+          .catch(() => {});
       })
       .catch(() => {
         if (!getStoredAccessToken()) {
@@ -491,6 +507,7 @@ export function PlatformAccountPanel({
       setPlatformUser(me);
       setNicknameDraft(me.nickname);
       window.localStorage.setItem(API_NICKNAME_KEY, me.nickname);
+      onProfileChanged?.();
       showNotification("success", tt("platform.toast.nicknameUpdated"));
     } catch (e) {
       const rawMessage = e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e);
@@ -580,146 +597,6 @@ export function PlatformAccountPanel({
       setLinking(null);
     }
   };
-
-  const renderProviderButtons = (compactMode: boolean) => (
-    <div className={`flex flex-wrap items-center justify-center gap-3 ${compactMode ? "mt-1" : ""}`}>
-      <button
-        type="button"
-        disabled={loading || linking !== null || providerLoginBusy || !accessToken || linkedProviders.minecraft}
-        onClick={() => void handleLink("minecraft")}
-        className={`interactive-press flex items-center gap-2 rounded-xl border border-white/15 bg-[#0078d4]/90 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-[#106ebe] disabled:opacity-60 ${
-          compactMode ? "min-w-[170px] justify-center shadow-lg" : ""
-        }`}
-        title={!launcherProfile.mc_uuid ? tt("platform.linkMicrosoftTitle") : undefined}
-      >
-        <span>Microsoft</span>
-        <span className="text-white/80">·</span>
-        <span>
-          {linkedProviders.minecraft
-            ? tt("platform.linked")
-            : linking === "minecraft"
-              ? tt("platform.linking")
-              : tt("platform.link")}
-        </span>
-      </button>
-      <button
-        type="button"
-        disabled={loading || linking !== null || providerLoginBusy || !accessToken || linkedProviders.ely}
-        onClick={() => void handleLink("ely")}
-        className={`interactive-press flex items-center gap-2 rounded-xl bg-[#2d7d46] px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:bg-[#248338] disabled:opacity-60 ${
-          compactMode ? "min-w-[170px] justify-center" : ""
-        }`}
-        title={!launcherProfile.ely_uuid ? tt("platform.linkElyTitle") : undefined}
-      >
-        <span>Ely.by</span>
-        <span className="text-white/80">·</span>
-        <span>
-          {linkedProviders.ely
-            ? tt("platform.linked")
-            : linking === "ely"
-              ? tt("platform.linking")
-              : tt("platform.link")}
-        </span>
-      </button>
-    </div>
-  );
-
-  if (compact && accessToken) {
-    return (
-      <div className="flex w-full flex-col items-center gap-3">
-        <div className="w-full rounded-xl border border-white/10 bg-black/30 p-3">
-          <p className="text-[0.75rem] font-bold text-white/45">
-            {tt("platform.accountManagement")}
-          </p>
-          <div className="relative mt-2">
-            <input
-              type="text"
-              value={nicknameDraft}
-              onChange={(e) => setNicknameDraft(e.target.value)}
-              onFocus={() => {
-                nicknameDraftFocusedRef.current = true;
-              }}
-              onBlur={() => {
-                nicknameDraftFocusedRef.current = false;
-              }}
-              className={`h-10 w-full glass-control rounded-xl px-3 text-sm text-white outline-none ${
-                nicknameDraft ? "pr-9" : ""
-              }`}
-              placeholder={tt("platform.newNicknamePlaceholder")}
-            />
-            <InputClearButton
-              value={nicknameDraft}
-              onClear={() => setNicknameDraft("")}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2"
-              aria-label={tt("common.clear")}
-            />
-          </div>
-          <div className="mt-2 flex gap-2">
-            <button
-              type="button"
-              disabled={loading || linking !== null || providerLoginBusy}
-              onClick={() => void handleChangeNickname()}
-              className="interactive-press flex-1 rounded-xl border border-accent-to/40 bg-accent-from/20 px-3 py-2 text-xs font-semibold text-accent-hi hover:bg-accent-from/30 disabled:opacity-60"
-            >
-              {tt("platform.changeNickname")}
-            </button>
-              <button
-                type="button"
-                disabled={loading || linking !== null || providerLoginBusy}
-                onClick={() => void handleLogout()}
-                className="interactive-press rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-xs font-semibold text-white/75 hover:bg-black/50 disabled:opacity-60"
-              >
-                {tt("platform.logout")}
-              </button>
-            </div>
-            <button
-              type="button"
-              disabled={loading || deletingAccount || linking !== null || providerLoginBusy}
-              onClick={() => {
-                setDeleteOpen((prev) => !prev);
-                setDeletePassword("");
-              }}
-              className="interactive-press mt-2 w-full rounded-xl border border-rose-500/30 bg-rose-600/10 px-3 py-2 text-xs font-semibold text-rose-100 hover:bg-rose-600/20 disabled:opacity-60"
-            >
-              {tt("platform.deleteAccount")}
-            </button>
-            {deleteOpen ? (
-              <div className="mt-2 space-y-2 rounded-xl border border-rose-500/20 bg-rose-950/30 p-2">
-                <p className="text-[0.8125rem] leading-relaxed text-rose-100/80">
-                  {tt("platform.deleteAccountHint")}
-                </p>
-                <div className="relative">
-                  <input
-                    type={showDeletePassword ? "text" : "password"}
-                    value={deletePassword}
-                    onChange={(e) => setDeletePassword(e.target.value)}
-                    className={`h-9 w-full rounded-lg border border-white/10 bg-black/40 px-3 text-sm text-white outline-none focus:border-rose-400/40 ${
-                      deletePassword ? "pr-9" : ""
-                    }`}
-                    placeholder={tt("platform.passwordPlaceholder")}
-                  />
-                  <InputClearButton
-                    value={deletePassword}
-                    onClear={() => setDeletePassword("")}
-                    className="absolute right-1 top-1/2 -translate-y-1/2"
-                    aria-label={tt("common.clear")}
-                  />
-                </div>
-                <button
-                  type="button"
-                  disabled={deletingAccount || loading}
-                  onClick={() => void handleDeleteAccount()}
-                  className="interactive-press w-full rounded-lg bg-rose-600/80 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-600 disabled:opacity-60"
-                >
-                  {deletingAccount ? tt("common.loading") : tt("platform.deleteAccountConfirm")}
-                </button>
-              </div>
-            ) : null}
-          </div>
-        {renderProviderButtons(true)}
-      </div>
-    );
-  }
 
   const inputClassName =
     "glass-control h-12 w-full rounded-2xl border px-4 text-[1rem] text-white outline-none transition placeholder:text-white/30";
@@ -1091,42 +968,42 @@ export function PlatformAccountPanel({
     );
   }
 
+  const nicknameUnchanged = nicknameDraft.trim() === (platformUser?.nickname ?? "").trim();
+  const busy = loading || linking !== null || providerLoginBusy;
+  const isMinecraftLinked = linkedProviders.minecraft || linkedIdentity.minecraft;
+  const isElyLinked = linkedProviders.ely || Boolean(linkedIdentity.ely);
+  const elyLinkedName = linkedIdentity.ely || (linkedProviders.ely ? launcherProfile.ely_username : null);
+
   return (
-    <div
-      data-tour-id="tour-platform-register"
-      className="w-full rounded-2xl border border-white/10 bg-black/20 px-6 py-6"
-    >
-      <div className="mb-4">
-        <h2 className="text-sm font-semibold text-white/90">{tt("platform.accountTitle")}</h2>
-      </div>
-
-      <div className="flex flex-col gap-4">
-          <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/30 px-4 py-3">
-            <div className="min-w-0 flex-1">
-              <p className="text-[0.75rem] font-bold text-white/45">
-                {tt("platform.launcherNickname")}
-              </p>
-              <NicknameWithSponsor
-                nickname={launcherNickname || "—"}
-                isSponsor={platformUser?.is_sponsor}
-                sponsorTitle={tt("common.sponsor")}
-                className="mt-0.5 truncate text-sm font-semibold text-white"
-              />
-              <p className="mt-2 text-[0.75rem] font-bold text-white/45">
-                {tt("platform.inGameNickname")}
-              </p>
-              <p className="mt-0.5 truncate text-sm font-semibold text-white/90">{gameNickname || "—"}</p>
-            </div>
-            <span className="rounded-md bg-emerald-500/15 px-2 py-1 text-[0.75rem] font-semibold text-emerald-100">
-              Online
-            </span>
+    <div data-tour-id="tour-platform-register" className="mx-auto grid w-full max-w-4xl gap-4 lg:grid-cols-2">
+      <section className="glass-panel px-5 py-5 lg:col-span-2">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-bold text-white/45">{tt("platform.accountTitle")}</p>
+            <NicknameWithSponsor
+              nickname={launcherNickname || "—"}
+              isSponsor={platformUser?.is_sponsor}
+              sponsorTitle={tt("common.sponsor")}
+              className="mt-1 truncate text-lg font-semibold text-white"
+              as="p"
+            />
+            <p className="mt-0.5 truncate text-sm text-white/45">{platformUser?.email?.trim() || "—"}</p>
           </div>
+          <span className="rounded-md bg-emerald-500/15 px-2 py-1 text-[0.75rem] font-semibold text-emerald-100">
+            {tt("platform.settings.online")}
+          </span>
+        </div>
 
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <div className="rounded-xl border border-white/10 bg-black/30 px-4 py-3">
-            <p className="text-[0.75rem] font-bold text-white/45">
-              {tt("platform.accountManagement")}
-            </p>
-            <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+            <p className="text-[0.75rem] font-bold text-white/45">{tt("platform.launcherNickname")}</p>
+            <form
+              className="mt-2 flex gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void handleChangeNickname();
+              }}
+            >
               <div className="relative min-w-0 flex-1">
                 <input
                   type="text"
@@ -1151,101 +1028,197 @@ export function PlatformAccountPanel({
                 />
               </div>
               <button
-                type="button"
-                disabled={loading || linking !== null || providerLoginBusy}
-                onClick={() => void handleChangeNickname()}
-                className="interactive-press rounded-xl border border-accent-to/40 bg-accent-from/20 px-4 py-2 text-sm font-semibold text-accent-hi hover:bg-accent-from/30 disabled:opacity-60"
+                type="submit"
+                disabled={busy || nicknameUnchanged}
+                className="interactive-press rounded-xl border border-accent-to/40 bg-accent-from/20 px-4 py-2 text-sm font-semibold text-accent-hi hover:bg-accent-from/30 disabled:opacity-50"
               >
-                {tt("platform.changeNickname")}
+                {tt("common.save")}
               </button>
-              <button
-                type="button"
-                disabled={loading || linking !== null || providerLoginBusy}
-                onClick={() => void handleLogout()}
-                className="interactive-press rounded-xl border border-white/15 bg-black/30 px-4 py-2 text-sm font-semibold text-white/75 hover:bg-black/50 disabled:opacity-60"
-              >
-                {tt("platform.logout")}
-              </button>
-            </div>
-            <div className="mt-3 rounded-xl border border-rose-500/25 bg-rose-950/25 px-3 py-3">
-              <p className="text-[0.75rem] font-bold text-rose-200/70">
-                {tt("platform.dangerZone")}
-              </p>
-              <p className="mt-1 text-xs leading-relaxed text-white/55">
-                {tt("platform.deleteAccountHint")}
-              </p>
-              {!deleteOpen ? (
-                <button
-                  type="button"
-                  disabled={loading || deletingAccount || linking !== null || providerLoginBusy}
-                  onClick={() => setDeleteOpen(true)}
-                  className="interactive-press mt-3 rounded-xl border border-rose-500/35 bg-rose-600/15 px-4 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-600/25 disabled:opacity-60"
-                >
-                  {tt("platform.deleteAccount")}
-                </button>
-              ) : (
-                <div className="mt-3 space-y-2">
-                  <div className="relative flex items-center">
-                    <input
-                      type={showDeletePassword ? "text" : "password"}
-                      value={deletePassword}
-                      onChange={(e) => setDeletePassword(e.target.value)}
-                      className={`h-10 w-full rounded-xl border border-white/10 bg-black/35 px-3 text-sm text-white outline-none focus:border-rose-400/40 ${
-                        deletePassword ? "pr-[4.5rem]" : "pr-11"
-                      }`}
-                      placeholder={tt("platform.passwordPlaceholder")}
-                      autoComplete="current-password"
-                    />
-                    <InputClearButton
-                      value={deletePassword}
-                      onClear={() => setDeletePassword("")}
-                      className="absolute right-10 top-1/2 -translate-y-1/2"
-                      aria-label={tt("common.clear")}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowDeletePassword((prev) => !prev)}
-                      className="interactive-press absolute inset-y-0 right-2 my-auto flex h-7 w-7 items-center justify-center rounded-md hover:bg-white/10"
-                      aria-label={
-                        showDeletePassword ? tt("platform.hidePassword") : tt("platform.showPassword")
-                      }
-                    >
-                      <img
-                        src={showDeletePassword ? "/launcher-assets/hide.png" : "/launcher-assets/show.png"}
-                        alt=""
-                        className="h-4 w-4 object-contain opacity-80"
-                      />
-                    </button>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      disabled={deletingAccount || loading}
-                      onClick={() => void handleDeleteAccount()}
-                      className="interactive-press rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500 disabled:opacity-60"
-                    >
-                      {deletingAccount ? tt("common.loading") : tt("platform.deleteAccountConfirm")}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={deletingAccount}
-                      onClick={() => {
-                        setDeleteOpen(false);
-                        setDeletePassword("");
-                      }}
-                      className="interactive-press rounded-xl border border-white/15 bg-black/30 px-4 py-2 text-sm font-semibold text-white/70 hover:bg-black/50 disabled:opacity-60"
-                    >
-                      {tt("platform.back")}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
+            </form>
+            <p className="mt-2 text-[0.75rem] text-white/40">{tt("platform.settings.nicknameHint")}</p>
           </div>
 
-          <div className="h-px w-full bg-white/10" />
-          {renderProviderButtons(false)}
+          <div className="rounded-xl border border-white/10 bg-black/30 px-4 py-3">
+            <p className="text-[0.75rem] font-bold text-white/45">{tt("platform.inGameNickname")}</p>
+            <p className="mt-2 flex h-10 items-center truncate text-sm font-semibold text-white/90">
+              {gameNickname || "—"}
+            </p>
+            <p className="mt-2 text-[0.75rem] text-white/40">{tt("platform.settings.gameNicknameHint")}</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="glass-panel flex flex-col gap-3 px-5 py-5">
+        <div>
+          <p className="text-xs font-bold text-white/45">{tt("platform.settings.linkedTitle")}</p>
+          <p className="mt-1 text-[0.8125rem] text-white/40">{tt("platform.settings.linkedHint")}</p>
+        </div>
+        <ProviderRow
+          icon={<MicrosoftIcon className="h-5 w-5" />}
+          name="Microsoft"
+          status={isMinecraftLinked ? tt("platform.linked") : tt("platform.settings.notLinked")}
+          linked={isMinecraftLinked}
+          linking={linking === "minecraft"}
+          disabled={busy}
+          linkLabel={tt("platform.link")}
+          linkingLabel={tt("platform.linking")}
+          title={!launcherProfile.mc_uuid ? tt("platform.linkMicrosoftTitle") : undefined}
+          onLink={() => void handleLink("minecraft")}
+        />
+        <ProviderRow
+          icon={<ElyByIcon className="h-5 w-5 text-[0.8125rem]" />}
+          name="Ely.by"
+          status={
+            isElyLinked
+              ? elyLinkedName
+                ? tt("platform.settings.linkedAs", { name: elyLinkedName })
+                : tt("platform.linked")
+              : tt("platform.settings.notLinked")
+          }
+          linked={isElyLinked}
+          linking={linking === "ely"}
+          disabled={busy}
+          linkLabel={tt("platform.link")}
+          linkingLabel={tt("platform.linking")}
+          title={!launcherProfile.ely_uuid ? tt("platform.linkElyTitle") : undefined}
+          onLink={() => void handleLink("ely")}
+        />
+      </section>
+
+      <section className="glass-panel flex flex-col gap-3 px-5 py-5">
+        <div>
+          <p className="text-xs font-bold text-white/45">{tt("platform.settings.sessionTitle")}</p>
+          <p className="mt-1 text-[0.8125rem] text-white/40">{tt("platform.settings.sessionHint")}</p>
+        </div>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void handleLogout()}
+          className="interactive-press self-start rounded-xl border border-white/15 bg-black/30 px-4 py-2 text-sm font-semibold text-white/75 hover:bg-black/50 disabled:opacity-60"
+        >
+          {tt("platform.logout")}
+        </button>
+
+        <div className="mt-auto rounded-xl border border-rose-500/25 bg-rose-950/25 px-3 py-3">
+          <p className="text-[0.75rem] font-bold text-rose-200/70">{tt("platform.dangerZone")}</p>
+          <p className="mt-1 text-xs leading-relaxed text-white/55">{tt("platform.deleteAccountHint")}</p>
+          {!deleteOpen ? (
+            <button
+              type="button"
+              disabled={busy || deletingAccount}
+              onClick={() => setDeleteOpen(true)}
+              className="interactive-press mt-3 rounded-xl border border-rose-500/35 bg-rose-600/15 px-4 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-600/25 disabled:opacity-60"
+            >
+              {tt("platform.deleteAccount")}
+            </button>
+          ) : (
+            <form
+              className="mt-3 space-y-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void handleDeleteAccount();
+              }}
+            >
+              <div className="relative flex items-center">
+                <input
+                  type={showDeletePassword ? "text" : "password"}
+                  autoFocus
+                  value={deletePassword}
+                  onChange={(e) => setDeletePassword(e.target.value)}
+                  className={`h-10 w-full rounded-xl border border-white/10 bg-black/35 px-3 text-sm text-white outline-none focus:border-rose-400/40 ${
+                    deletePassword ? "pr-[4.5rem]" : "pr-11"
+                  }`}
+                  placeholder={tt("platform.passwordPlaceholder")}
+                  autoComplete="current-password"
+                />
+                <InputClearButton
+                  value={deletePassword}
+                  onClear={() => setDeletePassword("")}
+                  className="absolute right-10 top-1/2 -translate-y-1/2"
+                  aria-label={tt("common.clear")}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowDeletePassword((prev) => !prev)}
+                  className="interactive-press absolute inset-y-0 right-2 my-auto flex h-7 w-7 items-center justify-center rounded-md hover:bg-white/10"
+                  aria-label={showDeletePassword ? tt("platform.hidePassword") : tt("platform.showPassword")}
+                >
+                  <img
+                    src={showDeletePassword ? "/launcher-assets/hide.png" : "/launcher-assets/show.png"}
+                    alt=""
+                    className="h-4 w-4 object-contain opacity-80"
+                  />
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="submit"
+                  disabled={deletingAccount || loading}
+                  className="interactive-press rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500 disabled:opacity-60"
+                >
+                  {deletingAccount ? tt("common.loading") : tt("platform.deleteAccountConfirm")}
+                </button>
+                <button
+                  type="button"
+                  disabled={deletingAccount}
+                  onClick={() => {
+                    setDeleteOpen(false);
+                    setDeletePassword("");
+                  }}
+                  className="interactive-press rounded-xl border border-white/15 bg-black/30 px-4 py-2 text-sm font-semibold text-white/70 hover:bg-black/50 disabled:opacity-60"
+                >
+                  {tt("platform.back")}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ProviderRow({
+  icon,
+  name,
+  status,
+  linked,
+  linking,
+  disabled,
+  linkLabel,
+  linkingLabel,
+  title,
+  onLink,
+}: {
+  icon: ReactNode;
+  name: string;
+  status: string;
+  linked: boolean;
+  linking: boolean;
+  disabled: boolean;
+  linkLabel: string;
+  linkingLabel: string;
+  title?: string;
+  onLink: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/30 px-3 py-2.5">
+      {icon}
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold text-white/90">{name}</p>
+        <p className={`truncate text-[0.75rem] ${linked ? "text-emerald-300/85" : "text-white/45"}`}>{status}</p>
       </div>
+      {linked ? null : (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={onLink}
+          title={title}
+          className="interactive-press shrink-0 rounded-lg border border-white/15 bg-black/30 px-3 py-1.5 text-xs font-semibold text-white/75 hover:bg-black/50 disabled:opacity-60"
+        >
+          {linking ? linkingLabel : linkLabel}
+        </button>
+      )}
     </div>
   );
 }

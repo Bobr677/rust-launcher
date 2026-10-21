@@ -409,7 +409,7 @@ export function PlayTab({
                 {isFirstEmpty ? (
                   <>
                     <img
-                      src="/launcher-assets/modpack_icon.png"
+                      src="/launcher-assets/modpack_icon.svg"
                       alt=""
                       className="h-7 w-7 object-contain opacity-50 transition-opacity group-hover:opacity-80"
                     />
@@ -481,7 +481,7 @@ export function PlayTab({
                   className={`interactive-press absolute right-2 top-2 z-[2] inline-flex h-8 w-8 items-center justify-center rounded-lg text-white opacity-0 shadow-soft transition-opacity group-hover:opacity-100 focus-visible:opacity-100 ${primaryColorClasses}`}
                 >
                   <img
-                    src="/launcher-assets/play.png"
+                    src="/launcher-assets/play.svg"
                     alt=""
                     className="h-4 w-4 object-contain"
                   />

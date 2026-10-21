@@ -347,6 +347,7 @@ export function FriendsTab({
       ely_username: friend.ely_username,
       mc_uuid: friend.mc_uuid,
       online: Boolean(presenceByUserId[friend.user_id]?.online),
+      presence: presenceByUserId[friend.user_id] ?? null,
     });
   };
 

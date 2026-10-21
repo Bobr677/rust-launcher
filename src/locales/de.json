@@ -1233,7 +1233,9 @@
       "requestExists": "Die Anfrage existiert bereits oder ihr seid schon befreundet.",
       "requestSent": "Anfrage gesendet",
       "removed": "Freund entfernt"
-    }
+    },
+    "profileFriendsOnly": "Dieses Profil ist nur für Freunde sichtbar",
+    "profileFriendsOnlyHint": "Füge den Spieler als Freund hinzu, um seine Erfolge und seinen Status zu sehen."
   },
   "rooms": {
     "subtitleSignedIn": "Erstelle Räume und lade Freunde zum Spielen ein.",
@@ -1376,7 +1378,13 @@
     "friendAccept": "{{nick}} hat deine Anfrage angenommen",
     "roomInvite": "{{nick}} hat dich in einen Raum eingeladen",
     "achievement": "Erfolg: {{title}}",
-    "system": "Systembenachrichtigung"
+    "system": "Systembenachrichtigung",
+    "filterAll": "Alle",
+    "filterUnread": "Ungelesen",
+    "today": "Heute",
+    "yesterday": "Gestern",
+    "emptyUnread": "Alle Benachrichtigungen sind gelesen.",
+    "allRead": "Alles gelesen"
   },
   "achievements": {
     "title": "Erfolge",
@@ -1435,6 +1443,19 @@
         "title": "Stylist",
         "description": "Reiche ein eigenes Launcher-Theme ein."
       }
+    },
+    "filterAll": "Alle",
+    "filterUnlocked": "Freigeschaltet",
+    "filterLocked": "Gesperrt",
+    "unlockedNoDate": "Freigeschaltet",
+    "noneInFilter": "Hier ist noch nichts.",
+    "progressLaunches": "{{current}} / {{target}} Starts",
+    "progressPlaytime": "{{current}} / {{target}} Std.",
+    "category": {
+      "profile": "Profil",
+      "game": "Spiel",
+      "social": "Community",
+      "other": "Sonstiges"
     }
   },
   "platform": {
@@ -1523,6 +1544,17 @@
       "identityAlreadyLinked": "{{provider}} ist bereits mit einem anderen 16Launcher-Konto verknüpft.",
       "discordNotConfigured": "Discord-Anmeldung ist auf dem Server noch nicht konfiguriert.",
       "discordFailed": "Discord-Anmeldung fehlgeschlagen. Bitte erneut versuchen."
+    },
+    "settings": {
+      "online": "Online",
+      "nicknameHint": "Mindestens 3 Zeichen. Freunde und Raummitglieder sehen diesen Namen.",
+      "gameNicknameHint": "Stammt vom aktiven Minecraft-Konto.",
+      "linkedTitle": "Verknüpfte Konten",
+      "linkedHint": "Die Verknüpfung bestätigt, dass das Spielkonto dir gehört.",
+      "notLinked": "Nicht verknüpft",
+      "linkedAs": "Verknüpft · {{name}}",
+      "sessionTitle": "Sitzung",
+      "sessionHint": "Auf diesem Gerät von 16Launcher abmelden. Deine Minecraft-Konten bleiben im Launcher."
     }
   },
   "app": {
@@ -1645,7 +1677,11 @@
       },
       "subTab": {
         "overview": "Übersicht",
-        "skins": "Skins"
+        "skins": "Skins",
+        "wardrobe": "Garderobe",
+        "achievements": "Erfolge",
+        "notifications": "Benachrichtigungen",
+        "settings": "Einstellungen"
       },
       "skinLibrary": {
         "title": "Skin-Bibliothek",
@@ -1671,6 +1707,39 @@
         "switched": "Aktives Konto geändert.",
         "removed": "Konto aus der Liste entfernt.",
         "added": "Neues Konto erstellt und ausgewählt."
+      },
+      "signIn": "Anmelden",
+      "elySignIn": "Mit Ely.by anmelden",
+      "stats": {
+        "playtime": "Spielzeit",
+        "launches": "Starts",
+        "achievements": "Erfolge"
+      },
+      "overview": {
+        "skinLabel": "Skin",
+        "capeLabel": "Umhang",
+        "defaultSkin": "Standard",
+        "allAchievements": "Alle",
+        "recentAchievements": "Zuletzt freigeschaltet",
+        "noRecent": "Noch nichts freigeschaltet.",
+        "nextAchievements": "Nächste Ziele",
+        "allNotifications": "Alle",
+        "signedOutTitle": "Bei 16Launcher anmelden",
+        "signedOutBody": "Ein 16Launcher-Konto schaltet die sozialen Funktionen des Launchers frei."
+      },
+      "wardrobe": {
+        "title": "Garderobe",
+        "subtitle": "Klicke auf einen Skin oder Umhang, um ihn anzuprobieren, und übernimm ihn dann.",
+        "skins": "Skins",
+        "capes": "Umhänge",
+        "pendingTitle": "Anprobe nicht gespeichert",
+        "apply": "Übernehmen",
+        "discard": "Verwerfen",
+        "applied": "Aussehen aktualisiert.",
+        "microsoftOnlyBody": "Melde dich mit Microsoft an, um Skins und Umhänge direkt im Launcher zu ändern.",
+        "elyBody": "Ely.by-Skins änderst du in deinem Konto auf ely.by.",
+        "openEly": "Ely.by öffnen",
+        "byNameHint": "Der Skin des Spielers wird auf dein Konto übertragen."
       }
     },
     "toast": {
