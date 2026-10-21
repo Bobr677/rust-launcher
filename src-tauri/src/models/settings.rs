@@ -6,6 +6,8 @@ pub struct Settings {
     #[serde(default)]
     pub game_directory: Option<String>,
     pub ram_mb: u32,
+    #[serde(default)]
+    pub graphics_adapter: Option<String>,
     pub show_console_on_launch: bool,
     pub close_launcher_on_game_start: bool,
     pub check_game_processes: bool,
@@ -43,6 +45,9 @@ pub struct Settings {
 
     #[serde(default)]
     pub animations_disabled: bool,
+
+    #[serde(default)]
+    pub background_animation_disabled: bool,
 
     #[serde(default)]
     pub thematic_decorations_disabled: bool,
@@ -105,6 +110,7 @@ impl Default for Settings {
         Self {
             game_directory: None,
             ram_mb: 4096,
+            graphics_adapter: None,
             show_console_on_launch: false,
             close_launcher_on_game_start: false,
             check_game_processes: true,
@@ -125,10 +131,11 @@ impl Default for Settings {
             minimize_to_tray_on_close: false,
             autostart_enabled: false,
             animations_disabled: false,
+            background_animation_disabled: false,
             thematic_decorations_disabled: false,
             show_launcher_banners: true,
             interface_language: "ru".to_string(),
-            background_accent_color: "#0b1530".to_string(),
+            background_accent_color: "#4a22a8".to_string(),
             background_image_url: None,
             background_blur_enabled: true,
             split_view_enabled: false,

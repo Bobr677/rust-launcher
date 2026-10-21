@@ -49,9 +49,9 @@ export function Modal({
         aria-modal="true"
         aria-labelledby="ui-modal-title"
       >
-        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-white/10 px-4 py-3">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-white/[0.07] px-5 py-4">
           <div className="min-w-0">
-            <h2 id="ui-modal-title" className="ui-title text-base font-semibold text-white/95">
+            <h2 id="ui-modal-title" className="ui-title text-base">
               {title}
             </h2>
             {subtitle ? <p className="ui-meta mt-0.5">{subtitle}</p> : null}
@@ -60,7 +60,7 @@ export function Modal({
             type="button"
             onClick={onClose}
             disabled={closeDisabled}
-            className="interactive-press rounded-lg p-2 text-white/50 hover:bg-white/10 hover:text-white disabled:opacity-60"
+            className="icon-btn -mr-1 disabled:opacity-60"
             aria-label={closeLabel}
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
@@ -74,11 +74,11 @@ export function Modal({
             </svg>
           </button>
         </div>
-        <div className="custom-scrollbar min-h-0 flex-1 overflow-visible px-4 py-3">
+        <div className="custom-scrollbar min-h-0 flex-1 overflow-visible px-5 py-4">
           {children}
         </div>
         {footer ? (
-          <div className="flex shrink-0 justify-end gap-2 border-t border-white/10 px-4 py-3">
+          <div className="flex shrink-0 justify-end gap-2 border-t border-white/[0.07] px-5 py-3.5">
             {footer}
           </div>
         ) : null}

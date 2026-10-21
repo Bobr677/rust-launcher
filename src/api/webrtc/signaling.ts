@@ -22,7 +22,6 @@ type Options = {
   iceTransportPolicy?: RTCIceTransportPolicy;
   onState: (state: PeerLinkState) => void;
   onSession?: (session: RoomPeerSession | null) => void;
-  onTunnelOpen?: () => void;
   onRequestRestart?: () => void;
 };
 
@@ -123,9 +122,6 @@ export function startPeerSignaling(opts: Options): {
         }
         emit({ channelOpen: true, status: "connected" });
       },
-      onTunnelOpen: () => {
-        opts.onTunnelOpen?.();
-      },
     },
   });
   session = session_;
@@ -174,7 +170,11 @@ export function startPeerSignaling(opts: Options): {
       announceReady();
       if (isHost) renegotiateFromPeerReady();
     } else if (detail.type === "peer_leave") {
+      // Сервер шлёт peer_leave при любом обрыве WebSocket пира (heartbeat, смена сети). Если
+      // DataChannel жив, пир на месте — рвать P2P (и игру в туннеле) нельзя. Реальный выход из
+      // комнаты приходит как room_member_left, а смерть канала поймают onclose/ICE.
       const p = detail.payload;
+      if (session?.channelOpen) return;
       if (p.room_id === opts.roomId && p.user_id === opts.peerUserId) {
         channelOpen = false;
         emit({ status: "closed", channelOpen: false });

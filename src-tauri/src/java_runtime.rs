@@ -3,8 +3,10 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use futures_util::stream::{self, StreamExt};
 use once_cell::sync::Lazy;
 use reqwest::Client;
+use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use sha1::{Digest, Sha1};
 use tokio::sync::Mutex;
@@ -18,14 +20,36 @@ static JAVA_INSTALL_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 const INSTALL_COMPLETE_MARKER: &str = ".install-complete";
 const JAVA_DOWNLOAD_RETRIES: usize = 6;
+const JAVA_DOWNLOAD_CONCURRENCY: usize = 8;
 
 fn http_client() -> Client {
-    Client::builder()
-        .timeout(Duration::from_secs(300))
-        .connect_timeout(Duration::from_secs(30))
-        .user_agent("16Launcher/1.0")
-        .build()
-        .unwrap_or_else(|_| Client::new())
+    crate::infra::http::http_client(false)
+}
+
+/// GET + JSON с ретраями: индекс и манифест Java раньше запрашивались ровно один раз,
+/// и любой сетевой сбой ронял всю установку.
+async fn get_json_with_retries<T: DeserializeOwned>(client: &Client, url: &str) -> Result<T, String> {
+    let mut last_err = String::new();
+    for attempt in 0..JAVA_DOWNLOAD_RETRIES {
+        if attempt > 0 {
+            tokio::time::sleep(crate::services::game::core::retry_delay(attempt - 1)).await;
+        }
+        match client.get(url).send().await {
+            Ok(resp) if resp.status().is_success() => match resp.json::<T>().await {
+                Ok(v) => return Ok(v),
+                Err(e) => last_err = format!("Ошибка разбора ответа {url}: {e}"),
+            },
+            Ok(resp) => {
+                let status = resp.status();
+                last_err = format!("HTTP {status} для {url}");
+                if status.is_client_error() && !matches!(status.as_u16(), 408 | 425 | 429) {
+                    break;
+                }
+            }
+            Err(e) => last_err = format!("Ошибка запроса {url}: {e}"),
+        }
+    }
+    Err(last_err)
 }
 
 fn runtime_dir(major: u8, component: &str) -> Result<PathBuf, String> {
@@ -57,14 +81,25 @@ fn java_bin_path(root: &Path) -> PathBuf {
 
 const INDEX_URL: &str = "https://piston-meta.mojang.com/v1/products/java-runtime/2ec0cc96c44e5a76b9c8b7c39df7210883d12871/all.json";
 
-fn detect_platform() -> Result<&'static str, String> {
+/// Платформы индекса Mojang по убыванию предпочтения. Для ARM берём нативную сборку,
+/// а если Mojang её для компонента не публикует — x64 под эмуляцией (Windows 11 / Rosetta).
+fn platform_candidates() -> Result<Vec<&'static str>, String> {
     match (std::env::consts::OS, std::env::consts::ARCH) {
-        ("windows", "x86_64") => Ok("windows-x64"),
-        ("linux", "x86_64") => Ok("linux"),
-        ("macos", "x86_64") => Ok("mac-os"),
-        ("macos", "aarch64") => Ok("mac-os-arm64"),
-        (os, arch) => Err(format!("Неподдерживаемая платформа: {os}/{arch}")),
+        ("windows", "x86_64") => Ok(vec!["windows-x64"]),
+        ("windows", "aarch64") => Ok(vec!["windows-arm64", "windows-x64"]),
+        ("windows", "x86") => Ok(vec!["windows-x86"]),
+        ("linux", "x86_64") => Ok(vec!["linux"]),
+        ("linux", "x86") => Ok(vec!["linux-i386"]),
+        ("macos", "x86_64") => Ok(vec!["mac-os"]),
+        ("macos", "aarch64") => Ok(vec!["mac-os-arm64", "mac-os"]),
+        (os, arch) => Err(format!(
+            "Неподдерживаемая платформа: {os}/{arch}. Укажите свою Java в настройках."
+        )),
     }
+}
+
+fn detect_platform() -> Result<&'static str, String> {
+    platform_candidates().map(|c| c[0])
 }
 
 #[derive(Debug, Deserialize)]
@@ -87,6 +122,10 @@ struct FileEntry {
     downloads: Option<Downloads>,
     #[serde(rename = "type", default)]
     entry_type: Option<String>,
+    /// Для `type: "link"` — путь, на который указывает символическая ссылка.
+    #[serde(default)]
+    #[cfg_attr(not(unix), allow(dead_code))]
+    target: Option<String>,
     #[serde(default)]
     #[allow(dead_code)]
     executable: bool,
@@ -185,37 +224,24 @@ async fn fetch_file_manifest(
     client: &Client,
     component: &str,
 ) -> Result<FileManifest, String> {
-    let platform = detect_platform()?;
-    let index: JavaIndex = client
-        .get(INDEX_URL)
-        .send()
+    let candidates = platform_candidates()?;
+    let index: JavaIndex = get_json_with_retries(client, INDEX_URL)
         .await
-        .map_err(|e| e.to_string())?
-        .error_for_status()
-        .map_err(|e| e.to_string())?
-        .json()
-        .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("Не удалось получить список Java от Mojang: {e}"))?;
 
-    let manifest_url = index
-        .platforms
-        .get(platform)
-        .or_else(|| index.platforms.get("gamecore"))
-        .and_then(|m| m.get(component))
-        .and_then(|list| list.first())
+    let manifest_url = candidates
+        .iter()
+        .filter_map(|platform| index.platforms.get(*platform))
+        .chain(index.platforms.get("gamecore"))
+        .find_map(|m| m.get(component).and_then(|list| list.first()))
         .map(|e| e.manifest.url.clone())
-        .ok_or_else(|| format!("Java не найдена для {platform}/{component}"))?;
+        .ok_or_else(|| {
+            format!("Java не найдена для {}/{component}", candidates[0])
+        })?;
 
-    client
-        .get(&manifest_url)
-        .send()
+    get_json_with_retries(client, &manifest_url)
         .await
-        .map_err(|e| e.to_string())?
-        .error_for_status()
-        .map_err(|e| e.to_string())?
-        .json()
-        .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| format!("Не удалось получить манифест Java {component}: {e}"))
 }
 
 fn verify_runtime_files(
@@ -398,7 +424,11 @@ async fn download_java_file(
             Ok(())
         };
 
-        let tmp = dest.with_extension("download");
+        let tmp = {
+            let mut name = dest.as_os_str().to_owned();
+            name.push(".download");
+            PathBuf::from(name)
+        };
         let _ = fs::remove_file(&tmp);
 
         let resp = match client.get(url).send().await {
@@ -516,40 +546,102 @@ async fn ensure_java_runtime_inner(
         }
     });
 
-    for (rel_path, entry) in files {
-        let dest = root.join(&rel_path);
-        let e_type = entry.entry_type.as_deref().unwrap_or("file");
-        #[cfg(unix)]
-        let executable = entry.executable;
-
-        if e_type == "directory" && entry.downloads.is_none() {
-            fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
-            continue;
-        }
-
-        let raw = match entry.downloads.and_then(|d| d.raw) {
-            Some(r) => r,
-            None => continue,
-        };
-
-        if let Some(p) = dest.parent() {
-            fs::create_dir_all(p).map_err(|e| e.to_string())?;
-        }
-
-        if verify_cache(&dest, raw.size, &raw.sha1).unwrap_or(false) {
-            #[cfg(unix)]
-            if executable {
-                let _ = set_executable(&dest, true);
-            }
-            continue;
-        }
-
-        download_java_file(&client, &rel_path, &raw.url, &dest, raw.size, &raw.sha1).await?;
-        #[cfg(unix)]
-        if executable {
-            let _ = set_executable(&dest, true);
-        }
+    // Планирование (создание папок, проверка уже скачанных файлов по SHA1) — блокирующая
+    // работа с диском, поэтому уходит с async-потока.
+    struct PlannedFile {
+        rel_path: String,
+        dest: PathBuf,
+        raw: RawFile,
+        #[cfg_attr(not(unix), allow(dead_code))]
+        executable: bool,
     }
+    let plan_root = root.clone();
+    let (to_download, links) = tokio::task::spawn_blocking(
+        move || -> Result<(Vec<PlannedFile>, Vec<(PathBuf, String)>), String> {
+            let mut to_download = Vec::new();
+            let mut links = Vec::new();
+            for (rel_path, entry) in files {
+                let dest = crate::services::game::core::safe_join(&plan_root, &rel_path)
+                    .ok_or_else(|| format!("Небезопасный путь в манифесте Java: {rel_path}"))?;
+                let e_type = entry.entry_type.as_deref().unwrap_or("file");
+                let executable = entry.executable;
+
+                if e_type == "directory" && entry.downloads.is_none() {
+                    fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
+                    continue;
+                }
+                if e_type == "link" {
+                    if let Some(target) = entry.target.clone() {
+                        links.push((dest, target));
+                    }
+                    continue;
+                }
+
+                let Some(raw) = entry.downloads.and_then(|d| d.raw) else {
+                    continue;
+                };
+                if let Some(p) = dest.parent() {
+                    fs::create_dir_all(p).map_err(|e| e.to_string())?;
+                }
+                if verify_cache(&dest, raw.size, &raw.sha1).unwrap_or(false) {
+                    #[cfg(unix)]
+                    if executable {
+                        let _ = set_executable(&dest, true);
+                    }
+                    continue;
+                }
+                to_download.push(PlannedFile {
+                    rel_path,
+                    dest,
+                    raw,
+                    executable,
+                });
+            }
+            Ok((to_download, links))
+        },
+    )
+    .await
+    .map_err(|e| format!("Ошибка подготовки установки Java: {e}"))??;
+
+    // ~400 мелких файлов по одному — это минуты на пустом месте; качаем параллельно.
+    let mut downloads = stream::iter(to_download.into_iter())
+        .map(|file| {
+            let client = client.clone();
+            async move {
+                download_java_file(
+                    &client,
+                    &file.rel_path,
+                    &file.raw.url,
+                    &file.dest,
+                    file.raw.size,
+                    &file.raw.sha1,
+                )
+                .await?;
+                #[cfg(unix)]
+                if file.executable {
+                    let _ = set_executable(&file.dest, true);
+                }
+                Ok::<(), String>(())
+            }
+        })
+        .buffer_unordered(JAVA_DOWNLOAD_CONCURRENCY);
+    while let Some(res) = downloads.next().await {
+        res?;
+    }
+    drop(downloads);
+
+    // Символические ссылки (macOS/Linux): манифест Mojang описывает их отдельными записями.
+    #[cfg(unix)]
+    for (link_path, target) in &links {
+        if let Some(parent) = link_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let _ = fs::remove_file(link_path);
+        std::os::unix::fs::symlink(target, link_path)
+            .map_err(|e| format!("Не удалось создать ссылку {}: {e}", link_path.display()))?;
+    }
+    #[cfg(not(unix))]
+    let _ = &links;
 
     let bin = java_bin_path(&root);
     if !bin.is_file() {
@@ -561,7 +653,7 @@ async fn ensure_java_runtime_inner(
         return Err("Установленная Java повреждена (проверка готовности не пройдена)".into());
     }
 
-    fs::write(install_complete_path(&root), b"ok").map_err(|e| {
+    crate::infra::fs_atomic::write_atomic(&install_complete_path(&root), b"ok").map_err(|e| {
         format!("Не удалось записать маркер завершения установки Java: {e}")
     })?;
 

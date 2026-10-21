@@ -72,12 +72,12 @@ function ScreenshotGridItem({
         {thumb ? (
           <img src={thumb} alt="" className="h-full w-full object-cover" loading="lazy" />
         ) : (
-          <div className="flex h-full items-center justify-center text-[10px] text-white/40">
+          <div className="flex h-full items-center justify-center text-[0.75rem] text-white/40">
             …
           </div>
         )}
       </div>
-      <div className="truncate px-2 py-1 text-[10px] text-white/75">{name}</div>
+      <div className="truncate px-2 py-1 text-[0.75rem] text-white/75">{name}</div>
     </button>
   );
 }
@@ -136,7 +136,7 @@ export function ScreenshotsModal({
       >
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-xs uppercase tracking-[0.16em] text-white/50">
+            <div className="text-xs text-white/50">
               {tt("modpacks.screenshots.subtitle")}
             </div>
             <div className="text-lg font-semibold text-white">
@@ -146,7 +146,7 @@ export function ScreenshotsModal({
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              className="interactive-press inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-white/85 hover:bg-white/20"
+              className="interactive-press inline-flex items-center gap-1.5 rounded-xl bg-white/10 px-3 py-1.5 text-xs font-semibold text-white/85 hover:bg-white/20"
               onClick={() => void refresh()}
               disabled={loading}
             >
@@ -155,7 +155,7 @@ export function ScreenshotsModal({
             </button>
             <button
               type="button"
-              className="interactive-press rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-white/85 hover:bg-white/20"
+              className="interactive-press rounded-xl bg-white/10 px-3 py-1.5 text-xs font-semibold text-white/85 hover:bg-white/20"
               onClick={() => {
                 void openFolder().catch((e) => {
                   const msg = e instanceof Error ? e.message : String(e);
@@ -167,7 +167,7 @@ export function ScreenshotsModal({
             </button>
             <button
               type="button"
-              className="interactive-press rounded-full bg-white/10 px-4 py-1.5 text-xs font-semibold text-white/85 hover:bg-white/20"
+              className="interactive-press rounded-xl bg-white/10 px-3.5 py-1.5 text-xs font-semibold text-white/85 hover:bg-white/20"
               onClick={onClose}
             >
               {tt("modpacks.screenshots.close")}
@@ -176,7 +176,7 @@ export function ScreenshotsModal({
         </div>
 
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-          <div className="flex min-h-0 flex-col rounded-2xl border border-white/12 bg-black/35 p-3">
+          <div className="flex min-h-0 flex-col rounded-2xl border border-white/10 bg-black/35 p-3">
             <div className="mb-2 text-xs font-semibold text-white/75">
               {tt("modpacks.screenshots.listTitle")} ({items.length})
             </div>
@@ -210,7 +210,7 @@ export function ScreenshotsModal({
             </div>
           </div>
 
-          <div className="flex min-h-0 flex-col rounded-2xl border border-white/12 bg-black/35 p-3">
+          <div className="flex min-h-0 flex-col rounded-2xl border border-white/10 bg-black/35 p-3">
             {selected ? (
               <>
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -218,7 +218,7 @@ export function ScreenshotsModal({
                     <div className="truncate text-sm font-semibold text-white">
                       {selected.name}
                     </div>
-                    <div className="text-[11px] text-white/55">
+                    <div className="text-[0.8125rem] text-white/55">
                       {formatDate(selected.modified_at, language)} ·{" "}
                       {formatByteSize(language, selected.size_bytes, { zeroAt: "bytes" })}
                     </div>
@@ -226,7 +226,7 @@ export function ScreenshotsModal({
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      className="interactive-press rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold text-white/85 hover:bg-white/20"
+                      className="interactive-press rounded-xl bg-white/10 px-3 py-1 text-[0.8125rem] font-semibold text-white/85 hover:bg-white/20"
                       onClick={() => {
                         void openInSystem(selected.name).catch((e) => {
                           const msg = e instanceof Error ? e.message : String(e);
@@ -241,7 +241,7 @@ export function ScreenshotsModal({
                     </button>
                     <button
                       type="button"
-                      className="interactive-press inline-flex items-center gap-1 rounded-full bg-red-500/20 px-3 py-1 text-[11px] font-semibold text-red-100 hover:bg-red-500/30"
+                      className="interactive-press inline-flex items-center gap-1 rounded-xl bg-red-500/20 px-3 py-1 text-[0.8125rem] font-semibold text-red-100 hover:bg-red-500/30"
                       onClick={() => void handleDelete(selected.name)}
                     >
                       <DeleteIcon className="h-3 w-3" />

@@ -80,7 +80,6 @@ tarpaulin-report.html
 
 #packaged backend snapshots (local only)
 *.tar.gz
-backend-*.tar.gz
 
 #frontend/tooling caches
 .cache/
@@ -93,3 +92,6 @@ backend-*.tar.gz
 *.pdb
 *.ilk
 *.rcgu.o
+
+#ide/vs
+.vs/

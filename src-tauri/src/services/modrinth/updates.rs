@@ -16,6 +16,7 @@ use crate::services::game::state::DEFAULT_DOWNLOAD_CONCURRENCY;
 
 use crate::infra::api_base::curseforge_api_base;
 use super::client::{modrinth_http_client, should_filter_by_loader, MODRINTH_API_BASE};
+use super::content_metadata::curseforge_file_fingerprint;
 use super::installed::index_content_dir_sha1;
 use super::types::{
     ApplyProfileContentUpdate, ModrinthVersion, ProfileContentUpdate, ProfileIncompatibleContent,
@@ -92,51 +93,6 @@ async fn post_version_files_map(
         .map_err(|e| format!("{context}: ошибка разбора JSON: {e}"))
 }
 
-fn is_ignored_in_curseforge_fingerprint(b: u8) -> bool {
-    matches!(b, b' ' | b'\t' | b'\n' | b'\r')
-}
-
-fn curseforge_file_fingerprint(buf: &[u8]) -> i32 {
-    const multiplex: u32 = 1540483477;
-
-    let mut normalized_len: u32 = 0;
-    for &b in buf {
-        if !is_ignored_in_curseforge_fingerprint(b) {
-            normalized_len = normalized_len.wrapping_add(1);
-        }
-    }
-
-    let mut num2: u32 = 1u32 ^ normalized_len;
-    let mut num3: u32 = 0;
-    let mut num4: u32 = 0;
-
-    for &b in buf {
-        if is_ignored_in_curseforge_fingerprint(b) {
-            continue;
-        }
-
-        num3 |= (b as u32) << num4;
-        num4 = num4.wrapping_add(8);
-
-        if num4 == 32 {
-            let num6: u32 = num3.wrapping_mul(multiplex);
-            let num7: u32 = (num6 ^ (num6 >> 24)).wrapping_mul(multiplex);
-            num2 = num2
-                .wrapping_mul(multiplex)
-                ^ num7;
-            num3 = 0;
-            num4 = 0;
-        }
-    }
-
-    if num4 > 0 {
-        num2 = (num2 ^ num3).wrapping_mul(multiplex);
-    }
-
-    let num6: u32 = (num2 ^ (num2 >> 13)).wrapping_mul(multiplex);
-    let out: u32 = num6 ^ (num6 >> 15);
-    out as i32
-}
 
 #[derive(Debug, serde::Serialize)]
 struct CurseforgeFingerprintRequest {

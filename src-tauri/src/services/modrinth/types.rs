@@ -7,8 +7,6 @@ pub const MODRINTH_USER_AGENT: &str = "16Launcher/2.0.0 (contact@16launcher.com)
 pub struct ModrinthDependency {
     pub version_id: Option<String>,
     pub project_id: Option<String>,
-    #[serde(default)]
-    pub file_name: Option<String>,
     pub dependency_type: String,
 }
 

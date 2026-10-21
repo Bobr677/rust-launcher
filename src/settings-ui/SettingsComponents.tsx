@@ -16,7 +16,6 @@ export const SettingsToggle: React.FC<SettingsToggleProps> = ({
   yesLabel,
   noLabel,
 }) => {
-  const accentVar = "var(--accent-color)";
   const containerRef = useRef<HTMLDivElement | null>(null);
   const yesRef = useRef<HTMLButtonElement | null>(null);
   const noRef = useRef<HTMLButtonElement | null>(null);
@@ -59,21 +58,21 @@ export const SettingsToggle: React.FC<SettingsToggleProps> = ({
       <span className="min-w-0 flex-1 text-sm text-white/90">{label}</span>
       <div
         ref={containerRef}
-        className="relative flex shrink-0 rounded-full bg-white/10 p-0.5 overflow-hidden"
+        className="relative flex shrink-0 overflow-hidden rounded-xl border border-white/[0.07] bg-ink-950/70 p-0.5"
       >
         <div
-          className="pointer-events-none absolute top-0.5 bottom-0.5 rounded-full shadow-soft transition-all duration-200 ease-out"
+          className="pointer-events-none absolute top-0.5 bottom-0.5 rounded-md transition-all duration-200 ease-out"
           style={{
             left: `${indicator.left}px`,
             width: `${indicator.width}px`,
-            backgroundColor: accentVar,
+            background: "var(--accent-gradient)",
           }}
         />
         <button
           ref={yesRef}
           type="button"
           onClick={() => onChange(true)}
-          className={`interactive-press relative z-10 min-w-[64px] rounded-full px-4 py-1.5 text-xs font-semibold transition-colors ${
+          className={`interactive-press relative z-10 min-w-[64px] rounded-md px-3.5 py-1.5 text-xs font-semibold transition-colors ${
             value ? "text-white" : "text-white/60 hover:text-white"
           }`}
         >
@@ -83,7 +82,7 @@ export const SettingsToggle: React.FC<SettingsToggleProps> = ({
           ref={noRef}
           type="button"
           onClick={() => onChange(false)}
-          className={`interactive-press relative z-10 min-w-[64px] rounded-full px-4 py-1.5 text-xs font-semibold transition-colors ${
+          className={`interactive-press relative z-10 min-w-[64px] rounded-md px-3.5 py-1.5 text-xs font-semibold transition-colors ${
             !value ? "text-white" : "text-white/60 hover:text-white"
           }`}
         >
@@ -143,9 +142,9 @@ export const SettingsSlider: React.FC<SettingsSliderProps> = ({
         onChange={(e) => onChange(Number(e.target.value))}
         onPointerUp={handlePointerUp}
         style={{
-          background: `linear-gradient(to right, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0.28) ${percent}%, rgba(0,0,0,0.40) ${percent}%, rgba(0,0,0,0.40) 100%)`,
+          background: `linear-gradient(to right, var(--accent-from) 0%, var(--accent-to) ${percent}%, rgba(214,200,240,0.12) ${percent}%, rgba(214,200,240,0.12) 100%)`,
         }}
-        className="h-1.5 w-full cursor-pointer appearance-none rounded-full accent-[#2f7adf]"
+        className="h-1.5 w-full cursor-pointer appearance-none rounded-full"
       />
     </div>
   );

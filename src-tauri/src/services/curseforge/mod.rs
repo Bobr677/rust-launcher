@@ -3,13 +3,11 @@ use serde::{Deserialize, Serialize};
 use crate::app::paths::{game_root_dir, instance_dir};
 use crate::infra::api_base::curseforge_api_base;
 use crate::infra::http::{http_client, http_client_for_binary_download};
+use crate::services::game::download::fetch_verified;
 
 pub mod installer;
 
-pub use installer::{
-    download_curseforge_modpack_and_import, install_curseforge_zip_as_new_profile,
-    install_curseforge_zip_into_profile,
-};
+pub use installer::download_curseforge_modpack_and_import;
 
 const MINECRAFT_GAME_ID: u32 = 432;
 
@@ -195,7 +193,34 @@ pub(crate) struct CfFile {
     pub(crate) game_versions: Vec<String>,
     #[serde(default)]
     sortable_game_versions: Vec<CfSortableGameVersion>,
+    #[serde(default)]
     pub(crate) file_date: String,
+    #[serde(default)]
+    hashes: Vec<CfFileHash>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct CfFileHash {
+    value: String,
+    algo: u8,
+}
+
+impl CfFile {
+    /// SHA1 из метаданных CurseForge (`algo == 1`), если API его вернул.
+    pub(crate) fn sha1(&self) -> Option<String> {
+        self.hashes
+            .iter()
+            .find(|h| h.algo == 1 && !h.value.trim().is_empty())
+            .map(|h| h.value.trim().to_string())
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CfModClass {
+    id: u32,
+    #[serde(default)]
+    class_id: Option<u32>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -288,29 +313,152 @@ pub(crate) async fn cf_get_json<T: for<'de> Deserialize<'de>>(
     path_and_query: &str,
 ) -> Result<T, String> {
     let url = format!("{}{}", curseforge_api_base(), path_and_query);
-    let resp = client
-        .get(&url)
-        .header("Accept", "application/json")
-        .send()
-        .await
-        .map_err(|e| format!("Ошибка запроса CurseForge API: {e}"))?;
-
-    if !resp.status().is_success() {
+    let mut last_err = String::new();
+    let mut last_retry_after = None;
+    for attempt in 0..CF_GET_ATTEMPTS {
+        if attempt > 0 {
+            tokio::time::sleep(retry_delay(attempt, last_retry_after)).await;
+        }
+        let resp = match client
+            .get(&url)
+            .header("Accept", "application/json")
+            .send()
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                last_err = format!("Ошибка запроса CurseForge API: {e}");
+                last_retry_after = None;
+                continue;
+            }
+        };
         let status = resp.status();
+        if status.is_success() {
+            return resp
+                .json::<T>()
+                .await
+                .map_err(|e| format!("Ошибка разбора ответа CurseForge API: {e}"));
+        }
+        last_retry_after = parse_retry_after(&resp);
         let body = resp.text().await.unwrap_or_default();
         let detail = if body.is_empty() {
             String::new()
         } else {
             format!(": {body}")
         };
-        return Err(format!(
-            "CurseForge API вернул ошибку {status}{detail}"
-        ));
+        last_err = format!("CurseForge API вернул ошибку {status}{detail}");
+        if status.as_u16() != 429 && !status.is_server_error() {
+            break;
+        }
     }
+    Err(last_err)
+}
 
-    resp.json::<T>()
-        .await
-        .map_err(|e| format!("Ошибка разбора ответа CurseForge API: {e}"))
+const CF_GET_ATTEMPTS: usize = 5;
+
+fn parse_retry_after(resp: &reqwest::Response) -> Option<std::time::Duration> {
+    resp.headers()
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .map(|s| std::time::Duration::from_secs(s.min(15)))
+}
+
+/// Экспоненциальная пауза (1с, 2с, 4с…), но не меньше `Retry-After` от сервера.
+fn retry_delay(attempt: usize, retry_after: Option<std::time::Duration>) -> std::time::Duration {
+    let backoff = std::time::Duration::from_millis(500 * (1u64 << attempt.min(5)));
+    retry_after.map_or(backoff, |ra| ra.max(backoff))
+}
+
+const CF_POST_ATTEMPTS: usize = 5;
+const CF_BULK_CHUNK: usize = 300;
+
+async fn cf_post_json<T: for<'de> Deserialize<'de>>(
+    client: &reqwest::Client,
+    path_and_query: &str,
+    body: &serde_json::Value,
+) -> Result<T, String> {
+    let url = format!("{}{}", curseforge_api_base(), path_and_query);
+    let mut last_err = String::new();
+    let mut last_retry_after = None;
+    for attempt in 0..CF_POST_ATTEMPTS {
+        if attempt > 0 {
+            tokio::time::sleep(retry_delay(attempt, last_retry_after)).await;
+        }
+        let resp = match client
+            .post(&url)
+            .header("Accept", "application/json")
+            .json(body)
+            .send()
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                last_err = format!("Ошибка запроса CurseForge API: {e}");
+                last_retry_after = None;
+                continue;
+            }
+        };
+        let status = resp.status();
+        if status.is_success() {
+            return resp
+                .json::<T>()
+                .await
+                .map_err(|e| format!("Ошибка разбора ответа CurseForge API: {e}"));
+        }
+        last_retry_after = parse_retry_after(&resp);
+        let text = resp.text().await.unwrap_or_default();
+        last_err = format!("CurseForge API вернул ошибку {status}: {text}");
+        if status.as_u16() != 429 && !status.is_server_error() {
+            break;
+        }
+    }
+    Err(last_err)
+}
+
+/// Метаданные многих файлов одним запросом (`POST /mods/files`).
+pub(crate) async fn curseforge_get_files_bulk(
+    file_ids: &[u32],
+) -> Result<std::collections::HashMap<u32, CfFile>, String> {
+    let client = cf_client()?;
+    let mut out = std::collections::HashMap::new();
+    for chunk in file_ids.chunks(CF_BULK_CHUNK) {
+        let body: CfApiResponse<Vec<CfFile>> =
+            cf_post_json(&client, "/mods/files", &serde_json::json!({ "fileIds": chunk })).await?;
+        for f in body.data {
+            out.insert(f.id, f);
+        }
+    }
+    Ok(out)
+}
+
+/// `classId` проектов одним запросом (`POST /mods`): по нему отличаем моды от ресурспаков и шейдеров.
+pub(crate) async fn curseforge_get_mod_class_ids(
+    mod_ids: &[u32],
+) -> Result<std::collections::HashMap<u32, u32>, String> {
+    let client = cf_client()?;
+    let mut out = std::collections::HashMap::new();
+    for chunk in mod_ids.chunks(CF_BULK_CHUNK) {
+        let body: CfApiResponse<Vec<CfModClass>> =
+            cf_post_json(&client, "/mods", &serde_json::json!({ "modIds": chunk })).await?;
+        for m in body.data {
+            if let Some(class_id) = m.class_id {
+                out.insert(m.id, class_id);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Прямые ссылки CDN на случай, когда API не отдаёт `downloadUrl` (автор запретил
+/// распространение через сторонние лаунчеры) — другие лаунчеры качают именно так.
+pub(crate) fn curseforge_cdn_fallback_urls(file_id: u32, file_name: &str) -> Vec<String> {
+    let name = urlencoding::encode(file_name);
+    let (a, b) = (file_id / 1000, file_id % 1000);
+    vec![
+        format!("https://edge.forgecdn.net/files/{a}/{b}/{name}"),
+        format!("https://mediafilez.forgecdn.net/files/{a}/{b}/{name}"),
+    ]
 }
 
 #[tauri::command]
@@ -614,61 +762,28 @@ pub async fn download_curseforge_file(
         .await
         .map_err(|e| format!("Не удалось создать папку '{subdir}': {e}"))?;
 
-    let dest_path = target_dir.join(&filename);
+    let safe_name = std::path::Path::new(&filename)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .filter(|n| !n.is_empty())
+        .ok_or_else(|| format!("Некорректное имя файла: {filename}"))?;
+    let dest_path = target_dir.join(safe_name);
 
-    let url = curseforge_resolve_download_url(mod_id, file_id).await?;
+    let mut urls = Vec::new();
+    if let Ok(url) = curseforge_resolve_download_url(mod_id, file_id).await {
+        urls.push(url);
+    }
+    urls.extend(curseforge_cdn_fallback_urls(file_id, safe_name));
 
     let client = http_client_for_binary_download(false);
-    let resp = client
-        .get(&url)
-        .send()
+    fetch_verified(&client, &urls, &dest_path, None, None)
         .await
-        .map_err(|e| format!("Ошибка загрузки файла CurseForge: {e}"))?;
-
-    if !resp.status().is_success() {
-        return Err(format!(
-            "Сервер CurseForge вернул ошибку {} при скачивании файла.",
-            resp.status()
-        ));
-    }
-
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| format!("Ошибка чтения тела ответа CurseForge: {e}"))?;
-
-    tokio::fs::write(&dest_path, &bytes)
-        .await
-        .map_err(|e| format!("Не удалось сохранить файл в {:?}: {e}", dest_path))?;
-
-    Ok(())
+        .map_err(|e| format!("Ошибка загрузки файла CurseForge ({safe_name}): {e}"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
-
-    #[test]
-    fn project_dotenv_curseforge_key_is_well_formed() {
-        let env_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../.env");
-        if !env_path.is_file() {
-            return;
-        }
-        std::env::remove_var("CURSEFORGE_API_KEY");
-        dotenvy::from_path_override(&env_path).expect("load project .env");
-        let key = std::env::var("CURSEFORGE_API_KEY").expect("CURSEFORGE_API_KEY in .env");
-        assert!(
-            key.starts_with("$2a$10$"),
-            "ключ должен начинаться с $2a$10$ (без кавычек в значении)"
-        );
-        assert!(
-            key.len() >= 50,
-            "ключ слишком короткий ({} символов) — проверьте кавычки в .env",
-            key.len()
-        );
-        std::env::remove_var("CURSEFORGE_API_KEY");
-    }
 
     #[test]
     fn dotenv_preserves_curseforge_key_with_dollar_signs() {

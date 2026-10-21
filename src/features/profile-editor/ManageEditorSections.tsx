@@ -96,15 +96,15 @@ export function EditorSideNav({
             onClick={() => onChange(item.id)}
             className={`interactive-press flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs font-semibold transition-colors ${
               active
-                ? "bg-white text-black"
+                ? "seg-on"
                 : "text-white/70 hover:bg-white/10 hover:text-white"
             }`}
           >
             <span>{tt(item.key)}</span>
             {item.id === "conflicts" && (conflictCount > 0 || conflictsLoading) ? (
               <span
-                className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
-                  active ? "bg-black/15 text-black" : "bg-amber-500/30 text-amber-100"
+                className={`rounded-md px-1.5 py-0.5 text-[0.75rem] font-bold ${
+                  active ? "bg-white/15 text-white" : "bg-amber-500/30 text-amber-100"
                 }`}
               >
                 {conflictsLoading && conflictCount === 0 ? "…" : conflictCount}
@@ -325,14 +325,14 @@ export function WorldsPanel({
         <button
           type="button"
           onClick={onOpenSaves}
-          className="interactive-press rounded-xl bg-white/10 px-3.5 py-2 text-sm font-semibold text-white hover:bg-white/20"
+          className="interactive-press rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/20"
         >
           {tt("modpacks.editor.openSaves")}
         </button>
         <button
           type="button"
           onClick={onOpenConfig}
-          className="interactive-press rounded-xl bg-white/10 px-3.5 py-2 text-sm font-semibold text-white hover:bg-white/20"
+          className="interactive-press rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/20"
         >
           {tt("modpacks.editor.openConfig")}
         </button>
@@ -345,7 +345,7 @@ export function WorldsPanel({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={tt("modpacks.editor.worldsSearch")}
-            className="h-10 min-w-[12rem] flex-1 rounded-xl border border-white/15 bg-black/40 px-3 text-sm text-white placeholder:text-white/40 outline-none focus:border-white/35"
+            className="glass-control h-10 min-w-[12rem] flex-1 rounded-xl border px-3 text-sm text-white placeholder:text-white/40 outline-none"
           />
           <button
             type="button"
@@ -460,7 +460,7 @@ function ConflictCard({
           <div className="mt-0.5 text-xs text-white/65">{c.reason}</div>
         </div>
         <div
-          className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+          className={`shrink-0 rounded-xl px-2.5 py-1 text-[0.8125rem] font-semibold ${
             c.severity === "error"
               ? "bg-rose-500/30 text-rose-100"
               : "bg-amber-500/30 text-amber-100"
@@ -473,7 +473,7 @@ function ConflictCard({
       </div>
       {c.affected.length > 0 ? (
         <div className="mt-2.5 rounded-xl bg-black/25 px-2.5 py-2">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-white/45">
+          <div className="text-[0.8125rem] font-semibold text-white/45">
             {tt("modpacks.conflicts.affected")}
             {c.affected.length > 8 ? ` · ${c.affected.length}` : ""}
           </div>
@@ -488,7 +488,7 @@ function ConflictCard({
       ) : null}
       {c.solutions.length > 0 ? (
         <div className="mt-2.5">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-white/45">
+          <div className="text-[0.8125rem] font-semibold text-white/45">
             {tt("modpacks.conflicts.solutions")}
           </div>
           <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-white/75">
@@ -563,12 +563,12 @@ export function ConflictsPanel({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-base font-semibold text-white">
           <span>{tt("modpacks.conflicts.title")}</span>
-          <span className="rounded-full bg-amber-500/20 px-2.5 py-0.5 text-[10px] font-semibold text-amber-100">
+          <span className="rounded-md bg-amber-500/20 px-2.5 py-0.5 text-[0.75rem] font-semibold text-amber-100">
             {tt("modpacks.editor.beta")}
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="rounded-full bg-white/10 px-2.5 py-1 text-xs font-semibold text-white/70">
+          <div className="rounded-xl bg-white/10 px-2.5 py-1 text-xs font-semibold text-white/70">
             {loading
               ? tt("modpacks.conflicts.loading")
               : tt("modpacks.conflicts.count", { count: conflicts.length })}
@@ -591,16 +591,16 @@ export function ConflictsPanel({
       {!loading && conflicts.length > 0 ? (
         <div className="flex flex-wrap gap-2 text-xs">
           {errorCount > 0 ? (
-            <span className="rounded-full bg-rose-500/25 px-3 py-1.5 font-semibold text-rose-100">
+            <span className="rounded-xl bg-rose-500/25 px-3 py-1.5 font-semibold text-rose-100">
               {tt("modpacks.conflicts.summaryErrors", { count: errorCount })}
             </span>
           ) : null}
           {warningCount > 0 ? (
-            <span className="rounded-full bg-amber-500/25 px-3 py-1.5 font-semibold text-amber-100">
+            <span className="rounded-xl bg-amber-500/25 px-3 py-1.5 font-semibold text-amber-100">
               {tt("modpacks.conflicts.summaryWarnings", { count: warningCount })}
             </span>
           ) : null}
-          <span className="rounded-full bg-white/10 px-3 py-1.5 font-semibold text-white/70">
+          <span className="rounded-xl bg-white/10 px-3 py-1.5 font-semibold text-white/70">
             {tt("modpacks.conflicts.groupsCount", { count: groups.length })}
           </span>
         </div>
@@ -732,7 +732,7 @@ export function CleanupPanel({
             type="button"
             disabled={busy || selected.size === 0}
             onClick={onRun}
-            className="interactive-press rounded-2xl accent-bg px-4 py-3 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="interactive-press rounded-2xl accent-bg px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busy ? tt("modpacks.editor.cleanupRunning") : tt("modpacks.editor.cleanupRun")}
           </button>
@@ -837,7 +837,7 @@ export function BackupsSectionPanel({
           type="button"
           onClick={onCreate}
           disabled={busy}
-          className="interactive-press inline-flex items-center gap-2 rounded-xl accent-bg px-3.5 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          className="interactive-press inline-flex items-center gap-2 rounded-xl accent-bg px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <BackupPanelIcon className="h-4 w-4" />
           {creating ? tt("modpacks.backups.creating") : tt("modpacks.backups.create")}
@@ -846,7 +846,7 @@ export function BackupsSectionPanel({
           type="button"
           onClick={onOpenFolder}
           disabled={busy}
-          className="interactive-press rounded-xl bg-white/10 px-3.5 py-2 text-sm font-semibold text-white hover:bg-white/20 disabled:opacity-50"
+          className="interactive-press rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/20 disabled:opacity-50"
         >
           {tt("modpacks.backups.openFolder")}
         </button>
@@ -905,7 +905,7 @@ export function BackupsSectionPanel({
                     type="button"
                     onClick={() => onRestore(b.id)}
                     disabled={busy}
-                    className="interactive-press rounded-xl bg-emerald-500/20 px-3.5 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-500/30 disabled:opacity-50"
+                    className="interactive-press rounded-xl bg-accent-from/20 px-3.5 py-2 text-xs font-semibold text-accent-hi hover:bg-accent-from/30 disabled:opacity-50"
                   >
                     {isRestoring
                       ? tt("modpacks.backups.restoring")

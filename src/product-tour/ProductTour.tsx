@@ -33,6 +33,7 @@ type TooltipPos = {
 
 export type ProductTourProps = {
   language: Language;
+  /** Unused: the tour reads the accent from CSS variables. Kept so callers need no change. */
   accentColor?: string;
   active: boolean;
   onNavigateTab: (tab: TourTabId) => void;
@@ -199,7 +200,6 @@ function computeTooltipPos(
 
 export function ProductTour({
   language,
-  accentColor = "#0b1530",
   active,
   onNavigateTab,
   onNavigateAccountsSection,
@@ -366,17 +366,10 @@ export function ProductTour({
             left: spotlight.left,
             width: spotlight.width,
             height: spotlight.height,
-            border: "2px solid rgba(255,255,255,0.85)",
-            boxShadow: `0 0 0 1px ${accentColor}88, 0 0 24px ${accentColor}66, inset 0 0 20px rgba(255,255,255,0.06)`,
+            border: "2px solid var(--accent-to)",
+            boxShadow: "0 0 0 4px var(--accent-soft)",
           }}
-        >
-          <div
-            className="absolute inset-0 rounded-2xl animate-pulse"
-            style={{
-              boxShadow: `0 0 18px 2px ${accentColor}55`,
-            }}
-          />
-        </motion.div>
+        />
       ) : null}
 
       <div className="pointer-events-auto fixed inset-0" onClick={(e) => e.stopPropagation()} />
@@ -407,25 +400,17 @@ export function ProductTour({
         >
           <div
             className="glass-modal overflow-hidden"
-            style={{
-              boxShadow: `0 24px 64px rgba(0,0,0,0.55), 0 0 0 1px ${accentColor}33`,
-            }}
           >
-            <div
-              className="h-1 w-full"
-              style={{
-                background: `linear-gradient(90deg, ${accentColor}, ${accentColor}88, transparent)`,
-              }}
-            />
+            <div className="h-0.5 w-full accent-bg" />
             <div className="p-5">
               <div className="mb-3 flex items-center justify-between gap-3">
-                <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/40">
+                <span className="text-[0.75rem] font-bold text-white/40">
                   {tt("productTour.progress", { current: stepIndex + 1, total: totalSteps })}
                 </span>
                 <button
                   type="button"
                   onClick={onSkip}
-                  className="interactive-press text-[11px] font-medium text-white/45 transition-colors hover:text-white/75"
+                  className="interactive-press text-[0.8125rem] font-medium text-white/45 transition-colors hover:text-white/75"
                 >
                   {tt("productTour.skip")}
                 </button>
@@ -439,7 +424,7 @@ export function ProductTour({
                   <button
                     type="button"
                     onClick={goBack}
-                    className="interactive-press rounded-xl border border-white/12 bg-white/5 px-4 py-2.5 text-sm font-semibold text-white/75 hover:bg-white/10"
+                    className="btn btn-soft"
                   >
                     {tt("productTour.back")}
                   </button>
@@ -449,7 +434,7 @@ export function ProductTour({
                 <button
                   type="button"
                   onClick={goNext}
-                  className="interactive-press ml-auto rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:opacity-90 accent-bg"
+                  className="btn btn-accent ml-auto"
                 >
                   {isLast ? tt("productTour.finish") : tt("productTour.next")}
                 </button>

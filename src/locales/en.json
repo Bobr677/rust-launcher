@@ -35,7 +35,11 @@
       "modrinth": "Modrinth",
       "curseforge": "CurseForge"
     },
-    "unlockConfirm": "Version and loader are synced with the selected profile. Change them anyway?",
+    "unlockTitle": "Version is fixed by the profile",
+    "unlockConfirm": "Change version and loader? Content you install may be incompatible with the profile.",
+    "lockedBanner": "Fixed by the profile: Minecraft {{version}} · {{loader}}. Mods are matched to it.",
+    "unlockedBanner": "You're browsing content that doesn't match the selected profile. Installed mods may not launch.",
+    "relock": "Match profile again",
     "searchPlaceholder": "Search...",
     "version": "Version",
     "syncedHint": "Synced with profile. Click «Change» to unlock.",
@@ -189,6 +193,11 @@
       "showConsoleOnLaunch": {
         "label": "Show console on game start:"
       },
+      "graphicsAdapter": {
+        "label": "Graphics card for the game:",
+        "auto": "Automatic",
+        "hint": "Windows applies this as a power-saving or high-performance preference for Java; the exact GPU may depend on driver settings."
+      },
       "closeLauncherOnStart": {
         "label": "Close launcher when game starts:"
       },
@@ -301,6 +310,10 @@
         "hint": "Drag a tab (Play, Mods, Modpacks, Settings) to a window edge to open a second pane."
       },
       "disableAnimations": { "label": "Disable animations:" },
+      "backgroundAnimation": {
+        "label": "Animated background:",
+        "hint": "Slow movement of the coloured glow behind the interface. Turn off if the launcher feels heavy on your GPU."
+      },
       "hideBanners": {
         "label": "Disable ad banner:",
         "hint": "Hides the news and banner carousel on the Play tab."
@@ -566,6 +579,11 @@
       "openTitle": "Open game folder",
       "alt": "Game folder"
     },
+    "dock": {
+      "folder": "Folder",
+      "settings": "Settings",
+      "noBuild": "No build selected"
+    },
     "home": {
       "recentTitle": "Recent packs",
       "seeAll": "All packs",
@@ -586,7 +604,83 @@
       "detach": "Detach",
       "attach": "Attach",
       "empty": "Logs will appear after the game starts.",
-      "hint": "Controlled by the “Show console on game start” setting in the game section."
+      "hint": "Controlled by the “Show console on game start” setting in the game section.",
+      "analyzer": {
+        "readingDisk": "Reading logs…",
+        "okBadge": "No errors",
+        "refresh": "Re-read logs",
+        "sourcesLabel": "Checked",
+        "sourceConsole": "console",
+        "sourceLatest": "latest.log",
+        "sourceCrash": "crash reports: {{count}}",
+        "diskReadFailed": "Couldn't read logs from disk.",
+        "title": "Log analyzer",
+        "show": "Show",
+        "hide": "Hide",
+        "noIssues": "No critical issues found in the log. If the game still crashes, share the full log or crash-report.",
+        "rules": {
+          "oom": {
+            "title": "Out of memory (OutOfMemory)",
+            "fix": "Increase allocated RAM in the profile Java settings. Close other apps and heavy shaders."
+          },
+          "wrongJava": {
+            "title": "Wrong Java version",
+            "fix": "Newer Minecraft versions need Java 17/21. Pick a matching runtime in Java settings or install one automatically."
+          },
+          "mixinConflict": {
+            "title": "Mixin / injection conflict",
+            "fix": "Disable recently added mods one by one. Two mods patching the same code is a common cause."
+          },
+          "modIncompatible": {
+            "title": "Mod loading failure",
+            "fix": "Check mod versions for your Minecraft and loader (Fabric/Forge/Quilt). Remove duplicate .jar files."
+          },
+          "missingDependency": {
+            "title": "Missing mod dependency",
+            "fix": "Install required libraries (e.g. Fabric API, Architectury, Kotlin for Forge) matching the mod version."
+          },
+          "versionMismatch": {
+            "title": "Minecraft version mismatch",
+            "fix": "Download the mod built for this pack’s Minecraft version. Mods for other versions usually won’t start."
+          },
+          "corruptJar": {
+            "title": "Corrupt JAR file",
+            "fix": "Reinstall the broken mod/library. Avoid downloading mods from untrusted sources."
+          },
+          "openglGlfw": {
+            "title": "Graphics error (OpenGL/GLFW)",
+            "fix": "Update GPU drivers, try windowed/fullscreen, and disable overlays (Discord, GeForce Experience)."
+          },
+          "authFailed": {
+            "title": "Authentication failed",
+            "fix": "Sign in again via Microsoft/Ely.by on the Accounts tab. Online servers need a valid session."
+          },
+          "exitCode": {
+            "title": "Game exited with an error",
+            "fix": "Check ERROR lines above and crash-reports in the pack folder. Raising RAM or removing the last mod often helps."
+          },
+          "diskSpace": {
+            "title": "Not enough disk space",
+            "fix": "Free space on the drive that holds the game folder and launcher cache."
+          },
+          "accessDenied": {
+            "title": "File access denied",
+            "fix": "Run the launcher with write access to the game folder. Close antivirus or apps locking files."
+          },
+          "nativeCrash": {
+            "title": "Native JVM crash",
+            "fix": "Update drivers, switch Java runtime, and temporarily disable mods with native libs (Sodium/Iris, etc.)."
+          },
+          "fabricLoader": {
+            "title": "Fabric Loader / API issue",
+            "fix": "Update Fabric Loader and Fabric API to versions compatible with your Minecraft version."
+          },
+          "forgeVersion": {
+            "title": "Forge version issue",
+            "fix": "Install the recommended Forge version for this pack, or update mods to match your Forge."
+          }
+        }
+      }
     }
   },
   "modpacks": {
@@ -683,7 +777,12 @@
       "editGroupMenu": "Edit group",
       "deleteGroupMenu": "Delete group",
       "dropHint": "Drop here",
-      "selectedCount": "Selected: {{count}}"
+      "selectedCount": "Selected: {{count}}",
+      "title": "My profiles",
+      "newGroup": "New group",
+      "groupActions": "Group actions",
+      "dragCount": "{{count}} profiles",
+      "clearSelection": "Clear selection"
     },
     "groups": {
       "createTitle": "New profile group",
@@ -897,6 +996,8 @@
     },
     "contextMenu": {
       "settings": "Settings",
+      "moveToGroup": "Move to group",
+      "removeFromGroup": "Remove from group",
       "pinToSidebar": "Pin to sidebar",
       "unpinFromSidebar": "Unpin from sidebar",
       "deleteProfile": "Delete profile",
@@ -1205,7 +1306,9 @@
       "requestExists": "Request already exists or you are already friends.",
       "requestSent": "Request sent",
       "removed": "Friend removed"
-    }
+    },
+    "profileFriendsOnly": "Only friends can see this profile",
+    "profileFriendsOnlyHint": "Add the player as a friend to see their achievements and status."
   },
   "rooms": {
     "subtitleSignedIn": "Create rooms and invite friends to play together.",
@@ -1286,6 +1389,16 @@
     "mcOnlineEly": "Ely",
     "mcOffline": "offline",
     "mcOfflineHint": "Sign in with Microsoft or Ely to join a friend's world.",
+    "joinClosedReason": "This room is closed, so you can't join it.",
+    "auto": {
+      "label": "Room game",
+      "fromProfile": "From profile “{{name}}”",
+      "fromMenu": "From the main menu",
+      "manual": "Change manually",
+      "useAuto": "Choose automatically",
+      "none": "No profile selected. Pick a version manually or in the main menu."
+    },
+    "needP2pReason": "Wait until the connection with the room members is ready (P2P is not ready yet).",
     "p2pLabel": "Link",
     "p2pReady": "ready",
     "p2pConnecting": "connecting…",
@@ -1310,6 +1423,8 @@
     "guestSteps": "When the host opens access - Join world. If the game is already running, the address is copied - connect via Multiplayer → Direct Connect.",
     "waitForPeer": "Invite a friend - the link appears when they join.",
     "needP2p": "Wait until the link with your friend is ready",
+    "peerLauncherOutdated": "Your friend is on an older launcher version — both of you need to update, otherwise joining the world won't work.",
+    "lanPortUnreachable": "Port {{port}} isn't responding yet. Open the world to LAN and enter the port shown in the game chat.",
     "visibility": {
       "public": "public",
       "private": "private",
@@ -1355,7 +1470,13 @@
     "friendAccept": "{{nick}} accepted your friend request",
     "roomInvite": "{{nick}} invited you to a room",
     "achievement": "Achievement: {{title}}",
-    "system": "System notification"
+    "system": "System notification",
+    "filterAll": "All",
+    "filterUnread": "Unread",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "emptyUnread": "All notifications are read.",
+    "allRead": "All caught up"
   },
   "achievements": {
     "title": "Achievements",
@@ -1414,6 +1535,19 @@
         "title": "Stylist",
         "description": "Submit a custom launcher theme."
       }
+    },
+    "filterAll": "All",
+    "filterUnlocked": "Unlocked",
+    "filterLocked": "Locked",
+    "unlockedNoDate": "Unlocked",
+    "noneInFilter": "Nothing here yet.",
+    "progressLaunches": "{{current}} / {{target}} launches",
+    "progressPlaytime": "{{current}} / {{target}} h",
+    "category": {
+      "profile": "Profile",
+      "game": "Game",
+      "social": "Community",
+      "other": "Other"
     }
   },
   "platform": {
@@ -1463,6 +1597,22 @@
     "continueWithDiscord": "Continue with Discord",
     "authHintLogin": "16Launcher sign-in - for friends and rooms.",
     "authHintSignup": "Create a 16Launcher account.",
+    "reset": {
+      "forgotLink": "Forgot password?",
+      "title": "Reset password",
+      "authHint": "Recover access to your 16Launcher account.",
+      "requestHint": "Enter your account email and we'll send you a password reset code.",
+      "confirmHint": "If {{email}} is registered, a code has been sent to it. Enter it and choose a new password.",
+      "newPasswordLabel": "New password",
+      "newPasswordPlaceholder": "New password (at least 8 characters)",
+      "submit": "Save password"
+    },
+    "changePassword": {
+      "title": "Password",
+      "hint": "Changing your password signs out all other devices.",
+      "open": "Change password",
+      "currentPlaceholder": "Current password"
+    },
     "toast": {
       "accountCreated": "Account created",
       "signedIn": "Signed in",
@@ -1484,7 +1634,12 @@
       "enterVerificationCode": "Enter the code from the email.",
       "verificationCodeSent": "Verification code sent to your email.",
       "accountDeleted": "Account deleted.",
-      "acceptPrivacy": "To create an account, please accept the Privacy Policy."
+      "acceptPrivacy": "To create an account, please accept the Privacy Policy.",
+      "enterEmailReset": "Enter your account email.",
+      "resetCodeSent": "If this email is registered, we've sent a code to it.",
+      "passwordReset": "Password changed, you're signed in.",
+      "enterCurrentPassword": "Enter your current password.",
+      "passwordChanged": "Password changed. Other devices have been signed out."
     },
     "errors": {
       "connectionFailed": "Cannot connect to the 16Launcher server. Check your internet connection and API availability.",
@@ -1501,11 +1656,28 @@
       "deleteNotAvailable": "Account deletion is not available on the server yet. API deploy is required.",
       "identityAlreadyLinked": "{{provider}} is already linked to another 16Launcher account.",
       "discordNotConfigured": "Discord sign-in is not configured on the server yet.",
-      "discordFailed": "Discord sign-in failed. Please try again."
+      "discordFailed": "Discord sign-in failed. Please try again.",
+      "invalidCurrentPassword": "Current password is incorrect.",
+      "passwordNotSet": "This account has no password yet. Sign out and set one via \"Forgot password?\" on the sign-in screen.",
+      "samePassword": "The new password must differ from the current one.",
+      "serverOutdated": "The 16Launcher server doesn't support this yet. Please try again later."
+    },
+    "settings": {
+      "online": "Online",
+      "nicknameHint": "At least 3 characters. Friends and room members see this name.",
+      "gameNicknameHint": "Taken from the active Minecraft account.",
+      "linkedTitle": "Linked accounts",
+      "linkedHint": "Linking confirms the game account belongs to you.",
+      "notLinked": "Not linked",
+      "linkedAs": "Linked · {{name}}",
+      "sessionTitle": "Session",
+      "sessionHint": "Sign out of 16Launcher on this device. Your Minecraft accounts stay in the launcher."
     }
   },
   "app": {
     "sidebar": {
+      "collapse": "Collapse sidebar",
+      "expand": "Expand sidebar",
       "play": "Play",
       "settings": "Settings",
       "mods": "Mods",
@@ -1548,6 +1720,7 @@
       "newAccountNameBase": "Player",
       "addAccount": "Add account",
       "sidebarTooltip": "Accounts",
+      "offlineBadge": "offline",
       "switcherTitle": "Switch account",
       "switcherHeading": "Accounts",
       "manageAll": "All accounts & sign-in…",
@@ -1616,11 +1789,23 @@
         "standard": "Standard",
         "slim": "Slim"
       },
+      "subTab": {
+        "overview": "Overview",
+        "skins": "Skins",
+        "wardrobe": "Wardrobe",
+        "achievements": "Achievements",
+        "notifications": "Notifications",
+        "settings": "Settings"
+      },
       "skinLibrary": {
         "title": "Skin library",
         "empty": "You have no saved skins on this account.",
         "loading": "Loading skins…",
-        "error": "Failed to load skin library."
+        "error": "Failed to load skin library.",
+        "apply": "Apply skin",
+        "active": "Active",
+        "previewHint": "Select a skin to preview it on the right, then apply.",
+        "microsoftOnly": "Skin library is available for Microsoft accounts."
       },
       "toast": {
         "nicknameSaved": "Changes saved!",
@@ -1636,6 +1821,39 @@
         "switched": "Active account changed.",
         "removed": "Account removed from the list.",
         "added": "New account created and selected."
+      },
+      "signIn": "Sign in",
+      "elySignIn": "Sign in with Ely.by",
+      "stats": {
+        "playtime": "Playtime",
+        "launches": "Launches",
+        "achievements": "Achievements"
+      },
+      "overview": {
+        "skinLabel": "Skin",
+        "capeLabel": "Cape",
+        "defaultSkin": "Default",
+        "allAchievements": "All",
+        "recentAchievements": "Recently unlocked",
+        "noRecent": "Nothing unlocked yet.",
+        "nextAchievements": "Next goals",
+        "allNotifications": "All",
+        "signedOutTitle": "Sign in to 16Launcher",
+        "signedOutBody": "A 16Launcher account unlocks the launcher's social features."
+      },
+      "wardrobe": {
+        "title": "Wardrobe",
+        "subtitle": "Click a skin or cape to try it on, then apply.",
+        "skins": "Skins",
+        "capes": "Capes",
+        "pendingTitle": "Try-on not saved",
+        "apply": "Apply",
+        "discard": "Discard",
+        "applied": "Look updated.",
+        "microsoftOnlyBody": "Sign in with Microsoft to change skins and capes right from the launcher.",
+        "elyBody": "Ely.by skins are changed in your account on ely.by.",
+        "openEly": "Open Ely.by",
+        "byNameHint": "The player's skin will be set on your account."
       }
     },
     "toast": {
@@ -1711,7 +1929,13 @@
       "fabricNotInstalled": "Fabric profile is not installed for this version.",
       "quiltNotInstalled": "Quilt profile is not installed for this version."
     },
+    "window": {
+      "minimize": "Minimize",
+      "maximize": "Maximize",
+      "close": "Close"
+    },
     "versionBadge": {
+      "updateChip": "Update available",
       "latest": "You have the latest version",
       "outdatedWithVersion": "New version available: {{version}}",
       "outdated": "New version available",

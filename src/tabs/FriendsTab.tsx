@@ -119,7 +119,7 @@ function MemberAvatars({
       ))}
       {extra > 0 ? (
         <span
-          className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-[10px] font-semibold text-white/70 ring-2 ring-black/70"
+          className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-[0.75rem] font-semibold text-white/70 ring-2 ring-black/70"
           style={{ marginLeft: shown.length ? -8 : 0 }}
         >
           +{extra}
@@ -347,6 +347,7 @@ export function FriendsTab({
       ely_username: friend.ely_username,
       mc_uuid: friend.mc_uuid,
       online: Boolean(presenceByUserId[friend.user_id]?.online),
+      presence: presenceByUserId[friend.user_id] ?? null,
     });
   };
 
@@ -614,7 +615,7 @@ export function FriendsTab({
                   : tt("friends.lastSeenNever")}
             </p>
             {room ? (
-              <p className="mt-0.5 truncate text-[11px] text-sky-200/80">
+              <p className="mt-0.5 truncate text-[0.8125rem] text-sky-200/80">
                 {tt("friends.inRoom")}
                 {" · "}
                 {tt("rooms.players", {
@@ -662,11 +663,7 @@ export function FriendsTab({
 
   if (!accessToken) {
     return (
-      <div className="flex w-full max-w-4xl flex-col gap-5 py-6">
-        <div className="w-full text-center">
-          <h1 className="ui-title">{tt("app.sidebar.friends")}</h1>
-          <p className="ui-subtitle mt-1.5">{tt("friends.subtitleSignedOut")}</p>
-        </div>
+      <div className="flex w-full max-w-6xl flex-col gap-4 py-4">
         <AuthGate
           title={tt("friends.authGateTitle")}
           description={tt("friends.authGateBody")}
@@ -679,14 +676,7 @@ export function FriendsTab({
 
   return (
     <>
-      <div className="flex w-full max-w-4xl flex-col gap-5 py-6">
-        <div className="w-full text-center">
-          <h1 className="ui-title">{tt("app.sidebar.friends")}</h1>
-          <p className="ui-subtitle mt-1.5">
-            {tt("friends.subtitleSignedIn")}
-          </p>
-        </div>
-
+      <div className="flex w-full max-w-6xl flex-col gap-4 py-4">
         <Panel className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <TextField
             ref={friendNickInputRef}
@@ -794,9 +784,9 @@ export function FriendsTab({
                       key={id}
                       type="button"
                       onClick={() => setPresenceFilter(id)}
-                      className={`interactive-press rounded-full px-2.5 py-1 text-xs font-semibold ${
+                      className={`interactive-press rounded-xl px-3 py-1 text-xs font-semibold ${
                         presenceFilter === id
-                          ? "border border-emerald-400/35 bg-emerald-500/20 text-emerald-100"
+                          ? "border border-accent-to/40 bg-accent-from/20 text-accent-hi"
                           : "border border-white/10 bg-black/30 text-white/55 hover:bg-black/50"
                       }`}
                     >
@@ -860,7 +850,7 @@ export function FriendsTab({
                     key={step}
                     className="flex items-start gap-3 rounded-xl border border-white/8 bg-black/25 px-3 py-2.5 text-sm text-white/70"
                   >
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 text-[11px] font-bold text-emerald-200">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-accent-from/20 text-[0.8125rem] font-bold text-accent-hi">
                       {index + 1}
                     </span>
                     {step}
@@ -878,7 +868,7 @@ export function FriendsTab({
                   {tt("friends.incomingTitle")}
                 </p>
                 {incomingRequests.length > 0 ? (
-                  <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[11px] font-bold text-amber-100">
+                  <span className="rounded-md bg-amber-500/20 px-2 py-0.5 text-[0.8125rem] font-bold text-amber-100">
                     {incomingRequests.length}
                   </span>
                 ) : null}
@@ -914,7 +904,7 @@ export function FriendsTab({
                             sponsorTitle={tt("common.sponsor")}
                           />
                           {r.created_at ? (
-                            <p className="text-[11px] text-amber-100/60">
+                            <p className="text-[0.8125rem] text-amber-100/60">
                               {formatLastSeen(r.created_at, language, tt, nowMs)}
                             </p>
                           ) : null}
@@ -957,7 +947,7 @@ export function FriendsTab({
                   <button
                     type="button"
                     onClick={onOpenRooms}
-                    className="ui-caption font-semibold text-sky-200/80 hover:text-sky-100"
+                    className="ui-caption font-semibold text-accent-hi hover:text-white"
                   >
                     {tt("friends.openRooms")}
                   </button>
@@ -997,13 +987,13 @@ export function FriendsTab({
                             />
                             <div className="min-w-0">
                               <p className="truncate text-sm font-semibold text-white/90">{roomTitle}</p>
-                              <p className="text-[11px] text-white/45">
+                              <p className="text-[0.8125rem] text-white/45">
                                 {tt("rooms.ownedBy", { nick: ownerNick })}
                               </p>
                             </div>
                           </div>
                           <span
-                            className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ring-1 ${statusTone(room.status)}`}
+                            className={`shrink-0 rounded-md px-2 py-0.5 text-[0.75rem] font-bold ring-1 ${statusTone(room.status)}`}
                           >
                             {statusLabel(room.status)}
                           </span>
@@ -1011,14 +1001,14 @@ export function FriendsTab({
                         <div className="flex items-center justify-between gap-2">
                           <MemberAvatars members={members} avatarSrcFor={avatarFor} />
                           <div className="text-right">
-                            <p className="text-[11px] text-white/45">
+                            <p className="text-[0.8125rem] text-white/45">
                               {tt("rooms.players", {
                                 count: room.member_count,
                                 max: room.max_players,
                               })}
                             </p>
                             {sessionPlaytimeSeconds != null ? (
-                              <p className="mt-0.5 text-[10px] font-semibold text-emerald-200/80">
+                              <p className="mt-0.5 text-[0.75rem] font-semibold text-emerald-200/80">
                                 {tt("rooms.sessionPlaytimeLabel")}:{" "}
                                 {formatDurationShort(sessionPlaytimeSeconds, tt)}
                               </p>

@@ -16,9 +16,20 @@ export type PeerSessionCallbacks = {
   onStatus: (status: PeerSessionStatus) => void;
   onConnectionType?: (type: ConnectionType) => void;
   onChannelOpen?: () => void;
-  onTunnelOpen?: () => void;
-  onTunnelReady?: () => void;
 };
+
+/**
+ * Объявляется по DataChannel сразу после открытия: пир понимает мультиплексированный
+ * протокол LAN-моста (кадры OPEN/DATA/CLOSE). Бинарные данные от пира без этой метки
+ * (старая версия лаунчера) игнорируются — их нельзя разобрать как кадры.
+ */
+export const LAN_TUNNEL_CAPABILITY = "mux:1";
+
+/** Сколько ждать самовосстановления ICE после `disconnected`, прежде чем хост сделает ICE restart. */
+const ICE_RESTART_DELAY_MS = 3_000;
+const ICE_RESTART_MAX_ATTEMPTS = 3;
+/** Если связь так и не восстановилась — пересоздаём соединение целиком (сервер Minecraft ждёт ~30 с). */
+const ICE_RECOVERY_TIMEOUT_MS = 18_000;
 
 function urlList(urls: string | string[]): string[] {
   return Array.isArray(urls) ? urls : [urls];
@@ -37,9 +48,11 @@ function expandTurnTransports(urls: string[]): string[] {
     out.push(u);
   };
   for (const raw of urls) {
-    add(raw);
-    if (!raw.startsWith("turn:") && !raw.startsWith("turns:")) continue;
-    if (/[?&]transport=/i.test(raw)) continue;
+    // `turn:` без transport — это тот же UDP; дубль тратил бы лишний relay-порт coturn на каждое соединение.
+    if (!raw.startsWith("turn:") || /[?&]transport=/i.test(raw)) {
+      add(raw);
+      continue;
+    }
     const join = raw.includes("?") ? "&" : "?";
     add(`${raw}${join}transport=udp`);
     add(`${raw}${join}transport=tcp`);
@@ -168,8 +181,10 @@ export class RoomPeerSession {
   private remoteBinaryHandlers = new Set<(data: ArrayBuffer) => void>();
   private pendingRemoteOffer: string | null = null;
   private pendingRemoteIce: IceCandidateDto[] = [];
-  private tunnelReadyWaiters: Array<() => void> = [];
-  private tunnelReady = false;
+  private remoteTunnelCapable = false;
+  private iceRestartTimer: ReturnType<typeof setTimeout> | null = null;
+  private recoveryTimer: ReturnType<typeof setTimeout> | null = null;
+  private iceRestartAttempts = 0;
 
   constructor(opts: {
     roomId: string;
@@ -199,6 +214,11 @@ export class RoomPeerSession {
     return this.channel?.readyState === "open";
   }
 
+  /** Пир объявил поддержку мультиплексированного LAN-моста (см. LAN_TUNNEL_CAPABILITY). */
+  get supportsLanTunnel(): boolean {
+    return this.remoteTunnelCapable;
+  }
+
   async start(): Promise<void> {
     if (this.closed) return;
     this.callbacks.onStatus("preparing");
@@ -217,7 +237,8 @@ export class RoomPeerSession {
     const pc = new RTCPeerConnection({
       iceServers,
       iceTransportPolicy: policy,
-      iceCandidatePoolSize: turnOk ? 2 : 0,
+      // С BUNDLE используется один набор кандидатов; лишние в пуле — пустые TURN-allocation.
+      iceCandidatePoolSize: turnOk ? 1 : 0,
     });
     this.pc = pc;
 
@@ -239,18 +260,19 @@ export class RoomPeerSession {
     };
 
     pc.onconnectionstatechange = () => {
+      if (this.pc !== pc) return;
       const state = pc.connectionState;
       if (state === "connected") {
+        this.clearRecoveryTimers();
+        this.iceRestartAttempts = 0;
         this.callbacks.onStatus("connected");
         void detectConnectionType(pc).then((t) => this.callbacks.onConnectionType?.(t));
-      } else if (state === "failed") {
-        this.callbacks.onStatus("failed");
+      } else if (state === "failed" || state === "disconnected") {
+        this.onLinkDegraded(state);
       } else if (state === "connecting") {
         this.callbacks.onStatus("connecting");
       } else if (state === "closed") {
         if (!this.closed) this.callbacks.onStatus("closed");
-      } else if (state === "disconnected") {
-        this.callbacks.onStatus("connecting");
       }
     };
 
@@ -308,28 +330,113 @@ export class RoomPeerSession {
     return "noop";
   }
 
+  private clearRecoveryTimers(): void {
+    if (this.iceRestartTimer) {
+      clearTimeout(this.iceRestartTimer);
+      this.iceRestartTimer = null;
+    }
+    if (this.recoveryTimer) {
+      clearTimeout(this.recoveryTimer);
+      this.recoveryTimer = null;
+    }
+  }
+
+  /**
+   * ICE потерял связь. Пока DataChannel жив, пытаемся восстановить путь (ICE restart со стороны
+   * хоста), не обрывая игровые TCP-соединения в туннеле. Не вышло за ICE_RECOVERY_TIMEOUT_MS —
+   * пересоздаём соединение целиком.
+   */
+  private onLinkDegraded(state: "disconnected" | "failed"): void {
+    if (!this.channelOpen) {
+      this.callbacks.onStatus(state === "failed" ? "failed" : "connecting");
+      return;
+    }
+    this.callbacks.onStatus("connecting");
+
+    if (this.isHost && this.iceRestartAttempts < ICE_RESTART_MAX_ATTEMPTS) {
+      if (state === "failed" && this.iceRestartTimer) {
+        clearTimeout(this.iceRestartTimer);
+        this.iceRestartTimer = null;
+      }
+      if (!this.iceRestartTimer) {
+        this.iceRestartTimer = setTimeout(
+          () => {
+            this.iceRestartTimer = null;
+            const conn = this.pc?.connectionState;
+            if (conn === "disconnected" || conn === "failed") void this.restartIce();
+          },
+          state === "failed" ? 0 : ICE_RESTART_DELAY_MS,
+        );
+      }
+    }
+
+    if (!this.recoveryTimer) {
+      this.recoveryTimer = setTimeout(() => {
+        this.recoveryTimer = null;
+        if (this.closed || this.pc?.connectionState === "connected") return;
+        console.warn("[webrtc] link did not recover, recreating", { peer: this.remoteUserId });
+        this.abort();
+      }, ICE_RECOVERY_TIMEOUT_MS);
+    }
+  }
+
+  private async restartIce(): Promise<void> {
+    const pc = this.pc;
+    if (!this.isHost || !pc || this.closed) return;
+    this.iceRestartAttempts += 1;
+    console.info("[webrtc] ICE restart", {
+      peer: this.remoteUserId,
+      attempt: this.iceRestartAttempts,
+    });
+    try {
+      if (pc.signalingState === "have-local-offer") {
+        await pc.setLocalDescription({ type: "rollback" });
+      }
+      const offer = await pc.createOffer({ iceRestart: true });
+      if (this.closed || this.pc !== pc) return;
+      await pc.setLocalDescription(offer);
+      if (offer.sdp) this.callbacks.onLocalOffer(offer.sdp);
+    } catch (err) {
+      console.warn("[webrtc] ICE restart failed", err);
+    }
+  }
+
+  /** Закрывает транспорт и сообщает об ошибке — хук пересоздаст сессию. */
+  private abort(): void {
+    this.clearRecoveryTimers();
+    try {
+      this.channel?.close();
+    } catch {
+    }
+    try {
+      this.pc?.close();
+    } catch {
+    }
+    this.callbacks.onStatus("failed");
+  }
+
   private wireChannel(channel: RTCDataChannel) {
     channel.binaryType = "arraybuffer";
     channel.bufferedAmountLowThreshold = 256 * 1024;
     channel.onopen = () => {
       try {
         channel.send(`ping:${this.localUserId}`);
+        channel.send(LAN_TUNNEL_CAPABILITY);
       } catch {
       }
       this.callbacks.onChannelOpen?.();
     };
+    channel.onclose = () => {
+      if (this.closed || this.channel !== channel) return;
+      this.clearRecoveryTimers();
+      this.callbacks.onStatus("closed");
+    };
     channel.onmessage = (ev) => {
       if (typeof ev.data === "string") {
-        if (ev.data === "tunnel:open") {
-          this.callbacks.onTunnelOpen?.();
-        } else if (ev.data === "tunnel:ready") {
-          this.tunnelReady = true;
-          const waiters = this.tunnelReadyWaiters.splice(0);
-          for (const w of waiters) w();
-          this.callbacks.onTunnelReady?.();
-        }
+        if (ev.data === LAN_TUNNEL_CAPABILITY) this.remoteTunnelCapable = true;
         return;
       }
+      if (!this.remoteTunnelCapable) return;
       if (ev.data instanceof ArrayBuffer) {
         for (const h of this.remoteBinaryHandlers) h(ev.data);
       } else if (ArrayBuffer.isView(ev.data)) {
@@ -339,43 +446,6 @@ export class RoomPeerSession {
         for (const h of this.remoteBinaryHandlers) h(copy.buffer as ArrayBuffer);
       }
     };
-  }
-
-  signalTunnelOpen(): boolean {
-    this.tunnelReady = false;
-    if (!this.channel || this.channel.readyState !== "open") return false;
-    try {
-      this.channel.send("tunnel:open");
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  signalTunnelReady(): boolean {
-    if (!this.channel || this.channel.readyState !== "open") return false;
-    try {
-      this.channel.send("tunnel:ready");
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  waitForTunnelReady(timeoutMs = 20_000): Promise<void> {
-    if (this.tunnelReady) return Promise.resolve();
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        const idx = this.tunnelReadyWaiters.indexOf(onReady);
-        if (idx >= 0) this.tunnelReadyWaiters.splice(idx, 1);
-        reject(new Error("tunnel:ready timeout"));
-      }, timeoutMs);
-      const onReady = () => {
-        clearTimeout(timer);
-        resolve();
-      };
-      this.tunnelReadyWaiters.push(onReady);
-    });
   }
 
   static readonly BUFFERED_AMOUNT_HIGH = 2 * 1024 * 1024;
@@ -430,28 +500,32 @@ export class RoomPeerSession {
       this.pendingRemoteOffer = sdp;
       return;
     }
-    if (this.channel?.readyState === "open") return;
+    // При открытом канале новый offer — это ICE restart от хоста; применяем его, не трогая DataChannel.
+    const restart = this.channel?.readyState === "open";
+    if (restart && this.pc.signalingState !== "stable") return;
     try {
       await this.pc.setRemoteDescription({ type: "offer", sdp });
       await this.drainPendingIce();
       const answer = await this.pc.createAnswer();
       await this.pc.setLocalDescription(answer);
       if (answer.sdp) this.callbacks.onLocalAnswer(answer.sdp);
-      this.callbacks.onStatus("connecting");
+      if (!restart) this.callbacks.onStatus("connecting");
     } catch {
-      this.callbacks.onStatus("failed");
+      // Offer от пересозданного соединения хоста к старому не подходит — пересоздаёмся и мы.
+      if (restart) this.abort();
+      else this.callbacks.onStatus("failed");
     }
   }
 
   async handleRemoteAnswer(sdp: string): Promise<void> {
     if (!this.pc || !this.isHost) return;
-    if (this.channel?.readyState === "open") return;
     try {
       if (this.pc.signalingState !== "have-local-offer") return;
       await this.pc.setRemoteDescription({ type: "answer", sdp });
       await this.drainPendingIce();
     } catch {
-      this.callbacks.onStatus("failed");
+      if (this.channelOpen) this.abort();
+      else this.callbacks.onStatus("failed");
     }
   }
 
@@ -472,9 +546,8 @@ export class RoomPeerSession {
 
   close(): void {
     this.closed = true;
+    this.clearRecoveryTimers();
     this.remoteBinaryHandlers.clear();
-    this.tunnelReady = false;
-    this.tunnelReadyWaiters.splice(0);
     try {
       this.channel?.close();
     } catch {

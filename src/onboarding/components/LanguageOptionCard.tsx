@@ -44,7 +44,7 @@ export function LanguageOptionCard({
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold text-white">{nativeName}</span>
             {comingSoon ? (
-              <span className="glass-chip px-2 py-0.5 text-[10px] font-semibold text-white/55">
+              <span className="tag">
                 {tt("onboarding.language.comingSoon")}
               </span>
             ) : null}

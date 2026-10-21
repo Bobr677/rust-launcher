@@ -64,7 +64,7 @@ export function UpdatePopupModal({
               </p>
             )}
             {version && (
-              <p className="mt-2 text-xs font-medium uppercase tracking-[0.14em] text-white/55">
+              <p className="mt-2 text-xs font-medium text-white/55">
                 {tt("settings.updates.popup.versionLabel", { version })}
               </p>
             )}
@@ -90,7 +90,7 @@ export function UpdatePopupModal({
             type="button"
             disabled={busy}
             onClick={onUpdate}
-            className="interactive-press rounded-xl bg-emerald-600 px-5 py-2 text-sm font-semibold text-white shadow-lg hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+            className="interactive-press rounded-xl accent-bg px-5 py-2 text-sm font-semibold text-white shadow-lg hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {busy
               ? tt("settings.updates.popup.updating")

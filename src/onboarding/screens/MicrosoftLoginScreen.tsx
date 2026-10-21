@@ -106,7 +106,7 @@ export function MicrosoftLoginScreen({
         </OnboardingButton>
 
         {authUrl && loading ? (
-          <p className="break-all text-[11px] text-white/40">{authUrl}</p>
+          <p className="break-all text-[0.8125rem] text-white/40">{authUrl}</p>
         ) : null}
 
         <OnboardingButton variant="ghost" fullWidth onClick={onSkip} disabled={loading}>

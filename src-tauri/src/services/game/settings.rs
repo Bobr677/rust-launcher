@@ -229,7 +229,7 @@ pub fn sanitize_imported_settings(settings: &mut Settings, java_settings: &mut J
         settings.interface_language = default_interface_language();
     }
     if settings.background_accent_color.trim().is_empty() {
-        settings.background_accent_color = "#0b1530".to_string();
+        settings.background_accent_color = "#4a22a8".to_string();
     }
     if let Some(ref theme_id) = settings.custom_theme_id {
         let trimmed = theme_id.trim();
@@ -303,6 +303,35 @@ pub fn get_system_memory_gb() -> Result<u64, String> {
     let gb = total_bytes / (1024 * 1024 * 1024);
     Ok(gb.max(1))
 }
+
+#[command]
+pub fn get_graphics_adapters() -> Result<Vec<String>, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let output = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name"])
+            .output()
+            .map_err(|e| format!("Не удалось получить список видеокарт: {e}"))?;
+        if !output.status.success() {
+            return Err("Не удалось получить список видеокарт".to_string());
+        }
+        let text = String::from_utf8_lossy(&output.stdout);
+        let mut adapters: Vec<String> = text
+            .lines()
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .map(ToOwned::to_owned)
+            .collect();
+        adapters.sort_by_key(|name| name.to_lowercase());
+        adapters.dedup();
+        return Ok(adapters);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok(Vec::new())
+    }
+}
+
 
 #[command]
 pub fn get_settings() -> Result<Settings, String> {

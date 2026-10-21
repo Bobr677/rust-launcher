@@ -373,14 +373,3 @@ pub fn cleanup_profile(
 
     Ok(ProfileCleanupResult { freed_bytes: freed, removed })
 }
-
-#[command]
-pub fn get_profile_instance_settings(profile_id: String) -> Result<InstanceSettings, String> {
-    let path = instance_settings_path(&profile_id)?;
-    if !path.exists() {
-        return Ok(InstanceSettings::default());
-    }
-    let text = read_to_string_with_backup(&path)
-        .ok_or_else(|| format!("Ошибка чтения settings.json: {}", path.display()))?;
-    serde_json::from_str(&text).map_err(|e| format!("Ошибка разбора settings.json: {e}"))
-}

@@ -118,15 +118,6 @@ async function loadImageBitmap(url: string): Promise<ImageBitmap> {
   const blob = await response.blob();
   return await createImageBitmap(blob);
 }
-
-export function resolveAvatarKey(profile: ProfileAvatarInput): string | null {
-  const elyUsername = profile.ely_username?.trim();
-  if (elyUsername) return elyUsername;
-  const legacyNickname = profile.nickname?.trim();
-  if (legacyNickname) return legacyNickname;
-  return null;
-}
-
 export function buildElySkinUrl(username: string): string {
   return `https://skinsystem.ely.by/skins/${encodeURIComponent(username)}.png`;
 }
@@ -166,23 +157,6 @@ async function fetchMcSkinViaBackend(uuid: string): Promise<string | null> {
     return null;
   }
 }
-
-export async function fetchMcSkinByUsername(username: string): Promise<string | null> {
-  const trimmed = username.trim();
-  if (!trimmed) return null;
-
-  try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    const dataUrl = await invoke<string | null>("get_mc_skin_by_username", {
-      username: trimmed,
-    });
-    return dataUrl ?? null;
-  } catch (error) {
-    console.debug("[skin] Rust Mojang skin-by-username command unavailable", error);
-    return null;
-  }
-}
-
 export async function applyMcSkinByUsername(username: string): Promise<string> {
   const trimmed = username.trim();
   if (!trimmed) {
@@ -249,129 +223,6 @@ export async function loadViewerSkinSource(
 
   return STEVE_SKIN_URL;
 }
-
-export function buildElyCapeUrl(username: string): string {
-  return `https://skinsystem.ely.by/cloaks/${encodeURIComponent(username)}.png`;
-}
-
-async function fetchMcCapeViaBackend(uuid: string): Promise<string | null> {
-  try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    const dataUrl = await invoke<string | null>("get_mc_cape", { uuid });
-    return dataUrl ?? null;
-  } catch (error) {
-    console.debug("[cape] Rust Mojang cape command unavailable", error);
-    return null;
-  }
-}
-
-async function fetchElyCapeViaBackend(username: string): Promise<string | null> {
-  try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    const dataUrl = await invoke<string | null>("get_ely_cape", { username });
-    return dataUrl ?? null;
-  } catch (error) {
-    console.debug("[cape] Rust Ely cape command unavailable", error);
-    return null;
-  }
-}
-
-async function fetchOptifineCapeViaBackend(username: string): Promise<string | null> {
-  try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    const dataUrl = await invoke<string | null>("get_optifine_cape", { username });
-    return dataUrl ?? null;
-  } catch (error) {
-    console.debug("[cape] Rust OptiFine cape command unavailable", error);
-    return null;
-  }
-}
-
-function resolveCapeUsername(profile: ProfileAvatarInput, username: string): string | null {
-  return (
-    profile.ely_username?.trim() ||
-    profile.nickname?.trim() ||
-    username.trim() ||
-    null
-  );
-}
-
-export async function loadViewerAccountCapeSource(
-  profile: ProfileAvatarInput,
-  username: string = "",
-): Promise<string | null> {
-  if (isOfflineProfile(profile)) return null;
-
-  const elyUsername = resolveSkinUsername(profile);
-  if (elyUsername) {
-    const elyCape = await fetchElyCapeViaBackend(elyUsername);
-    if (elyCape) return elyCape;
-  }
-
-  const mcUuid = profile.mc_uuid?.trim();
-  if (mcUuid) {
-    const mcCape = await fetchMcCapeViaBackend(mcUuid);
-    if (mcCape) return mcCape;
-  }
-
-  if (elyUsername) {
-    try {
-      return await fetchSkinBlobUrl(buildElyCapeUrl(elyUsername));
-    } catch (error) {
-      console.debug("[cape] Ely cape URL fetch failed", error);
-    }
-  }
-
-  void username;
-  return null;
-}
-
-export async function loadViewerOptifineCapeSource(
-  profile: ProfileAvatarInput,
-  username: string = "",
-): Promise<string | null> {
-  const capeUser = resolveCapeUsername(profile, username);
-  if (!capeUser) return null;
-  return fetchOptifineCapeViaBackend(capeUser);
-}
-
-export type ViewerCapeMode = "none" | "account" | "optifine" | "custom";
-
-export async function loadViewerCapeSource(
-  mode: ViewerCapeMode,
-  profile: ProfileAvatarInput,
-  username: string = "",
-  customSrc?: string | null,
-): Promise<string | null> {
-  if (mode === "none") return null;
-  if (mode === "custom") {
-    const src = customSrc?.trim();
-    return src || null;
-  }
-  if (mode === "optifine") {
-    return loadViewerOptifineCapeSource(profile, username);
-  }
-  return loadViewerAccountCapeSource(profile, username);
-}
-
-export function resolveSkinUrl(profile: ProfileAvatarInput, _username: string = ""): string {
-  if (isOfflineProfile(profile)) {
-    return STEVE_SKIN_URL;
-  }
-
-  const elyUsername = profile.ely_username?.trim();
-  if (elyUsername) return buildElySkinUrl(elyUsername);
-
-  const mcUuid = profile.mc_uuid?.trim().replace(/-/g, "");
-  const elyUuid = profile.ely_uuid?.trim().replace(/-/g, "");
-  const uuid = mcUuid || elyUuid;
-  if (uuid) {
-    return `https://vzge.me/full/512/${uuid}.png`;
-  }
-
-  return STEVE_SKIN_URL;
-}
-
 export async function getElyAvatarByUsername(
   username: string,
   fallbackSrc: string,

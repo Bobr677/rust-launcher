@@ -17,6 +17,8 @@
         "title": "16Launcher",
         "width": 1280,
         "height": 720,
+        "minWidth": 1024,
+        "minHeight": 640,
         "resizable": true,
         "decorations": false
       }
@@ -43,9 +45,6 @@
         "description": "Modrinth modpack (.mrpack)",
         "mimeType": "application/octet-stream"
       }
-    ],
-    "resources": [
-      "resources/bootstrap.jar"
     ],
     "icon": [
       "icons/32x32.png",

@@ -21,7 +21,8 @@ use crate::services::game::arguments::{
 use crate::services::game::core::{
     compare_version_like, current_os_name, download_text_with_retries, ensure_fabric_intermediary_library,
     fabric_library_path,
-    is_probably_native_jar_path, library_applies, os_info, parse_library_coords, resolve_native_artifact,
+    file_len_matches, is_probably_native_jar_path, library_applies, os_info, parse_library_coords,
+    resolve_native_artifact,
 };
 use crate::services::game::console::log_to_console;
 use crate::services::game::profiles::{
@@ -38,6 +39,7 @@ use crate::services::game::runtime::{
     offline_uuid_from_username, remove_add_opens_for_java_under_9, resolve_client_jar_path,
     resolve_natives_dir_for_launch, fallback_java_runtime_for_mc_version, resolve_natives_extract_dir,
     forge_java_runtime_for_mc_version, uses_natives_subdirectories, download_file_checked,
+    ensure_assets_for_launch,
 };
 use crate::services::game::launcher::process::{is_external_minecraft_running, is_our_game_process_alive};
 use crate::services::game::settings as settings_service;
@@ -166,6 +168,29 @@ fn version_supports_quick_play_multiplayer(version_id: &str, jar_version: &str) 
     false
 }
 
+/// Описание базовой (ванильной) версии: сначала с диска, при отсутствии/порче — из сети.
+async fn load_parent_version_detail(
+    vers_root: &std::path::Path,
+    parent_id: &str,
+) -> Result<VersionDetail, String> {
+    let path = vers_root.join(parent_id).join(format!("{parent_id}.json"));
+    if let Ok(text) = tokio::fs::read_to_string(&path).await {
+        match serde_json::from_str::<VersionDetail>(&text) {
+            Ok(d) => return Ok(d),
+            Err(e) => eprintln!("[Launch] Повреждён {}: {e} — берём из сети", path.display()),
+        }
+    }
+    let url = get_mojang_version_url(parent_id).await.map_err(|e| {
+        format!("Базовая версия {parent_id} не найдена локально и недоступна в сети: {e}")
+    })?;
+    let client = http_client(false);
+    let text = download_text_with_retries(&client, &url, DEFAULT_DOWNLOAD_RETRIES).await?;
+    let detail: VersionDetail = serde_json::from_str(&text)
+        .map_err(|e| format!("Ошибка разбора версии {parent_id}: {e}"))?;
+    let _ = crate::infra::fs_atomic::write_atomic(&path, text.as_bytes());
+    Ok(detail)
+}
+
 #[tauri::command]
 pub async fn launch_game(
     app: AppHandle,
@@ -180,10 +205,22 @@ pub async fn launch_game(
     let game_dir = selected_instance_dir().unwrap_or_else(|| root.clone());
 
     let (mut detail, is_fabric) = if let Some(ref url) = version_url {
-        let client = http_client(false);
-        let text = download_text_with_retries(&client, url, DEFAULT_DOWNLOAD_RETRIES).await?;
-        let d: VersionDetail = serde_json::from_str(&text)
-            .map_err(|e| format!("Ошибка разбора описания версии: {e}"))?;
+        let local_json = vers_root.join(&version_id).join(format!("{version_id}.json"));
+        // Установленную версию читаем с диска: запуск не должен зависеть от доступности
+        // серверов Mojang. В сеть идём, только если локального описания нет.
+        let local = tokio::fs::read_to_string(&local_json)
+            .await
+            .ok()
+            .and_then(|s| serde_json::from_str::<VersionDetail>(&s).ok());
+        let d = match local {
+            Some(d) => d,
+            None => {
+                let client = http_client(false);
+                let text = download_text_with_retries(&client, url, DEFAULT_DOWNLOAD_RETRIES).await?;
+                serde_json::from_str(&text)
+                    .map_err(|e| format!("Ошибка разбора описания версии: {e}"))?
+            }
+        };
         (d, false)
     } else {
         let version_json = vers_root.join(&version_id).join(format!("{version_id}.json"));
@@ -201,11 +238,8 @@ pub async fn launch_game(
                 .map_err(|e| format!("Ошибка чтения profile.json: {e}"))?;
             let profile: FabricProfile = serde_json::from_str(&s)
                 .map_err(|e| format!("Ошибка разбора profile.json: {e}"))?;
-            let mojang_url = get_mojang_version_url(&profile.inherits_from).await?;
-            let client = http_client(false);
-            let mojang_text = download_text_with_retries(&client, &mojang_url, DEFAULT_DOWNLOAD_RETRIES).await?;
-            let mojang_detail: VersionDetail = serde_json::from_str(&mojang_text)
-                .map_err(|e| format!("Ошибка разбора: {e}"))?;
+            let mojang_detail =
+                load_parent_version_detail(&vers_root, &profile.inherits_from).await?;
             let mut detail = VersionDetail {
                 downloads: None,
                 inherits_from: Some(profile.inherits_from.clone()),
@@ -248,19 +282,7 @@ pub async fn launch_game(
         let mut effective_jar_version = version_id.clone();
     if let Some(parent_id) = detail.inherits_from.clone() {
         effective_jar_version = parent_id.clone();
-        let parent_json_path = vers_root.join(&parent_id).join(format!("{parent_id}.json"));
-        let parent_detail: VersionDetail = if parent_json_path.exists() {
-            let s = tokio::fs::read_to_string(&parent_json_path)
-                .await
-                .map_err(|e| format!("Ошибка чтения parent version.json: {e}"))?;
-            serde_json::from_str(&s).map_err(|e| format!("Ошибка разбора parent version.json: {e}"))?
-        } else {
-                let url = get_mojang_version_url(&parent_id).await?;
-            let client = http_client(false);
-            let text = download_text_with_retries(&client, &url, DEFAULT_DOWNLOAD_RETRIES).await?;
-                serde_json::from_str(&text)
-                .map_err(|e| format!("Ошибка разбора parent версии: {e}"))?
-        };
+        let parent_detail = load_parent_version_detail(&vers_root, &parent_id).await?;
 
         let mut merged_libs = parent_detail.libraries.clone();
         merged_libs.extend(detail.libraries.clone());
@@ -279,6 +301,34 @@ pub async fn launch_game(
     let inherits_for_jar = detail.inherits_from.as_deref();
     let jar_path = resolve_client_jar_path(&root, &vers_root, &version_id, inherits_for_jar)
         .unwrap_or_else(|| root.join(format!("{effective_jar_version}.jar")));
+    if let Some(client_dl) = detail.downloads.as_ref().map(|d| &d.client) {
+        let size_ok = client_dl.size == 0 || file_len_matches(&jar_path, client_dl.size);
+        if !size_ok {
+            // client.jar удалён антивирусом / обрезан — докачиваем вместо отказа в запуске.
+            log_to_console(
+                &app,
+                &format!("[Launch] client.jar отсутствует или повреждён, восстанавливаем: {}", jar_path.display()),
+            );
+            let _ = tokio::fs::remove_file(&jar_path).await;
+            let client = http_client(false);
+            let total_done = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+            download_file_checked(
+                &client,
+                &client_dl.url,
+                &jar_path,
+                client_dl.sha1.clone(),
+                &app,
+                &version_id,
+                client_dl.size,
+                total_done,
+                DEFAULT_DOWNLOAD_RETRIES,
+            )
+            .await
+            .map_err(|e| {
+                format!("Не удалось восстановить client.jar ({e}). Переустановите версию.")
+            })?;
+        }
+    }
     if detail.downloads.is_some() && !jar_path.is_file() {
         return Err("Версия не установлена. Сначала нажмите «Установить».".to_string());
     }
@@ -513,11 +563,36 @@ pub async fn launch_game(
     };
     let natives_str = natives_dir.to_str().unwrap_or("");
     let assets_root = root.join("assets");
-    let assets_str = assets_root.to_str().unwrap_or("");
     let _ = std::fs::create_dir_all(&assets_root);
+    let mut assets_str_owned = assets_root.to_string_lossy().into_owned();
+    if let Some(ref asset_index) = detail.asset_index {
+        let client = http_client(false);
+        ensure_assets_for_launch(&client, asset_index, &root, &app, &version_id, &game_dir).await;
+        // Версии MC <= 1.7.2 читают ассеты из assets/virtual/legacy.
+        let legacy = assets_root.join("virtual").join("legacy");
+        let index_is_virtual = std::fs::read_to_string(
+            assets_root.join("indexes").join(format!("{}.json", asset_index.id)),
+        )
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v.get("virtual").and_then(|b| b.as_bool()))
+        .unwrap_or(false);
+        if index_is_virtual && legacy.is_dir() {
+            assets_str_owned = legacy.to_string_lossy().into_owned();
+        }
+    }
+    let assets_str = assets_str_owned.as_str();
 
     if let Err(e) = refresh_ely_session_internal().await {
-        return Err(e);
+        // Сеть/Ely.by недоступны — не повод отказывать в запуске. Блокируем только если
+        // токен признан недействительным и очищен в профиле (нужен повторный вход).
+        let ely_session_left = get_profile()
+            .map(|p| p.ely_access_token.as_deref().is_some_and(|t| !t.is_empty()))
+            .unwrap_or(false);
+        if !ely_session_left {
+            return Err(e);
+        }
+        eprintln!("[Launch] Не удалось обновить сессию Ely.by, запускаем с текущей: {e}");
     }
 
     let profile = get_profile().unwrap_or_default();
@@ -827,6 +902,7 @@ pub async fn launch_game(
             .replace("${library_directory}", libs_dir_str)
             .replace("${classpath_separator}", classpath_sep)
             .replace("${assetsDir}", assets_str)
+            .replace("${game_assets}", assets_str)
             .replace("${assets_root}", assets_str)
             .replace("${assets_index_name}", detail.assets.as_deref().unwrap_or(""))
             .replace("${version_name}", &version_id)
@@ -1197,6 +1273,11 @@ pub async fn launch_game(
         .stderr(std::process::Stdio::piped());
     #[cfg(target_os = "linux")]
     crate::services::game::runtime::apply_linux_display_env(&mut cmd);
+    crate::services::game::runtime::apply_windows_graphics_preference(
+        &mut cmd,
+        &java_path,
+        settings.graphics_adapter.as_deref(),
+    );
     hide_console(&mut cmd);
 
     let mut child = cmd.spawn().map_err(|e| {

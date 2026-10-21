@@ -15,11 +15,6 @@ export function readDataCache<T>(key: string, ttlMs: number): T | null {
 export function writeDataCache<T>(key: string, value: T): void {
   store.set(key, { value, at: Date.now() });
 }
-
-export function invalidateDataCache(key: string): void {
-  store.delete(key);
-}
-
 export function scheduleIdleWork(work: () => void, timeoutMs = 1500): () => void {
   if (typeof requestIdleCallback !== "undefined") {
     const id = requestIdleCallback(work, { timeout: timeoutMs });

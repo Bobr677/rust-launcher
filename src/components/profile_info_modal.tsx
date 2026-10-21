@@ -66,7 +66,7 @@ type ProfileInfoModalProps = {
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-0.5 rounded-xl border border-white/8 bg-black/30 px-3 py-2.5 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-      <dt className="shrink-0 text-[11px] font-medium uppercase tracking-[0.12em] text-white/45">
+      <dt className="shrink-0 text-[0.8125rem] font-medium text-white/45">
         {label}
       </dt>
       <dd className="min-w-0 break-words text-sm font-medium text-white/90 sm:text-right">
@@ -126,7 +126,7 @@ export function ProfileInfoModal({ language, profile, onClose }: ProfileInfoModa
           <div className="flex min-w-0 items-center gap-3">
             <ProfileInstanceIcon profile={{ id: profile.id, name: profile.name }} imageFit="contain" />
             <div className="min-w-0">
-              <div className="text-xs uppercase tracking-[0.16em] text-white/50">
+              <div className="text-xs text-white/50">
                 {tt("modpacks.profileInfo.title")}
               </div>
               <div className="truncate text-lg font-semibold text-white">{profile.name}</div>
@@ -134,7 +134,7 @@ export function ProfileInfoModal({ language, profile, onClose }: ProfileInfoModa
           </div>
           <button
             type="button"
-            className="interactive-press shrink-0 rounded-full bg-white/10 px-4 py-1.5 text-xs font-semibold text-white/85 hover:bg-white/20"
+            className="interactive-press shrink-0 rounded-xl bg-white/10 px-3.5 py-1.5 text-xs font-semibold text-white/85 hover:bg-white/20"
             onClick={onClose}
           >
             {tt("modpacks.profileInfo.close")}

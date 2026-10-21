@@ -20,7 +20,7 @@ use std::path::PathBuf;
 use client::modrinth_http_client;
 use dependencies::collect_modrinth_required_downloads;
 use futures_util::stream::{self, StreamExt};
-use installed::{index_content_dir_sha1, mark_skipped_already_installed};
+use installed::{index_content_dir_sha1_for, mark_skipped_already_installed};
 
 use crate::app::paths::{game_root_dir, instance_dir};
 use crate::services::game::download::{modrinth_content_subdir, save_modrinth_file};
@@ -40,16 +40,6 @@ fn modrinth_content_dir(
 }
 
 #[tauri::command]
-pub async fn resolve_modrinth_required_dependencies(
-    version_id: String,
-    game_version: String,
-    loader: String,
-) -> Result<Vec<ModrinthDownloadTarget>, String> {
-    let client = modrinth_http_client();
-    collect_modrinth_required_downloads(&client, &version_id, &game_version, &loader).await
-}
-
-#[tauri::command]
 pub async fn download_modrinth_with_dependencies(
     category: String,
     version_id: String,
@@ -62,18 +52,20 @@ pub async fn download_modrinth_with_dependencies(
         collect_modrinth_required_downloads(&client, &version_id, &game_version, &loader).await?;
 
     let content_dir = modrinth_content_dir(&category, profile_id.as_deref())?;
-    let installed_index = index_content_dir_sha1(&content_dir).await?;
+    let target_names: Vec<&str> = targets.iter().map(|t| t.filename.as_str()).collect();
+    let installed_index = index_content_dir_sha1_for(&content_dir, &target_names).await?;
     mark_skipped_already_installed(&mut targets, &installed_index);
 
-    let pending: Vec<&ModrinthDownloadTarget> = targets.iter().filter(|t| !t.skipped).collect();
+    let pending: Vec<(String, String, Option<String>)> = targets
+        .iter()
+        .filter(|t| !t.skipped)
+        .map(|t| (t.url.clone(), t.filename.clone(), t.sha1.clone()))
+        .collect();
     if !pending.is_empty() {
         let results: Vec<Result<(), String>> = stream::iter(pending.into_iter())
-            .map(|target| {
+            .map(|(url, filename, sha1)| {
                 let category = category.clone();
                 let profile_id = profile_id.clone();
-                let url = target.url.clone();
-                let filename = target.filename.clone();
-                let sha1 = target.sha1.clone();
                 async move {
                     save_modrinth_file(
                         &category,

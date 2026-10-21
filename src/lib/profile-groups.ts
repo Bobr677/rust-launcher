@@ -105,33 +105,10 @@ export function dedupeProfileGroupAssignments(groups: ProfileGroup[]): ProfileGr
   });
 }
 
-const profileGroupsListeners = new Set<() => void>();
-
-export function subscribeProfileGroups(listener: () => void): () => void {
-  profileGroupsListeners.add(listener);
-  return () => {
-    profileGroupsListeners.delete(listener);
-  };
-}
-
-function notifyProfileGroupsListeners(): void {
-  const run = () => {
-    for (const listener of profileGroupsListeners) {
-      listener();
-    }
-  };
-  if (typeof queueMicrotask === "function") {
-    queueMicrotask(run);
-    return;
-  }
-  setTimeout(run, 0);
-}
-
 export function saveProfileGroups(groups: ProfileGroup[]): void {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(PROFILE_GROUPS_STORAGE_KEY, JSON.stringify(groups));
-    notifyProfileGroupsListeners();
   } catch {
   }
 }
@@ -152,13 +129,12 @@ export function assignProfilesToGroup(
   profileIds: string[],
 ): ProfileGroup[] {
   const idsSet = new Set(profileIds);
-  const next = groups.map((g) => {
+  return groups.map((g) => {
     if (g.id === groupId) {
       return { ...g, profileIds: [...new Set([...g.profileIds, ...profileIds])] };
     }
     return { ...g, profileIds: g.profileIds.filter((id) => !idsSet.has(id)) };
   });
-  return pruneEmptyProfileGroups(next);
 }
 
 export function ungroupProfiles(groups: ProfileGroup[], profileIds: string[]): ProfileGroup[] {
@@ -167,8 +143,4 @@ export function ungroupProfiles(groups: ProfileGroup[], profileIds: string[]): P
     ...g,
     profileIds: g.profileIds.filter((id) => !idsSet.has(id)),
   }));
-}
-
-export function pruneEmptyProfileGroups(groups: ProfileGroup[]): ProfileGroup[] {
-  return groups.filter((g) => g.profileIds.length > 0);
 }

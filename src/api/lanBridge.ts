@@ -1,7 +1,6 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
-export const LAN_BRIDGE_DATA = "lan-bridge-data";
 export const LAN_BRIDGE_STATUS = "lan-bridge-status";
 
 export type LanBridgeStatus = {
@@ -10,40 +9,9 @@ export type LanBridgeStatus = {
   detail?: string | null;
 };
 
-export type LanBridgeData = {
-  session_id?: string;
-  data_b64: string;
-};
-
-function b64FromBytes(bytes: ArrayBuffer | Uint8Array): string {
-  const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  let s = "";
-  for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]!);
-  return btoa(s);
-}
-
-function bytesFromB64(b64: string): Uint8Array {
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
-
 function normalizeSessionId(sessionId?: string | null): string {
   const trimmed = (sessionId ?? "").trim();
   return trimmed || "default";
-}
-
-export async function getGuestBridgePort(sessionId: string): Promise<number | null> {
-  const port = await invoke<number | null>("lan_bridge_guest_port", {
-    sessionId: normalizeSessionId(sessionId),
-  });
-  return port ?? null;
-}
-
-export async function getLocalLanIp(): Promise<string | null> {
-  const ip = await invoke<string | null>("get_local_lan_ip");
-  return ip ?? null;
 }
 
 export async function startGuestBridge(sessionId: string): Promise<number> {
@@ -52,21 +20,13 @@ export async function startGuestBridge(sessionId: string): Promise<number> {
   });
 }
 
-export async function startHostBridge(sessionId: string, lanPort: number): Promise<void> {
-  await invoke("lan_bridge_start_host", {
-    sessionId: normalizeSessionId(sessionId),
-    lanPort,
-  });
+export async function setHostLanPort(port: number | null): Promise<void> {
+  await invoke("lan_bridge_set_host_port", { port });
 }
 
-export async function writeBridgeBytes(
-  sessionId: string,
-  data: ArrayBuffer | Uint8Array,
-): Promise<void> {
-  await invoke("lan_bridge_write", {
-    sessionId: normalizeSessionId(sessionId),
-    dataB64: b64FromBytes(data),
-  });
+/** Проверяет, что на этом компьютере кто-то слушает LAN-порт (мир открыт для сети). */
+export async function probeLanPort(port: number): Promise<boolean> {
+  return invoke<boolean>("lan_bridge_probe_port", { port });
 }
 
 export async function stopBridge(sessionId?: string | null): Promise<void> {
@@ -75,127 +35,157 @@ export async function stopBridge(sessionId?: string | null): Promise<void> {
   });
 }
 
-export async function allowGuestForward(sessionId: string): Promise<void> {
-  await invoke("lan_bridge_guest_allow_forward", {
-    sessionId: normalizeSessionId(sessionId),
-  });
+const OUTBOUND_PAUSE_BYTES = 2 * 1024 * 1024;
+const OUTBOUND_RESUME_BYTES = 512 * 1024;
+const BACKPRESSURE_POLL_MS = 8;
+const INBOUND_BATCH_MAX = 256 * 1024;
+const INBOUND_WRITE_ATTEMPTS = 3;
+
+function toArrayBuffer(data: unknown): ArrayBuffer | null {
+  if (data instanceof ArrayBuffer) return data;
+  if (ArrayBuffer.isView(data)) {
+    return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
+  }
+  if (Array.isArray(data)) return Uint8Array.from(data as number[]).buffer;
+  return null;
 }
 
-const OUTBOUND_QUEUE_WARN = 256;
-const BACKPRESSURE_POLL_MS = 8;
+function concatChunks(parts: Uint8Array[], size: number): Uint8Array {
+  if (parts.length === 1) return parts[0]!;
+  const out = new Uint8Array(size);
+  let off = 0;
+  for (const p of parts) {
+    out.set(p, off);
+    off += p.byteLength;
+  }
+  return out;
+}
 
+/**
+ * Связывает DataChannel пира с Rust-мостом. Кадры ходят без base64: Rust → JS через `Channel`,
+ * JS → Rust через сырое тело `invoke`. Если DataChannel не успевает отправлять, мост
+ * приостанавливает чтение TCP (обратное давление), а не копит данные без ограничений.
+ */
 export async function attachLanTunnel(opts: {
   sessionId: string;
   sendBinary: (data: ArrayBuffer) => boolean;
-  canSend?: () => boolean;
+  canSend: () => boolean;
   onRemoteBinary: (handler: (data: ArrayBuffer) => void) => () => void;
   onStatus?: (status: LanBridgeStatus) => void;
 }): Promise<() => void> {
   const sessionId = normalizeSessionId(opts.sessionId);
-  const unsubs: UnlistenFn[] = [];
   let disposed = false;
 
-  let inboundWriteChain: Promise<void> = Promise.resolve();
+  const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
   const outboundQueue: ArrayBuffer[] = [];
+  let outboundBytes = 0;
+  let flowPaused = false;
   let flushingOutbound = false;
 
-  const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+  const setFlow = (paused: boolean) => {
+    if (flowPaused === paused) return;
+    flowPaused = paused;
+    void invoke("lan_bridge_set_flow", { sessionId, paused }).catch(() => {});
+  };
 
   const flushOutbound = async () => {
     if (flushingOutbound) return;
     flushingOutbound = true;
     try {
       while (!disposed && outboundQueue.length > 0) {
-        while (!disposed && opts.canSend && !opts.canSend()) {
-          await sleep(BACKPRESSURE_POLL_MS);
-        }
-        if (disposed) break;
         const chunk = outboundQueue[0]!;
-        if (opts.sendBinary(chunk)) {
-          outboundQueue.shift();
-        } else {
+        if (!opts.canSend() || !opts.sendBinary(chunk)) {
           await sleep(BACKPRESSURE_POLL_MS);
+          continue;
         }
+        outboundQueue.shift();
+        outboundBytes -= chunk.byteLength;
+        if (flowPaused && outboundBytes < OUTBOUND_RESUME_BYTES) setFlow(false);
       }
     } finally {
       flushingOutbound = false;
-      if (!disposed && outboundQueue.length > 0) {
-        void flushOutbound();
+    }
+  };
+
+  const onFrame = new Channel<ArrayBuffer>();
+  onFrame.onmessage = (data) => {
+    if (disposed) return;
+    const buf = toArrayBuffer(data);
+    if (!buf || buf.byteLength === 0) return;
+    if (outboundQueue.length === 0 && opts.canSend() && opts.sendBinary(buf)) return;
+    outboundQueue.push(buf);
+    outboundBytes += buf.byteLength;
+    if (outboundBytes > OUTBOUND_PAUSE_BYTES) setFlow(true);
+    void flushOutbound();
+  };
+
+  const unlistenStatus: UnlistenFn = await listen<LanBridgeStatus>(LAN_BRIDGE_STATUS, (ev) => {
+    if (normalizeSessionId(ev.payload.session_id) !== sessionId) return;
+    opts.onStatus?.(ev.payload);
+  });
+
+  let generation: number;
+  try {
+    generation = await invoke<number>("lan_bridge_attach", { sessionId, onFrame });
+  } catch (err) {
+    unlistenStatus();
+    throw err;
+  }
+
+  const inboundPending: Uint8Array[] = [];
+  let writingInbound = false;
+
+  const writeInbound = async (body: Uint8Array) => {
+    for (let attempt = 1; attempt <= INBOUND_WRITE_ATTEMPTS; attempt++) {
+      if (disposed) return;
+      try {
+        await invoke("lan_bridge_write", body, { headers: { "x-lan-session": sessionId } });
+        return;
+      } catch (err) {
+        if (attempt === INBOUND_WRITE_ATTEMPTS) {
+          console.warn("[lan-bridge] write failed", err);
+          return;
+        }
+        await sleep(50 * attempt);
       }
     }
   };
 
-  unsubs.push(
-    await listen<LanBridgeData>(LAN_BRIDGE_DATA, (ev) => {
-      if (disposed) return;
-      const payloadSession = normalizeSessionId(ev.payload.session_id);
-      if (payloadSession !== sessionId) return;
-      try {
-        const bytes = bytesFromB64(ev.payload.data_b64);
-        const ab = bytes.buffer.slice(
-          bytes.byteOffset,
-          bytes.byteOffset + bytes.byteLength,
-        ) as ArrayBuffer;
-        if (outboundQueue.length === OUTBOUND_QUEUE_WARN) {
-          console.warn(
-            "[lan-bridge] outbound queue growing under DataChannel backpressure",
-            outboundQueue.length,
-          );
+  const pumpInbound = async () => {
+    if (writingInbound) return;
+    writingInbound = true;
+    try {
+      while (!disposed && inboundPending.length > 0) {
+        let count = 0;
+        let size = 0;
+        while (count < inboundPending.length) {
+          const next = inboundPending[count]!.byteLength;
+          if (count > 0 && size + next > INBOUND_BATCH_MAX) break;
+          size += next;
+          count++;
         }
-        outboundQueue.push(ab);
-        void flushOutbound();
-      } catch {
+        await writeInbound(concatChunks(inboundPending.splice(0, count), size));
       }
-    }),
-  );
-
-  unsubs.push(
-    await listen<LanBridgeStatus>(LAN_BRIDGE_STATUS, (ev) => {
-      const payloadSession = normalizeSessionId(ev.payload.session_id);
-      if (payloadSession !== sessionId) return;
-      opts.onStatus?.(ev.payload);
-    }),
-  );
-
-  const writeWithRetry = async (copy: ArrayBuffer) => {
-    const maxAttempts = 40;
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      if (disposed) return;
-      try {
-        await writeBridgeBytes(sessionId, copy);
-        return;
-      } catch (err) {
-        if (attempt === maxAttempts - 1) {
-          console.warn("[lan-bridge] writeBridgeBytes failed", err);
-          return;
-        }
-        await sleep(25 + attempt * 10);
-      }
+    } finally {
+      writingInbound = false;
     }
   };
 
   const detachRemote = opts.onRemoteBinary((data) => {
-    if (disposed) return;
-    const copy = data.slice(0);
-    inboundWriteChain = inboundWriteChain
-      .then(() => writeWithRetry(copy))
-      .catch((err) => {
-        console.warn("[lan-bridge] inbound write chain failed", err);
-      });
+    if (disposed || data.byteLength === 0) return;
+    inboundPending.push(new Uint8Array(data));
+    void pumpInbound();
   });
 
   return () => {
+    if (disposed) return;
     disposed = true;
     outboundQueue.length = 0;
+    inboundPending.length = 0;
+    onFrame.onmessage = () => {};
     detachRemote();
-    for (const u of unsubs) {
-      try {
-        void u();
-      } catch {
-      }
-    }
+    unlistenStatus();
+    void invoke("lan_bridge_detach", { sessionId, generation }).catch(() => {});
   };
 }
-
-export { b64FromBytes, bytesFromB64 };

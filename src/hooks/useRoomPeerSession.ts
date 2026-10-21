@@ -35,7 +35,15 @@ function isMemberOnline(room: Room, userId: string): boolean {
   return true;
 }
 
-function remotePeerIdsFor(room: Room | null, localUserId: string): string[] {
+/**
+ * `openPeerIds` — пиры с живым DataChannel. Их не отключаем, даже если presence на миг пометил
+ * участника офлайн: рабочий канал надёжнее heartbeat'а, а обрыв убил бы игровое соединение.
+ */
+function remotePeerIdsFor(
+  room: Room | null,
+  localUserId: string,
+  openPeerIds: ReadonlySet<string>,
+): string[] {
   if (!room || !localUserId) return [];
   const members = room.members ?? [];
   if (members.length === 0) return [];
@@ -43,14 +51,14 @@ function remotePeerIdsFor(room: Room | null, localUserId: string): string[] {
   if (localUserId === room.owner_user_id) {
     return members
       .filter((m) => m.user_id !== localUserId)
-      .filter((m) => m.online !== false)
+      .filter((m) => m.online !== false || openPeerIds.has(m.user_id))
       .map((m) => m.user_id)
       .sort();
   }
 
   const amMember = members.some((m) => m.user_id === localUserId);
   if (!amMember) return [];
-  if (!isMemberOnline(room, room.owner_user_id)) return [];
+  if (!isMemberOnline(room, room.owner_user_id) && !openPeerIds.has(room.owner_user_id)) return [];
   return [room.owner_user_id];
 }
 
@@ -103,7 +111,6 @@ export function useRoomPeerSession(
   room: Room | null,
   localUserId: string,
   callbacks?: {
-    onTunnelOpen?: (fromPeerUserId: string) => void;
     onSessionReset?: () => void;
     onPeerChannelOpen?: (peerUserId: string, session: RoomPeerSession) => void;
   },
@@ -131,17 +138,20 @@ export function useRoomPeerSession(
   const reportedFailedRef = useRef<Set<string>>(new Set());
   const sessionsByPeerRef = useRef<Record<string, RoomPeerSession>>({});
   const roomRef = useRef(room);
-  const onTunnelOpenRef = useRef(callbacks?.onTunnelOpen);
   const onSessionResetRef = useRef(callbacks?.onSessionReset);
   const onPeerChannelOpenRef = useRef(callbacks?.onPeerChannelOpen);
   roomRef.current = room;
-  onTunnelOpenRef.current = callbacks?.onTunnelOpen;
   onSessionResetRef.current = callbacks?.onSessionReset;
   onPeerChannelOpenRef.current = callbacks?.onPeerChannelOpen;
 
+  const openPeerKey = Object.entries(peerLinks)
+    .filter(([, l]) => l.channelOpen)
+    .map(([id]) => id)
+    .sort()
+    .join(",");
   const expectedPeerIds = useMemo(
-    () => remotePeerIdsFor(room, localUserId),
-    [room, localUserId],
+    () => remotePeerIdsFor(room, localUserId, new Set(openPeerKey ? openPeerKey.split(",") : [])),
+    [room, localUserId, openPeerKey],
   );
   const expectedKey = expectedPeerIds.join(",");
 
@@ -328,7 +338,6 @@ export function useRoomPeerSession(
             return { ...prev, [peerUserId]: session };
           });
         },
-        onTunnelOpen: () => onTunnelOpenRef.current?.(peerUserId),
         onRequestRestart: () => requestRestartPreferRelay(peerUserId),
       });
 

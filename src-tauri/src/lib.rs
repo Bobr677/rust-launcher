@@ -19,48 +19,44 @@ use services::game::{
     default_external_launcher_path, list_importable_instances, import_selected_external_instance,
     fetch_all_versions, fetch_fabric_loaders, fetch_forge_builds_for_game, fetch_forge_versions,
     fetch_neoforge_builds_for_game, fetch_neoforge_versions, fetch_quilt_loaders,
-    delete_minecraft_installation, fetch_vanilla_releases, fetch_versions_for_loader,
-    get_effective_settings, get_game_root_dir, get_version_install_details,
+    delete_minecraft_installation, fetch_versions_for_loader,
+    get_effective_settings, get_version_install_details,
     get_installed_fabric_profile_id, get_installed_quilt_profile_id, get_java_settings, get_profile,
     get_profile_icon_data_uri, get_profile_java_settings, get_profile_play_time_seconds, get_profiles,
     set_profile_icon_from_file,
     get_selected_profile,
-    get_settings, get_system_memory_gb, get_launcher_cache_size, import_custom_version,
-    import_launcher_settings_backup, import_modpack_files, import_mrpack, import_mrpack_as_new_profile,
+    get_graphics_adapters, get_settings, get_system_memory_gb, get_launcher_cache_size, import_custom_version,
+    import_launcher_settings_backup, import_mrpack_as_new_profile,
     install_fabric, install_forge, install_local_version, install_neoforge, install_quilt, install_version,
-    is_game_running_now, is_minecraft_client_running,
-    launch_game, list_installed_fabric_game_versions, list_installed_quilt_game_versions,
+        launch_game, list_installed_fabric_game_versions, list_installed_quilt_game_versions,
     list_installed_versions, list_launcher_accounts, list_profile_items,     open_game_folder,
-    open_profile_folder, delete_screenshot, get_screenshot_data_uri, get_screenshot_thumbnail,
-    list_screenshots, open_screenshot, open_screenshots_folder, remove_launcher_account,
+    delete_screenshot, get_screenshot_data_uri, get_screenshot_thumbnail,
+    list_screenshots, open_screenshot, open_screenshots_folder, read_instance_analysis_logs,
+    remove_launcher_account,
     change_profile_version, rename_profile, reorder_profile_resource_packs,
     reset_download_cancel,
     reset_settings_to_default, set_java_settings, set_profile, set_profile_item_enabled,
     set_profile_java_settings, set_selected_profile, set_settings, stop_game, switch_launcher_account,
     update_profile_settings,
     validate_java_args, verify_java_runtimes,
-    get_local_lan_ip,
-    lan_bridge_guest_allow_forward, lan_bridge_guest_port, lan_bridge_start_guest,
-    lan_bridge_start_host, lan_bridge_stop, lan_bridge_write,
+    lan_bridge_attach, lan_bridge_detach, lan_bridge_probe_port, lan_bridge_set_flow,
+    lan_bridge_set_host_port, lan_bridge_start_guest, lan_bridge_stop, lan_bridge_write,
     create_profile_backup, delete_profile_backup, list_profile_backups,
     open_profile_backups_folder, restore_profile_backup_as_new,
     cleanup_profile, delete_profile_worlds, duplicate_profile, get_profile_disk_usage,
-    get_profile_instance_settings, list_profile_worlds,
+    list_profile_worlds,
 };
 use services::auth::{
-    ely_login_with_password, ely_logout, handle_oauth_callback, ms_logout, refresh_ely_session,
-    start_ely_oauth, start_ms_oauth,
+    ely_login_with_password, ely_logout, ms_logout,     start_ely_oauth, start_ms_oauth,
 };
 use services::curseforge::{
     curseforge_get_mod, curseforge_get_mod_files, curseforge_list_categories,
     curseforge_list_minecraft_versions, curseforge_search_mods, download_curseforge_file,
-    download_curseforge_modpack_and_import, install_curseforge_zip_as_new_profile,
-    install_curseforge_zip_into_profile,
-};
+    download_curseforge_modpack_and_import,     };
 use services::modrinth::{
     apply_profile_content_updates, check_profile_content_updates,
     check_profile_incompatible_content, download_modrinth_with_dependencies,
-    resolve_modrinth_required_dependencies, resolve_profile_item_metadata,
+    resolve_profile_item_metadata,
     scan_profile_mod_jars,
 };
 use services::rpc::{
@@ -81,24 +77,7 @@ use profile_launch::{
 use services::shortcuts::create_profile_desktop_shortcut;
 use services::themes::{
     create_empty_theme, delete_theme, get_theme_css, get_theme_dir, import_theme_zip,
-    list_themes, open_theme_css_file, open_themes_folder, save_custom_theme_css,
-};
-
-#[tauri::command]
-fn get_launcher_logs_file() -> String {
-    std::fs::read_to_string("launcher.log")
-        .unwrap_or_else(|_| "Логи пусты или файл не найден".to_string())
-}
-
-#[tauri::command]
-fn get_launcher_logs() -> String {
-    std::fs::read_to_string("launcher.log").unwrap_or_else(|_| "Логи пусты".to_string())
-}
-
-fn load_dotenv() {
-    app::env::load_dotenv_files();
-    crate::services::game::runtime::load_project_env_for_runtime();
-}
+    list_themes, open_theme_css_file, open_themes_folder, };
 
 #[cfg(target_os = "linux")]
 pub fn linux_startup_init() {
@@ -107,7 +86,7 @@ pub fn linux_startup_init() {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    load_dotenv();
+    app::env::load_dotenv_files();
 
     #[cfg(target_os = "windows")]
     infra::platform::configure_windows_webview_memory();
@@ -181,8 +160,7 @@ pub fn run() {
             fetch_all_versions,
             fetch_versions_for_loader,
             check_version_files_integrity,
-            fetch_vanilla_releases,
-            fetch_fabric_loaders,
+                        fetch_fabric_loaders,
             fetch_quilt_loaders,
             import_custom_version,
             fetch_forge_versions,
@@ -195,16 +173,16 @@ pub fn run() {
             install_quilt,
             install_forge,
             install_neoforge,
-            get_game_root_dir,
-            launch_game,
+                        launch_game,
+            lan_bridge_attach,
+            lan_bridge_detach,
             lan_bridge_start_guest,
-            lan_bridge_start_host,
+            lan_bridge_set_host_port,
+            lan_bridge_set_flow,
+            lan_bridge_probe_port,
             lan_bridge_write,
             lan_bridge_stop,
-            lan_bridge_guest_port,
-            lan_bridge_guest_allow_forward,
-            get_local_lan_ip,
-            list_installed_versions,
+                        list_installed_versions,
             get_installed_fabric_profile_id,
             get_installed_quilt_profile_id,
             list_installed_fabric_game_versions,
@@ -212,8 +190,7 @@ pub fn run() {
             get_version_install_details,
             delete_minecraft_installation,
             open_game_folder,
-            open_profile_folder,
-            get_profile,
+                        get_profile,
             get_profiles,
             get_profile_icon_data_uri,
             set_profile_icon_from_file,
@@ -230,23 +207,19 @@ pub fn run() {
             get_settings,
             set_settings,
             get_effective_settings,
-            is_game_running_now,
-            is_minecraft_client_running,
-            stop_game,
+                                    stop_game,
             get_system_memory_gb,
+            get_graphics_adapters,
             start_ely_oauth,
-            handle_oauth_callback,
-            ely_login_with_password,
+                        ely_login_with_password,
             ely_logout,
-            refresh_ely_session,
-            start_ms_oauth,
+                        start_ms_oauth,
             ms_logout,
             cancel_download,
             reset_download_cancel,
             download_modrinth_file,
             download_modrinth_with_dependencies,
-            resolve_modrinth_required_dependencies,
-            check_profile_content_updates,
+                        check_profile_content_updates,
             check_profile_incompatible_content,
             scan_profile_mod_jars,
             apply_profile_content_updates,
@@ -259,10 +232,7 @@ pub fn run() {
             curseforge_list_minecraft_versions,
             download_curseforge_file,
             download_curseforge_modpack_and_import,
-            install_curseforge_zip_into_profile,
-            install_curseforge_zip_as_new_profile,
-            import_mrpack,
-            import_mrpack_as_new_profile,
+                                                import_mrpack_as_new_profile,
             default_external_launcher_path,
             list_importable_instances,
             import_selected_external_instance,
@@ -274,8 +244,7 @@ pub fn run() {
             rename_profile,
             change_profile_version,
             add_profile_files,
-            import_modpack_files,
-            delete_profile,
+                        delete_profile,
             get_java_settings,
             set_java_settings,
             get_profile_java_settings,
@@ -298,8 +267,7 @@ pub fn run() {
             delete_profile_worlds,
             get_profile_disk_usage,
             cleanup_profile,
-            get_profile_instance_settings,
-            reset_settings_to_default,
+                        reset_settings_to_default,
             get_launcher_cache_size,
             clear_launcher_cache,
             set_background_image,
@@ -328,19 +296,17 @@ pub fn run() {
             take_pending_mrpack_open,
             take_pending_profile_launch,
             create_profile_desktop_shortcut,
-            get_launcher_logs_file,
-            list_screenshots,
+                        list_screenshots,
             get_screenshot_data_uri,
             get_screenshot_thumbnail,
             delete_screenshot,
             open_screenshots_folder,
             open_screenshot,
-            get_launcher_logs,
-            list_themes,
+            read_instance_analysis_logs,
+                        list_themes,
             import_theme_zip,
             get_theme_css,
-            save_custom_theme_css,
-            create_empty_theme,
+                        create_empty_theme,
             delete_theme,
             open_themes_folder,
             open_theme_css_file,

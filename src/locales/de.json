@@ -35,7 +35,11 @@
       "modrinth": "Modrinth",
       "curseforge": "CurseForge"
     },
-    "unlockConfirm": "Version und Loader werden mit dem ausgewählten Profil synchronisiert. Sie trotzdem ändern?",
+    "unlockTitle": "Version ist durch das Profil festgelegt",
+    "unlockConfirm": "Version und Loader ändern? Installierte Inhalte sind eventuell nicht mit dem Profil kompatibel.",
+    "lockedBanner": "Vom Profil festgelegt: Minecraft {{version}} · {{loader}}. Mods werden darauf abgestimmt.",
+    "unlockedBanner": "Sie sehen Inhalte, die nicht zum gewählten Profil passen. Installierte Mods starten möglicherweise nicht.",
+    "relock": "Wieder wie Profil",
     "searchPlaceholder": "Suchen...",
     "version": "Version",
     "syncedHint": "Mit Profil synchronisiert. Klicken Sie zum Entsperren auf „Ändern“.",
@@ -189,6 +193,11 @@
       "showConsoleOnLaunch": {
         "label": "Konsole beim Spielstart anzeigen:"
       },
+      "graphicsAdapter": {
+        "label": "Grafikkarte für das Spiel:",
+        "auto": "Automatisch",
+        "hint": "Windows wendet die Auswahl als Energiespar- oder Hochleistungspräferenz auf Java an; die konkrete GPU kann von den Treibereinstellungen abhängen."
+      },
       "closeLauncherOnStart": {
         "label": "Schließen Sie den Launcher, wenn das Spiel beginnt:"
       },
@@ -318,6 +327,10 @@
       },
       "disableAnimations": {
         "label": "Animationen deaktivieren:"
+      },
+      "backgroundAnimation": {
+        "label": "Animierter Hintergrund:",
+        "hint": "Langsame Bewegung der Farbverläufe im Hintergrund. Deaktivieren, wenn der Launcher die Grafikkarte stark belastet."
       },
       "hideBanners": {
         "label": "Werbebanner deaktivieren:",
@@ -594,6 +607,11 @@
       "openTitle": "Spielordner öffnen",
       "alt": "Spielordner"
     },
+    "dock": {
+      "folder": "Ordner",
+      "settings": "Einstellungen",
+      "noBuild": "Keine Instanz gewählt"
+    },
     "home": {
       "recentTitle": "Zuletzt gespielt",
       "seeAll": "Alle Packs",
@@ -614,7 +632,83 @@
       "detach": "Abtrennen",
       "attach": "Befestigen",
       "empty": "Protokolle werden nach Spielstart angezeigt.",
-      "hint": "Wird durch die Einstellung „Konsole beim Spielstart anzeigen“ im Spielbereich gesteuert."
+      "hint": "Wird durch die Einstellung „Konsole beim Spielstart anzeigen“ im Spielbereich gesteuert.",
+      "analyzer": {
+        "readingDisk": "Logs werden gelesen…",
+        "okBadge": "Keine Fehler",
+        "refresh": "Logs neu einlesen",
+        "sourcesLabel": "Geprüft",
+        "sourceConsole": "Konsole",
+        "sourceLatest": "latest.log",
+        "sourceCrash": "Crash-Reports: {{count}}",
+        "diskReadFailed": "Logs konnten nicht von der Festplatte gelesen werden.",
+        "title": "Log-Analyse",
+        "show": "Zeigen",
+        "hide": "Ausblenden",
+        "noIssues": "Keine kritischen Probleme im Log gefunden. Bei Abstürzen bitte volles Log oder Crash-Report senden.",
+        "rules": {
+          "oom": {
+            "title": "Zu wenig Speicher (OutOfMemory)",
+            "fix": "Erhöhe den RAM in den Java-Einstellungen des Profils. Schließe andere Programme und schwere Shader."
+          },
+          "wrongJava": {
+            "title": "Falsche Java-Version",
+            "fix": "Neuere Minecraft-Versionen brauchen Java 17/21. Wähle eine passende Runtime in den Java-Einstellungen."
+          },
+          "mixinConflict": {
+            "title": "Mixin-/Injektionskonflikt",
+            "fix": "Deaktiviere neue Mods einzeln. Oft patchen zwei Mods denselben Code."
+          },
+          "modIncompatible": {
+            "title": "Mod-Ladefehler",
+            "fix": "Prüfe Mod-Versionen für dein Minecraft und den Loader. Entferne doppelte .jar-Dateien."
+          },
+          "missingDependency": {
+            "title": "Fehlende Mod-Abhängigkeit",
+            "fix": "Installiere benötigte Bibliotheken (z. B. Fabric API, Architectury) in der passenden Version."
+          },
+          "versionMismatch": {
+            "title": "Minecraft-Versionskonflikt",
+            "fix": "Lade den Mod für genau diese Minecraft-Version. Andere Versionen starten meist nicht."
+          },
+          "corruptJar": {
+            "title": "Beschädigte JAR-Datei",
+            "fix": "Installiere den defekten Mod/die Bibliothek neu. Vermeide unbekannte Download-Quellen."
+          },
+          "openglGlfw": {
+            "title": "Grafikfehler (OpenGL/GLFW)",
+            "fix": "Aktualisiere GPU-Treiber, wechsle Fenster-/Vollbildmodus und deaktiviere Overlays."
+          },
+          "authFailed": {
+            "title": "Authentifizierung fehlgeschlagen",
+            "fix": "Melde dich erneut über Microsoft/Ely.by im Konto-Tab an."
+          },
+          "exitCode": {
+            "title": "Spiel mit Fehler beendet",
+            "fix": "Prüfe ERROR-Zeilen und Crash-Reports. Mehr RAM oder Entfernen des letzten Mods hilft oft."
+          },
+          "diskSpace": {
+            "title": "Zu wenig Speicherplatz",
+            "fix": "Gib Speicher auf dem Laufwerk mit Spielordner und Launcher-Cache frei."
+          },
+          "accessDenied": {
+            "title": "Dateizugriff verweigert",
+            "fix": "Starte den Launcher mit Schreibrechten auf den Spielordner. Schließe Antivirus/Sperren."
+          },
+          "nativeCrash": {
+            "title": "Nativer JVM-Absturz",
+            "fix": "Treiber aktualisieren, Java wechseln und Mods mit Natives (Sodium/Iris) testweise deaktivieren."
+          },
+          "fabricLoader": {
+            "title": "Fabric Loader / API-Problem",
+            "fix": "Aktualisiere Fabric Loader und Fabric API auf kompatible Versionen."
+          },
+          "forgeVersion": {
+            "title": "Forge-Versionsproblem",
+            "fix": "Installiere die empfohlene Forge-Version oder aktualisiere Mods für deinen Forge."
+          }
+        }
+      }
     }
   },
   "modpacks": {
@@ -710,8 +804,13 @@
       "createGroupMenu": "Neue Profilgruppe",
       "editGroupMenu": "Gruppe bearbeiten",
       "deleteGroupMenu": "Gruppe löschen",
-      "dropHint": "Kommen Sie hierher",
-      "selectedCount": "Ausgewählt: {{count}}"
+      "dropHint": "Hierher ziehen",
+      "selectedCount": "Ausgewählt: {{count}}",
+      "title": "Meine Profile",
+      "newGroup": "Neue Gruppe",
+      "groupActions": "Gruppenaktionen",
+      "dragCount": "{{count}} Profile",
+      "clearSelection": "Auswahl aufheben"
     },
     "groups": {
       "createTitle": "Neue Profilgruppe",
@@ -925,6 +1024,8 @@
     },
     "contextMenu": {
       "settings": "Einstellungen",
+      "moveToGroup": "In Gruppe verschieben",
+      "removeFromGroup": "Aus Gruppe entfernen",
       "pinToSidebar": "An Seitenleiste anpinnen",
       "unpinFromSidebar": "Von der Seitenleiste lösen",
       "deleteProfile": "Profil löschen",
@@ -1132,7 +1233,9 @@
       "requestExists": "Die Anfrage existiert bereits oder ihr seid schon befreundet.",
       "requestSent": "Anfrage gesendet",
       "removed": "Freund entfernt"
-    }
+    },
+    "profileFriendsOnly": "Dieses Profil ist nur für Freunde sichtbar",
+    "profileFriendsOnlyHint": "Füge den Spieler als Freund hinzu, um seine Erfolge und seinen Status zu sehen."
   },
   "rooms": {
     "subtitleSignedIn": "Erstelle Räume und lade Freunde zum Spielen ein.",
@@ -1201,6 +1304,16 @@
     "mcOnlineEly": "Ely",
     "mcOffline": "offline",
     "mcOfflineHint": "Melde dich mit Microsoft oder Ely an, um der Welt eines Freundes beizutreten.",
+    "joinClosedReason": "Dieser Raum ist geschlossen, Beitritt nicht möglich.",
+    "auto": {
+      "label": "Spiel im Raum",
+      "fromProfile": "Aus Profil „{{name}}“",
+      "fromMenu": "Aus dem Hauptmenü",
+      "manual": "Manuell ändern",
+      "useAuto": "Automatisch wählen",
+      "none": "Kein Profil gewählt. Wählen Sie die Version manuell oder im Hauptmenü."
+    },
+    "needP2pReason": "Warten Sie, bis die Verbindung zu den Raummitgliedern steht (P2P noch nicht bereit).",
     "p2pLabel": "Verbindung",
     "p2pReady": "bereit",
     "p2pConnecting": "verbindet…",
@@ -1221,6 +1334,8 @@
     "guestSteps": "Wenn der Host den Zugang öffnet - Welt beitreten. Microsoft oder Ely nötig.",
     "waitForPeer": "Lade einen Freund ein - die Verbindung erscheint, wenn er beitritt.",
     "needP2p": "Warte, bis die Verbindung zum Freund bereit ist",
+    "peerLauncherOutdated": "Dein Freund nutzt eine ältere Launcher-Version — aktualisiert beide, sonst funktioniert der Weltbeitritt nicht.",
+    "lanPortUnreachable": "Port {{port}} antwortet noch nicht. Öffne die Welt im LAN und gib den Port aus dem Spielchat ein.",
     "visibility": {
       "public": "öffentlich",
       "private": "privat",
@@ -1263,7 +1378,13 @@
     "friendAccept": "{{nick}} hat deine Anfrage angenommen",
     "roomInvite": "{{nick}} hat dich in einen Raum eingeladen",
     "achievement": "Erfolg: {{title}}",
-    "system": "Systembenachrichtigung"
+    "system": "Systembenachrichtigung",
+    "filterAll": "Alle",
+    "filterUnread": "Ungelesen",
+    "today": "Heute",
+    "yesterday": "Gestern",
+    "emptyUnread": "Alle Benachrichtigungen sind gelesen.",
+    "allRead": "Alles gelesen"
   },
   "achievements": {
     "title": "Erfolge",
@@ -1322,6 +1443,19 @@
         "title": "Stylist",
         "description": "Reiche ein eigenes Launcher-Theme ein."
       }
+    },
+    "filterAll": "Alle",
+    "filterUnlocked": "Freigeschaltet",
+    "filterLocked": "Gesperrt",
+    "unlockedNoDate": "Freigeschaltet",
+    "noneInFilter": "Hier ist noch nichts.",
+    "progressLaunches": "{{current}} / {{target}} Starts",
+    "progressPlaytime": "{{current}} / {{target}} Std.",
+    "category": {
+      "profile": "Profil",
+      "game": "Spiel",
+      "social": "Community",
+      "other": "Sonstiges"
     }
   },
   "platform": {
@@ -1371,6 +1505,22 @@
     "continueWithDiscord": "Mit Discord fortfahren",
     "authHintLogin": "Melde dich bei deinem 16Launcher-Konto an, um Fortschritt und Freunde zu synchronisieren.",
     "authHintSignup": "Erstelle ein 16Launcher-Konto - das dauert nur ein paar Minuten.",
+    "reset": {
+      "forgotLink": "Passwort vergessen?",
+      "title": "Passwort zurücksetzen",
+      "authHint": "Zugriff auf dein 16Launcher-Konto wiederherstellen.",
+      "requestHint": "Gib die E-Mail deines Kontos ein – wir senden dir einen Code zum Zurücksetzen.",
+      "confirmHint": "Falls {{email}} registriert ist, wurde ein Code gesendet. Gib ihn ein und wähle ein neues Passwort.",
+      "newPasswordLabel": "Neues Passwort",
+      "newPasswordPlaceholder": "Neues Passwort (mindestens 8 Zeichen)",
+      "submit": "Passwort speichern"
+    },
+    "changePassword": {
+      "title": "Passwort",
+      "hint": "Nach der Änderung werden alle anderen Geräte abgemeldet.",
+      "open": "Passwort ändern",
+      "currentPlaceholder": "Aktuelles Passwort"
+    },
     "toast": {
       "accountCreated": "Konto erstellt",
       "signedIn": "Angemeldet",
@@ -1392,7 +1542,12 @@
       "enterVerificationCode": "Geben Sie den Code aus der E-Mail ein.",
       "verificationCodeSent": "Bestätigungscode wurde per E-Mail gesendet.",
       "accountDeleted": "Konto gelöscht.",
-      "acceptPrivacy": "Bitte stimmen Sie der Datenschutzerklärung zu, um ein Konto zu erstellen."
+      "acceptPrivacy": "Bitte stimmen Sie der Datenschutzerklärung zu, um ein Konto zu erstellen.",
+      "enterEmailReset": "Gib die E-Mail deines Kontos ein.",
+      "resetCodeSent": "Falls diese E-Mail registriert ist, haben wir einen Code gesendet.",
+      "passwordReset": "Passwort geändert, du bist angemeldet.",
+      "enterCurrentPassword": "Gib dein aktuelles Passwort ein.",
+      "passwordChanged": "Passwort geändert. Andere Geräte wurden abgemeldet."
     },
     "errors": {
       "connectionFailed": "Es kann keine Verbindung zum 16Launcher-Server hergestellt werden. Überprüfen Sie Internet und API-Verfügbarkeit.",
@@ -1409,11 +1564,28 @@
       "deleteNotAvailable": "Kontolöschung ist auf dem Server noch nicht verfügbar. API-Deploy erforderlich.",
       "identityAlreadyLinked": "{{provider}} ist bereits mit einem anderen 16Launcher-Konto verknüpft.",
       "discordNotConfigured": "Discord-Anmeldung ist auf dem Server noch nicht konfiguriert.",
-      "discordFailed": "Discord-Anmeldung fehlgeschlagen. Bitte erneut versuchen."
+      "discordFailed": "Discord-Anmeldung fehlgeschlagen. Bitte erneut versuchen.",
+      "invalidCurrentPassword": "Das aktuelle Passwort ist falsch.",
+      "passwordNotSet": "Dieses Konto hat noch kein Passwort. Melde dich ab und lege es über „Passwort vergessen?“ auf dem Anmeldebildschirm fest.",
+      "samePassword": "Das neue Passwort muss sich vom aktuellen unterscheiden.",
+      "serverOutdated": "Der 16Launcher-Server unterstützt das noch nicht. Bitte später erneut versuchen."
+    },
+    "settings": {
+      "online": "Online",
+      "nicknameHint": "Mindestens 3 Zeichen. Freunde und Raummitglieder sehen diesen Namen.",
+      "gameNicknameHint": "Stammt vom aktiven Minecraft-Konto.",
+      "linkedTitle": "Verknüpfte Konten",
+      "linkedHint": "Die Verknüpfung bestätigt, dass das Spielkonto dir gehört.",
+      "notLinked": "Nicht verknüpft",
+      "linkedAs": "Verknüpft · {{name}}",
+      "sessionTitle": "Sitzung",
+      "sessionHint": "Auf diesem Gerät von 16Launcher abmelden. Deine Minecraft-Konten bleiben im Launcher."
     }
   },
   "app": {
     "sidebar": {
+      "collapse": "Seitenleiste einklappen",
+      "expand": "Seitenleiste ausklappen",
       "play": "Spielen",
       "settings": "Einstellungen",
       "mods": "Mods",
@@ -1456,6 +1628,7 @@
       "newAccountNameBase": "Spieler",
       "addAccount": "Konto hinzufügen",
       "sidebarTooltip": "Konten",
+      "offlineBadge": "offline",
       "switcherTitle": "Konto wechseln",
       "switcherHeading": "Konten",
       "manageAll": "Alle Konten und Anmeldung…",
@@ -1518,6 +1691,33 @@
         "error": "Skin konnte nicht geladen werden.",
         "notFound": "Spieler nicht gefunden."
       },
+      "skinUpload": {
+        "title": "Skin hochladen",
+        "pick": "PNG wählen",
+        "apply": "Hochladen",
+        "loading": "Skin wird hochgeladen…",
+        "error": "Skin konnte nicht hochgeladen werden.",
+        "standard": "Standard",
+        "slim": "Slim"
+      },
+      "subTab": {
+        "overview": "Übersicht",
+        "skins": "Skins",
+        "wardrobe": "Garderobe",
+        "achievements": "Erfolge",
+        "notifications": "Benachrichtigungen",
+        "settings": "Einstellungen"
+      },
+      "skinLibrary": {
+        "title": "Skin-Bibliothek",
+        "empty": "Auf diesem Konto sind keine gespeicherten Skins vorhanden.",
+        "loading": "Skins werden geladen…",
+        "error": "Skin-Bibliothek konnte nicht geladen werden.",
+        "apply": "Skin anwenden",
+        "active": "Aktiv",
+        "previewHint": "Skin auswählen — Vorschau rechts, dann anwenden.",
+        "microsoftOnly": "Die Skin-Bibliothek ist für Microsoft-Konten verfügbar."
+      },
       "toast": {
         "nicknameSaved": "Änderungen gespeichert!",
         "nicknameSaveFailed": "Der Spitzname konnte nicht gespeichert werden.",
@@ -1532,6 +1732,39 @@
         "switched": "Aktives Konto geändert.",
         "removed": "Konto aus der Liste entfernt.",
         "added": "Neues Konto erstellt und ausgewählt."
+      },
+      "signIn": "Anmelden",
+      "elySignIn": "Mit Ely.by anmelden",
+      "stats": {
+        "playtime": "Spielzeit",
+        "launches": "Starts",
+        "achievements": "Erfolge"
+      },
+      "overview": {
+        "skinLabel": "Skin",
+        "capeLabel": "Umhang",
+        "defaultSkin": "Standard",
+        "allAchievements": "Alle",
+        "recentAchievements": "Zuletzt freigeschaltet",
+        "noRecent": "Noch nichts freigeschaltet.",
+        "nextAchievements": "Nächste Ziele",
+        "allNotifications": "Alle",
+        "signedOutTitle": "Bei 16Launcher anmelden",
+        "signedOutBody": "Ein 16Launcher-Konto schaltet die sozialen Funktionen des Launchers frei."
+      },
+      "wardrobe": {
+        "title": "Garderobe",
+        "subtitle": "Klicke auf einen Skin oder Umhang, um ihn anzuprobieren, und übernimm ihn dann.",
+        "skins": "Skins",
+        "capes": "Umhänge",
+        "pendingTitle": "Anprobe nicht gespeichert",
+        "apply": "Übernehmen",
+        "discard": "Verwerfen",
+        "applied": "Aussehen aktualisiert.",
+        "microsoftOnlyBody": "Melde dich mit Microsoft an, um Skins und Umhänge direkt im Launcher zu ändern.",
+        "elyBody": "Ely.by-Skins änderst du in deinem Konto auf ely.by.",
+        "openEly": "Ely.by öffnen",
+        "byNameHint": "Der Skin des Spielers wird auf dein Konto übertragen."
       }
     },
     "toast": {
@@ -1606,7 +1839,13 @@
       "fabricNotInstalled": "Das Fabric-Profil ist für diese Version nicht installiert.",
       "quiltNotInstalled": "Das Quilt-Profil ist für diese Version nicht installiert."
     },
+    "window": {
+      "minimize": "Minimieren",
+      "maximize": "Maximieren",
+      "close": "Schließen"
+    },
     "versionBadge": {
+      "updateChip": "Update verfügbar",
       "latest": "Sie haben die neueste Version",
       "outdatedWithVersion": "Neue Version verfügbar: {{version}}",
       "outdated": "Neue Version verfügbar",

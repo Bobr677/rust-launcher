@@ -1,6 +1,4 @@
 import type { SavedCatalogItem } from "./types";
-
-const FAVORITES_KEY = "mods_favorites";
 const RECENT_KEY = "mods_recent";
 const SORT_KEY = "mods_sort";
 const MAX_RECENT = 20;
@@ -32,38 +30,6 @@ function writeList(key: string, items: SavedCatalogItem[]) {
   } catch {
   }
 }
-
-export function loadFavorites(): SavedCatalogItem[] {
-  return readList(FAVORITES_KEY);
-}
-
-export function saveFavorites(items: SavedCatalogItem[]) {
-  writeList(FAVORITES_KEY, items);
-}
-
-export function toggleFavorite(item: SavedCatalogItem): SavedCatalogItem[] {
-  const current = loadFavorites();
-  const idx = current.findIndex(
-    (f) => f.provider === item.provider && f.id === item.id,
-  );
-  let next: SavedCatalogItem[];
-  if (idx >= 0) {
-    next = current.filter((_, i) => i !== idx);
-  } else {
-    next = [{ ...item, savedAt: Date.now() }, ...current];
-  }
-  saveFavorites(next);
-  return next;
-}
-
-export function isFavorite(
-  favorites: SavedCatalogItem[],
-  provider: string,
-  id: string,
-): boolean {
-  return favorites.some((f) => f.provider === provider && f.id === id);
-}
-
 export function loadRecent(): SavedCatalogItem[] {
   return readList(RECENT_KEY);
 }

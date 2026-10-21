@@ -122,7 +122,10 @@ fn find_mod_loader_profiles(
     Ok(out)
 }
 
-pub(crate) fn remove_fabric_profiles_for_game_version(game_version: &str) -> Result<(), String> {
+pub(crate) fn remove_fabric_profiles_for_game_version(
+    game_version: &str,
+    keep_id: Option<&str>,
+) -> Result<(), String> {
     let vers_root = versions_dir()?;
     if !vers_root.exists() {
         return Ok(());
@@ -138,6 +141,9 @@ pub(crate) fn remove_fabric_profiles_for_game_version(game_version: &str) -> Res
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("");
+        if keep_id == Some(folder_id) {
+            continue;
+        }
         let matches_name = folder_id.starts_with("fabric-loader-") && folder_id.ends_with(&suffix);
         let matches_profile = if !matches_name {
             let profile_path = path.join("profile.json");

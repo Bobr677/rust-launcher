@@ -14,15 +14,17 @@ use crate::models::events::{
 };
 use crate::models::profile::InstanceProfileSummary;
 use crate::services::curseforge::{
-    curseforge_get_file, curseforge_resolve_download_url,
+    curseforge_cdn_fallback_urls, curseforge_get_file, curseforge_get_files_bulk,
+    curseforge_get_mod_class_ids, curseforge_resolve_download_url, CfFile,
 };
 use crate::services::game::cache as cache_service;
-use crate::services::game::download::resolve_file_path;
+use crate::services::game::core::sha1_hex_of_file;
+use crate::services::game::download::{fetch_verified, resolve_file_path};
 use crate::services::game::profiles::{create_profile_impl, delete_profile, set_profile_icon_path};
 use crate::services::game::state::CANCEL_DOWNLOAD;
 
 const DOWNLOAD_CANCELLED_MSG: &str = "Загрузка отменена пользователем";
-const DEFAULT_CONCURRENCY: usize = 8;
+const DEFAULT_CONCURRENCY: usize = 16;
 
 fn check_download_cancelled() -> Result<(), String> {
     if CANCEL_DOWNLOAD.load(Ordering::SeqCst) {
@@ -77,13 +79,8 @@ pub struct ManifestFile {
     pub project_id: u32,
     #[serde(rename = "fileID")]
     pub file_id: u32,
-    #[serde(default = "default_required")]
-    pub required: bool,
 }
 
-fn default_required() -> bool {
-    true
-}
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
@@ -231,87 +228,94 @@ fn extract_overrides(zip_path: &Path, overrides_dir_name: &str, dest_root: &Path
 }
 
 
-async fn resolve_mod_download(
-    project_id: u32,
-    file_id: u32,
-) -> Result<(String, String), FailedMod> {
-    let meta = match curseforge_get_file(project_id, file_id).await {
-        Ok(m) => m,
-        Err(e) => {
-            return Err(FailedMod {
-                project_id,
-                file_id,
-                file_name: None,
-                reason: format!("Метаданные файла: {e}"),
-            });
-        }
-    };
-
-    let file_name = meta.file_name.clone();
-    if let Some(url) = meta.download_url.filter(|u| !u.trim().is_empty()) {
-        return Ok((url, file_name));
-    }
-
-    match curseforge_resolve_download_url(project_id, file_id).await {
-        Ok(url) => Ok((url, file_name)),
-        Err(e) => Err(FailedMod {
-            project_id,
-            file_id,
-            file_name: Some(file_name),
-            reason: format!(
-                "downloadUrl отсутствует и /download-url недоступен: {e}"
-            ),
-        }),
+/// Папка внутри экземпляра по `classId` проекта CurseForge. В манифесте сборки лежат не только
+/// моды: ресурспаки, шейдеры и датапаки нельзя складывать в `mods/`.
+fn subdir_for_class_id(class_id: Option<u32>) -> &'static str {
+    match class_id {
+        Some(12) => "resourcepacks",
+        Some(6552) => "shaderpacks",
+        Some(6945) => "datapacks",
+        _ => "mods",
     }
 }
 
-async fn download_mod_jar(
-    url: &str,
-    dest: &Path,
-) -> Result<(), String> {
-    let client = http_client_for_binary_download(false);
-    let resp = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| format!("Ошибка загрузки мода: {e}"))?;
-    if !resp.status().is_success() {
-        return Err(format!(
-            "Сервер вернул {} при скачивании {}",
-            resp.status(),
-            url
-        ));
+async fn resolve_mod_urls(
+    project_id: u32,
+    file_id: u32,
+    meta: &CfFile,
+) -> Vec<String> {
+    let mut urls = Vec::new();
+    if let Some(url) = meta
+        .download_url
+        .as_ref()
+        .map(|u| u.trim())
+        .filter(|u| !u.is_empty())
+    {
+        urls.push(url.to_string());
+    } else if let Ok(url) = curseforge_resolve_download_url(project_id, file_id).await {
+        urls.push(url);
     }
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| format!("Ошибка чтения тела ответа: {e}"))?;
-    if let Some(parent) = dest.parent() {
-        tokio::fs::create_dir_all(parent)
+    urls.extend(curseforge_cdn_fallback_urls(file_id, &meta.file_name));
+    urls
+}
+
+async fn download_manifest_file(
+    file: ManifestFile,
+    meta: Option<CfFile>,
+    class_id: Option<u32>,
+    instance_dir: PathBuf,
+) -> Result<String, FailedMod> {
+    let failed = |file_name: Option<String>, reason: String| FailedMod {
+        project_id: file.project_id,
+        file_id: file.file_id,
+        file_name,
+        reason,
+    };
+
+    let meta = match meta {
+        Some(m) => m,
+        None => curseforge_get_file(file.project_id, file.file_id)
             .await
-            .map_err(|e| format!("Не удалось создать папку mods: {e}"))?;
+            .map_err(|e| failed(None, format!("Метаданные файла: {e}")))?,
+    };
+
+    let safe_name = Path::new(&meta.file_name)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("mod.jar")
+        .to_string();
+    let dest = instance_dir
+        .join(subdir_for_class_id(class_id))
+        .join(&safe_name);
+    let sha1 = meta.sha1();
+
+    if let (Some(expected), true) = (sha1.as_deref(), dest.is_file()) {
+        if let Ok(actual) = sha1_hex_of_file(&dest).await {
+            if actual.eq_ignore_ascii_case(expected) {
+                return Ok(safe_name);
+            }
+        }
     }
-    tokio::fs::write(dest, &bytes)
+
+    let urls = resolve_mod_urls(file.project_id, file.file_id, &meta).await;
+    let client = http_client_for_binary_download(false);
+    fetch_verified(&client, &urls, &dest, sha1.as_deref(), None)
         .await
-        .map_err(|e| format!("Не удалось сохранить мод {:?}: {e}", dest))?;
-    Ok(())
+        .map_err(|e| failed(Some(safe_name.clone()), e))?;
+    Ok(safe_name)
 }
 
 async fn download_manifest_mods<F>(
     files: &[ManifestFile],
-    mods_dir: &Path,
+    instance_dir: &Path,
     concurrency: usize,
     mut on_progress: F,
 ) -> Result<(u32, Vec<FailedMod>), String>
 where
     F: FnMut(InstallProgress) + Send,
 {
-    let required: Vec<ManifestFile> = files
-        .iter()
-        .filter(|f| f.required)
-        .cloned()
-        .collect();
-    let total = required.len() as u32;
+    let total = files.len() as u32;
     if total == 0 {
         on_progress(InstallProgress {
             phase: "files".into(),
@@ -326,21 +330,51 @@ where
         phase: "files".into(),
         current: 0,
         total,
+        message: "Получение информации о файлах".into(),
+    });
+
+    // Метаданные всех файлов и проектов — двумя пакетными запросами вместо 2×N одиночных:
+    // так не упираемся в лимит запросов прокси и не теряем моды на «Метаданные файла: 429».
+    let file_ids: Vec<u32> = files.iter().map(|f| f.file_id).collect();
+    let mut project_ids: Vec<u32> = files.iter().map(|f| f.project_id).collect();
+    project_ids.sort_unstable();
+    project_ids.dedup();
+
+    let (metas, class_ids) = tokio::join!(
+        curseforge_get_files_bulk(&file_ids),
+        curseforge_get_mod_class_ids(&project_ids),
+    );
+    let metas = metas.unwrap_or_else(|e| {
+        eprintln!("[curseforge_installer] пакетные метаданные файлов недоступны: {e}");
+        Default::default()
+    });
+    let class_ids = class_ids.unwrap_or_else(|e| {
+        eprintln!("[curseforge_installer] пакетные метаданные проектов недоступны: {e}");
+        Default::default()
+    });
+    check_download_cancelled()?;
+
+    on_progress(InstallProgress {
+        phase: "files".into(),
+        current: 0,
+        total,
         message: format!("Загрузка модов (0/{total})"),
     });
 
     let completed = Arc::new(AtomicU32::new(0));
-    let mods_dir = mods_dir.to_path_buf();
-    let concurrency = concurrency.clamp(1, 16);
+    let instance_dir = instance_dir.to_path_buf();
+    let concurrency = concurrency.clamp(1, 32);
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<InstallProgress>();
 
     let download_fut = async {
-        let results: Vec<Result<(), FailedMod>> = stream::iter(required.into_iter())
+        let results: Vec<Result<(), FailedMod>> = stream::iter(files.to_vec())
             .map(|file| {
-                let mods_dir = mods_dir.clone();
+                let instance_dir = instance_dir.clone();
                 let completed = completed.clone();
                 let tx = tx.clone();
+                let meta = metas.get(&file.file_id).cloned();
+                let class_id = class_ids.get(&file.project_id).copied();
                 async move {
                     if CANCEL_DOWNLOAD.load(Ordering::SeqCst) {
                         return Err(FailedMod {
@@ -351,31 +385,14 @@ where
                         });
                     }
 
-                    let (url, file_name) =
-                        resolve_mod_download(file.project_id, file.file_id).await?;
-
-                    let safe_name = Path::new(&file_name)
-                        .file_name()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("mod.jar")
-                        .to_string();
-                    let dest = mods_dir.join(&safe_name);
-
-                    if let Err(e) = download_mod_jar(&url, &dest).await {
-                        return Err(FailedMod {
-                            project_id: file.project_id,
-                            file_id: file.file_id,
-                            file_name: Some(safe_name),
-                            reason: e,
-                        });
-                    }
+                    let name = download_manifest_file(file, meta, class_id, instance_dir).await?;
 
                     let cur = completed.fetch_add(1, Ordering::SeqCst) + 1;
                     let _ = tx.send(InstallProgress {
                         phase: "files".into(),
                         current: cur,
                         total,
-                        message: safe_name,
+                        message: name,
                     });
                     Ok(())
                 }
@@ -469,10 +486,10 @@ where
         message: format!("Распаковано файлов overrides: {overrides_count}"),
     });
 
-    let mods_total = manifest.files.iter().filter(|f| f.required).count() as u32;
+    let mods_total = manifest.files.len() as u32;
     let (mods_downloaded, failed_mods) = download_manifest_mods(
         &manifest.files,
-        &mods_dir,
+        instance_dir,
         concurrency,
         &mut on_progress,
     )
@@ -530,29 +547,6 @@ fn emit_progress(app: &AppHandle, p: &InstallProgress) {
 }
 
 
-#[tauri::command]
-pub async fn install_curseforge_zip_into_profile(
-    app: AppHandle,
-    profile_id: String,
-    zip_path: String,
-) -> Result<InstallationResult, String> {
-    let dir = instance_dir(&profile_id)?;
-    if !dir.exists() {
-        return Err("Папка сборки не найдена".to_string());
-    }
-    let pack_path = resolve_file_path(&zip_path);
-    if !pack_path.exists() {
-        return Err("Файл .zip CurseForge не найден".to_string());
-    }
-
-    let app2 = app.clone();
-    install_curseforge_zip(&pack_path, &dir, DEFAULT_CONCURRENCY, move |p| {
-        emit_progress(&app2, &p);
-    })
-    .await
-}
-
-#[tauri::command]
 pub async fn install_curseforge_zip_as_new_profile(
     app: AppHandle,
     zip_path: String,
@@ -715,39 +709,28 @@ pub async fn download_curseforge_modpack_and_import(
 
     check_download_cancelled()?;
 
-    let url = match curseforge_resolve_download_url(mod_id, file_id).await {
-        Ok(u) => u,
+    let mut urls = Vec::new();
+    match curseforge_resolve_download_url(mod_id, file_id).await {
+        Ok(u) => urls.push(u),
         Err(_) => {
-            let meta = curseforge_get_file(mod_id, file_id).await?;
-            meta.download_url
+            if let Some(u) = curseforge_get_file(mod_id, file_id)
+                .await
+                .ok()
+                .and_then(|m| m.download_url)
                 .filter(|u| !u.trim().is_empty())
-                .ok_or_else(|| {
-                    "CurseForge не вернул ссылку на скачивание сборки.".to_string()
-                })?
+            {
+                urls.push(u);
+            }
         }
-    };
+    }
+    urls.extend(curseforge_cdn_fallback_urls(file_id, base_name));
 
+    // Потоково, с повторами и проверкой длины: раньше архив целиком читался в память
+    // и обрыв соединения давал обрезанный zip.
     let client = http_client_for_binary_download(false);
-    let resp = client
-        .get(&url)
-        .send()
+    fetch_verified(&client, &urls, &dest, None, None)
         .await
         .map_err(|e| format!("Ошибка загрузки архива CurseForge: {e}"))?;
-    check_download_cancelled()?;
-    if !resp.status().is_success() {
-        return Err(format!(
-            "CurseForge вернул ошибку {} при скачивании сборки",
-            resp.status()
-        ));
-    }
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| format!("Ошибка чтения архива CurseForge: {e}"))?;
-    check_download_cancelled()?;
-    tokio::fs::write(&dest, &bytes)
-        .await
-        .map_err(|e| format!("Не удалось сохранить архив CurseForge: {e}"))?;
 
     let dest_str = dest
         .to_str()

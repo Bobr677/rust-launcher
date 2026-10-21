@@ -64,30 +64,6 @@ pub(crate) fn is_our_game_process_alive() -> bool {
 }
 
 #[command]
-pub fn is_game_running_now() -> Result<bool, String> {
-    let pid = GAME_PROCESS_PID.load(Ordering::SeqCst);
-    if pid == 0 {
-        return Ok(false);
-    }
-
-    let mut sys = System::new();
-    sys.refresh_processes(ProcessesToUpdate::All, true);
-
-    let pid_obj = Pid::from_u32(pid as u32);
-    if sys.process(pid_obj).is_some() {
-        return Ok(true);
-    }
-
-    GAME_PROCESS_PID.store(0, Ordering::SeqCst);
-    Ok(false)
-}
-
-#[command]
-pub fn is_minecraft_client_running() -> Result<bool, String> {
-    Ok(is_minecraft_java_process_running_except(0))
-}
-
-#[command]
 pub fn stop_game() -> Result<(), String> {
     let pid = GAME_PROCESS_PID.swap(0, Ordering::SeqCst);
     if pid == 0 {

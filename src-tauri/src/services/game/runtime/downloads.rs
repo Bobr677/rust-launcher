@@ -2,7 +2,7 @@ use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use flate2::read::GzDecoder;
 use futures_util::StreamExt;
@@ -13,7 +13,9 @@ use tokio::sync::Semaphore;
 
 use crate::infra::http::http_client;
 use crate::models::events::{DownloadProgressPayload, EVENT_DOWNLOAD_PROGRESS};
-use crate::services::game::core::{download_text_with_retries, sha1_hex_of_file};
+use crate::services::game::core::{
+    download_text_with_retries, file_len_matches, is_retryable_status, retry_delay, sha1_hex_of_file,
+};
 use crate::services::game::console::log_to_console;
 use crate::services::game::state::{
     CANCEL_DOWNLOAD, DEFAULT_DOWNLOAD_CONCURRENCY, DEFAULT_DOWNLOAD_RETRIES, FORGE_INSTALLER_MIN_BYTES,
@@ -21,30 +23,7 @@ use crate::services::game::state::{
 };
 
 use crate::services::game::version_types::{AssetIndexJson, AssetIndexRef, QuiltLoaderEntry};
-pub(crate) async fn download_file(
-    client: &Client,
-    url: &str,
-    path: &Path,
-    app: &AppHandle,
-    version_id: &str,
-    total_size: u64,
-    offset_downloaded: u64,
-) -> Result<u64, String> {
 
-    let total_done = Arc::new(AtomicU64::new(offset_downloaded));
-    download_file_checked(
-        client,
-        url,
-        path,
-        None,
-        app,
-        version_id,
-        total_size,
-        total_done,
-        DEFAULT_DOWNLOAD_RETRIES,
-    )
-    .await
-}
 
 
 pub(crate) async fn file_starts_with_pk(path: &Path) -> Result<bool, String> {
@@ -143,7 +122,7 @@ pub(crate) fn ensure_launcher_profiles_json(game_dir: &Path, mc_version: &str) -
 
     let text = serde_json::to_string_pretty(&root_obj)
         .map_err(|e| format!("Не удалось сериализовать launcher_profiles.json: {e}"))?;
-    std::fs::write(&launcher_profiles_path, text)
+    crate::infra::fs_atomic::write_atomic(&launcher_profiles_path, text.as_bytes())
         .map_err(|e| format!("Не удалось записать launcher_profiles.json: {e}"))?;
     Ok(())
 }
@@ -152,6 +131,41 @@ pub(crate) fn forge_installer_url_with_official_maven(installer_url: &str) -> St
     installer_url.replace(FORGE_MAVEN_MIRROR_BASE, FORGE_MAVEN_OFFICIAL_BASE)
 }
 
+const CANCELLED_MSG: &str = "Загрузка отменена пользователем";
+const PROGRESS_EMIT_INTERVAL: Duration = Duration::from_millis(120);
+
+/// Удаляет временный файл, если загрузка закончилась ошибкой/отменой/паникой.
+struct TmpFileGuard {
+    path: std::path::PathBuf,
+    armed: bool,
+}
+
+impl TmpFileGuard {
+    fn new(path: std::path::PathBuf) -> Self {
+        Self { path, armed: true }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for TmpFileGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
+
+enum AttemptError {
+    /// Повтор не поможет (отмена, ошибка диска, 4xx).
+    Fatal(String),
+    /// Сетевая/серверная ошибка или битый файл — стоит попробовать ещё раз.
+    Retry(String),
+}
+
+/// Скачивает Forge/NeoForge installer. Сетевые сбои повторяются, «не найден» — нет.
 pub(crate) async fn download_forge_installer_once(
     client: &Client,
     url: &str,
@@ -160,105 +174,135 @@ pub(crate) async fn download_forge_installer_once(
     version_id: &str,
     total_done: Arc<AtomicU64>,
 ) -> Result<u64, String> {
+    const ATTEMPTS: usize = 3;
+    let mut attempt = 0usize;
+    loop {
+        match download_forge_installer_attempt(client, url, path, app, version_id, &total_done).await {
+            Ok(n) => return Ok(n),
+            Err(AttemptError::Fatal(e)) => return Err(e),
+            Err(AttemptError::Retry(e)) => {
+                attempt += 1;
+                if attempt >= ATTEMPTS {
+                    return Err(e);
+                }
+                log_to_console(
+                    app,
+                    &format!("[Forge] Загрузка installer не удалась ({e}), повтор {attempt}/{}", ATTEMPTS - 1),
+                );
+                tokio::time::sleep(retry_delay(attempt - 1)).await;
+            }
+        }
+    }
+}
+
+async fn download_forge_installer_attempt(
+    client: &Client,
+    url: &str,
+    path: &Path,
+    app: &AppHandle,
+    version_id: &str,
+    total_done: &Arc<AtomicU64>,
+) -> Result<u64, AttemptError> {
     if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent)
             .await
-            .map_err(|e| format!("Не удалось создать папку: {e}"))?;
+            .map_err(|e| AttemptError::Fatal(format!("Не удалось создать папку: {e}")))?;
     }
 
     if CANCEL_DOWNLOAD.load(Ordering::SeqCst) {
-        return Err("Загрузка отменена пользователем".to_string());
+        return Err(AttemptError::Fatal(CANCELLED_MSG.to_string()));
     }
-
-    let tmp_path = path.with_extension("part");
-    let mut file = tokio::fs::File::create(&tmp_path)
-        .await
-        .map_err(|e| format!("Не удалось создать файл: {e}"))?;
-
 
     let resp = client
         .get(url)
         .header(ACCEPT_ENCODING, "identity")
         .send()
         .await
-        .map_err(|e| format!("Ошибка запроса Forge installer: {e}"))?;
+        .map_err(|e| AttemptError::Retry(format!("Ошибка запроса Forge installer: {e}")))?;
 
     let status = resp.status();
     if !status.is_success() {
-        let _ = tokio::fs::remove_file(&tmp_path).await;
-        if status.as_u16() == 404 || status.is_server_error() {
-            return Err("Версия Forge не найдена".to_string());
+        if status.as_u16() == 404 {
+            return Err(AttemptError::Fatal("Версия Forge не найдена".to_string()));
         }
-        return Err(format!("HTTP {status} при запросе Forge installer"));
+        let msg = format!("HTTP {status} при запросе Forge installer");
+        return Err(if status.is_server_error() || status.as_u16() == 429 {
+            AttemptError::Retry(msg)
+        } else {
+            AttemptError::Fatal(msg)
+        });
     }
 
     let ct = resp
         .headers()
         .get(CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
-        .unwrap_or("<нет>");
+        .unwrap_or("<нет>")
+        .to_string();
     log_to_console(app, &format!("[Forge] Content-Type installer: {ct}"));
     if ct.to_ascii_lowercase().starts_with("text/html") {
-        let _ = tokio::fs::remove_file(&tmp_path).await;
-        return Err("Версия Forge не найдена".to_string());
+        return Err(AttemptError::Fatal("Версия Forge не найдена".to_string()));
     }
 
     let content_len = resp.content_length().unwrap_or(0);
-    if content_len < FORGE_INSTALLER_MIN_BYTES {
-        let _ = tokio::fs::remove_file(&tmp_path).await;
-        return Err("Версия Forge не найдена".to_string());
+    if content_len != 0 && content_len < FORGE_INSTALLER_MIN_BYTES {
+        return Err(AttemptError::Fatal("Версия Forge не найдена".to_string()));
     }
-
-    let effective_total = content_len;
 
     let mut raw = resp
         .bytes()
         .await
-        .map_err(|e| format!("Ошибка чтения потока: {e}"))?;
+        .map_err(|e| AttemptError::Retry(format!("Ошибка чтения потока: {e}")))?;
+
+    if content_len > 0 && raw.len() as u64 != content_len {
+        return Err(AttemptError::Retry(format!(
+            "Installer получен не полностью ({} из {content_len} байт)",
+            raw.len()
+        )));
+    }
 
     if raw.len() >= 2 && raw[0] == 0x1f && raw[1] == 0x8b {
         let mut decoder = GzDecoder::new(raw.as_ref());
         let mut out = Vec::new();
         decoder
             .read_to_end(&mut out)
-            .map_err(|e| format!("Ошибка распаковки gzip (Forge installer): {e}"))?;
+            .map_err(|e| AttemptError::Fatal(format!("Ошибка распаковки gzip (Forge installer): {e}")))?;
         raw = out.into();
     }
 
-    let bytes = raw;
-
-    if CANCEL_DOWNLOAD.load(Ordering::SeqCst) {
-        let _ = tokio::fs::remove_file(&tmp_path).await;
-        return Err("Загрузка отменена пользователем".to_string());
+    if (raw.len() as u64) < FORGE_INSTALLER_MIN_BYTES || !raw.starts_with(b"PK") {
+        return Err(AttemptError::Fatal(
+            "Сервер вернул не jar-файл Forge installer (возможно, страница-заглушка)".to_string(),
+        ));
     }
 
-    tokio::io::AsyncWriteExt::write_all(&mut file, &bytes)
+    if CANCEL_DOWNLOAD.load(Ordering::SeqCst) {
+        return Err(AttemptError::Fatal(CANCELLED_MSG.to_string()));
+    }
+
+    let tmp_path = path.with_extension("part");
+    let mut guard = TmpFileGuard::new(tmp_path.clone());
+    tokio::fs::write(&tmp_path, &raw)
         .await
-        .map_err(|e| format!("Ошибка записи: {e}"))?;
+        .map_err(|e| AttemptError::Fatal(format!("Ошибка записи: {e}")))?;
 
-    let downloaded = bytes.len() as u64;
+    let downloaded = raw.len() as u64;
     total_done.fetch_add(downloaded, Ordering::SeqCst);
-
-    let percent = if effective_total > 0 {
-        downloaded as f32 / effective_total as f32 * 100.0
-    } else {
-        100.0
-    };
     let _ = app.emit(
         EVENT_DOWNLOAD_PROGRESS,
         DownloadProgressPayload {
             version_id: version_id.to_string(),
             downloaded,
-            total: effective_total,
-            percent,
+            total: downloaded,
+            percent: 100.0,
         },
     );
 
-    drop(file);
     let _ = tokio::fs::remove_file(path).await;
     tokio::fs::rename(&tmp_path, path)
         .await
-        .map_err(|e| format!("Не удалось переместить файл: {e}"))?;
+        .map_err(|e| AttemptError::Fatal(format!("Не удалось переместить файл: {e}")))?;
+    guard.disarm();
     Ok(downloaded)
 }
 
@@ -279,10 +323,11 @@ pub(crate) async fn download_file_checked(
             .map_err(|e| format!("Не удалось создать папку: {e}"))?;
     }
 
+    let retries = retries.max(1);
     let mut attempt: usize = 0;
     loop {
         if CANCEL_DOWNLOAD.load(Ordering::SeqCst) {
-            return Err("Загрузка отменена пользователем".to_string());
+            return Err(CANCELLED_MSG.to_string());
         }
 
         if path.exists() {
@@ -303,151 +348,259 @@ pub(crate) async fn download_file_checked(
             }
         }
 
-        let unique_id = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        let tmp_path = path.with_extension(format!("part-{}-{}", std::process::id(), unique_id));
-        let mut file = tokio::fs::File::create(&tmp_path)
-            .await
-            .map_err(|e| format!("Не удалось создать файл: {e}"))?;
-
-        let resp = client.get(url).send().await;
-        let resp = match resp {
-            Ok(r) => r,
-            Err(e) => {
-                if attempt + 1 >= retries {
-                    let _ = tokio::fs::remove_file(&tmp_path).await;
-                    return Err(format!("Ошибка загрузки {url}: {e}"));
-                }
-                let _ = tokio::fs::remove_file(&tmp_path).await;
-                let delay_ms = (1000u64).saturating_mul(2u64.saturating_pow(attempt.min(6) as u32));
-                tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+        match download_attempt(
+            client,
+            url,
+            path,
+            expected_sha1.as_deref(),
+            app,
+            version_id,
+            total_size,
+            &total_done,
+            attempt,
+        )
+        .await
+        {
+            Ok(n) => return Ok(n),
+            Err(AttemptError::Fatal(e)) => return Err(e),
+            Err(AttemptError::Retry(e)) => {
                 attempt += 1;
-                continue;
-            }
-        };
-
-        let status = resp.status();
-        if !status.is_success() {
-            let should_retry = status.as_u16() == 404
-                || status.as_u16() == 408
-                || status.as_u16() == 429
-                || status.is_server_error();
-            let body = resp.text().await.unwrap_or_else(|_| "<тело ответа недоступно>".to_string());
-            if !should_retry || attempt + 1 >= retries {
-                let _ = tokio::fs::remove_file(&tmp_path).await;
-                return Err(format!("HTTP {} для {}: {}", status, url, body));
-            }
-            let _ = tokio::fs::remove_file(&tmp_path).await;
-            let delay_ms = (1000u64).saturating_mul(2u64.saturating_pow(attempt.min(6) as u32));
-            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-            attempt += 1;
-            continue;
-        }
-
-        let content_len = resp.content_length().unwrap_or(0);
-        let effective_total = if total_size > 0 { total_size } else { content_len };
-
-        let mut downloaded: u64 = 0;
-        let mut stream = resp.bytes_stream();
-        while let Some(chunk) = stream.next().await {
-            if CANCEL_DOWNLOAD.load(Ordering::SeqCst) {
-                let _ = tokio::fs::remove_file(&tmp_path).await;
-                return Err("Загрузка отменена пользователем".to_string());
-            }
-            let chunk = chunk.map_err(|e| format!("Ошибка чтения потока: {e}"))?;
-            tokio::io::AsyncWriteExt::write_all(&mut file, &chunk)
-                .await
-                .map_err(|e| format!("Ошибка записи: {e}"))?;
-            downloaded += chunk.len() as u64;
-            let total_now = total_done.fetch_add(chunk.len() as u64, Ordering::SeqCst) + (chunk.len() as u64);
-            let (reported_done, percent) = if total_size > 0 {
-                let p = if effective_total > 0 {
-                    total_now as f32 / effective_total as f32 * 100.0
-                } else {
-                    0.0
-                };
-                (total_now, p)
-            } else {
-                let p = if effective_total > 0 {
-                    downloaded as f32 / effective_total as f32 * 100.0
-                } else {
-                    0.0
-                };
-                (downloaded, p)
-            };
-            let _ = app.emit(
-                EVENT_DOWNLOAD_PROGRESS,
-                DownloadProgressPayload {
-                    version_id: version_id.to_string(),
-                    downloaded: reported_done,
-                    total: effective_total,
-                    percent,
-                },
-            );
-        }
-
-        drop(file);
-
-        if let Some(expected) = expected_sha1.clone() {
-            let actual = sha1_hex_of_file(&tmp_path).await?;
-            if actual.to_ascii_lowercase() != expected.to_ascii_lowercase() {
-                let _ = tokio::fs::remove_file(&tmp_path).await;
-                if attempt + 1 >= retries {
-                    return Err(format!(
-                        "SHA1 не совпал для {} (ожидалось {}, получено {})",
-                        path.display(),
-                        expected,
-                        actual
-                    ));
+                if attempt >= retries {
+                    return Err(e);
                 }
-                let delay_ms = (800u64).saturating_mul(2u64.saturating_pow(attempt.min(6) as u32));
-                tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-                attempt += 1;
-                continue;
-            }
-        }
-
-        if path.exists() {
-            if let Some(expected) = expected_sha1.as_ref() {
-                let actual_existing = sha1_hex_of_file(path).await?;
-                if actual_existing.eq_ignore_ascii_case(expected) {
-                    let _ = tokio::fs::remove_file(&tmp_path).await;
-                    return Ok(downloaded);
-                }
-                let _ = tokio::fs::remove_file(path).await;
-            } else {
-                let _ = tokio::fs::remove_file(&tmp_path).await;
-                return Ok(downloaded);
-            }
-        }
-
-        match tokio::fs::rename(&tmp_path, path).await {
-            Ok(()) => return Ok(downloaded),
-            Err(e) => {
-                if path.exists() {
-                    if let Some(expected) = expected_sha1.as_ref() {
-                        let actual_existing = sha1_hex_of_file(path).await?;
-                        if actual_existing.eq_ignore_ascii_case(expected) {
-                            let _ = tokio::fs::remove_file(&tmp_path).await;
-                            return Ok(downloaded);
-                        }
-                    } else {
-                        let _ = tokio::fs::remove_file(&tmp_path).await;
-                        return Ok(downloaded);
-                    }
-                }
-                return Err(format!(
-                    "Не удалось финализировать файл: {e} (url: {url}, target: {})",
-                    path.display()
-                ));
+                eprintln!("[Download] {e} — повтор {attempt}/{}", retries - 1);
+                tokio::time::sleep(retry_delay(attempt - 1)).await;
             }
         }
     }
 }
 
+/// Одна попытка загрузки. Счётчик общего прогресса откатывается при неудаче, чтобы
+/// повторы не раздували проценты, а временный файл удаляется в любом случае.
+async fn download_attempt(
+    client: &Client,
+    url: &str,
+    path: &Path,
+    expected_sha1: Option<&str>,
+    app: &AppHandle,
+    version_id: &str,
+    total_size: u64,
+    total_done: &Arc<AtomicU64>,
+    attempt: usize,
+) -> Result<u64, AttemptError> {
+    let unique_id = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let mut tmp_name = path.as_os_str().to_owned();
+    tmp_name.push(format!(".part-{}-{}", std::process::id(), unique_id));
+    let tmp_path = std::path::PathBuf::from(tmp_name);
+    let mut guard = TmpFileGuard::new(tmp_path.clone());
+
+    let resp = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| AttemptError::Retry(format!("Ошибка загрузки {url}: {e}")))?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp
+            .text()
+            .await
+            .unwrap_or_else(|_| "<тело ответа недоступно>".to_string());
+        let body: String = body.chars().take(300).collect();
+        let msg = format!("HTTP {status} для {url}: {body}");
+        // 404 повторяем один раз (зеркала иногда отстают), остальные 4xx — нет.
+        return Err(if is_retryable_status(status.as_u16(), attempt) {
+            AttemptError::Retry(msg)
+        } else {
+            AttemptError::Fatal(msg)
+        });
+    }
+
+    let mut file = tokio::fs::File::create(&tmp_path)
+        .await
+        .map_err(|e| AttemptError::Fatal(format!("Не удалось создать файл: {e}")))?;
+
+    let content_len = resp.content_length().unwrap_or(0);
+    let effective_total = if total_size > 0 { total_size } else { content_len };
+
+    let mut counted: u64 = 0;
+    let mut downloaded: u64 = 0;
+    let mut last_emit = Instant::now()
+        .checked_sub(PROGRESS_EMIT_INTERVAL)
+        .unwrap_or_else(Instant::now);
+    let mut stream = resp.bytes_stream();
+
+    let emit = |downloaded: u64, total_now: u64| {
+        let (reported_done, percent) = if total_size > 0 {
+            let p = if effective_total > 0 {
+                total_now as f32 / effective_total as f32 * 100.0
+            } else {
+                0.0
+            };
+            (total_now, p)
+        } else {
+            let p = if effective_total > 0 {
+                downloaded as f32 / effective_total as f32 * 100.0
+            } else {
+                0.0
+            };
+            (downloaded, p)
+        };
+        let _ = app.emit(
+            EVENT_DOWNLOAD_PROGRESS,
+            DownloadProgressPayload {
+                version_id: version_id.to_string(),
+                downloaded: reported_done,
+                total: effective_total,
+                percent: percent.min(100.0),
+            },
+        );
+    };
+
+    let rollback = |counted: u64| {
+        if counted > 0 {
+            let _ = total_done.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
+                Some(v.saturating_sub(counted))
+            });
+        }
+    };
+
+    while let Some(chunk) = stream.next().await {
+        if CANCEL_DOWNLOAD.load(Ordering::SeqCst) {
+            rollback(counted);
+            return Err(AttemptError::Fatal(CANCELLED_MSG.to_string()));
+        }
+        let chunk = match chunk {
+            Ok(c) => c,
+            Err(e) => {
+                rollback(counted);
+                return Err(AttemptError::Retry(format!("Обрыв загрузки {url}: {e}")));
+            }
+        };
+        if let Err(e) = tokio::io::AsyncWriteExt::write_all(&mut file, &chunk).await {
+            rollback(counted);
+            return Err(AttemptError::Fatal(format!(
+                "Ошибка записи на диск ({}): {e}. Проверьте свободное место.",
+                tmp_path.display()
+            )));
+        }
+        downloaded += chunk.len() as u64;
+        counted += chunk.len() as u64;
+        let total_now = total_done.fetch_add(chunk.len() as u64, Ordering::SeqCst) + chunk.len() as u64;
+        if last_emit.elapsed() >= PROGRESS_EMIT_INTERVAL {
+            last_emit = Instant::now();
+            emit(downloaded, total_now);
+        }
+    }
+
+    if let Err(e) = tokio::io::AsyncWriteExt::flush(&mut file).await {
+        rollback(counted);
+        return Err(AttemptError::Fatal(format!("Ошибка записи на диск: {e}")));
+    }
+    drop(file);
+
+    // Обрезанный ответ без ошибки потока (прокси/CDN закрыли соединение раньше времени).
+    if content_len > 0 && downloaded != content_len {
+        rollback(counted);
+        return Err(AttemptError::Retry(format!(
+            "Файл {url} получен не полностью ({downloaded} из {content_len} байт)"
+        )));
+    }
+    // Пустой ответ допустим только если хеш подтверждает, что файл и должен быть пустым.
+    if downloaded == 0 && expected_sha1.is_none() {
+        rollback(counted);
+        return Err(AttemptError::Retry(format!("Пустой ответ от {url}")));
+    }
+
+    if let Some(expected) = expected_sha1 {
+        let actual = sha1_hex_of_file(&tmp_path)
+            .await
+            .map_err(AttemptError::Fatal)?;
+        if !actual.eq_ignore_ascii_case(expected) {
+            rollback(counted);
+            return Err(AttemptError::Retry(format!(
+                "SHA1 не совпал для {} (ожидалось {expected}, получено {actual})",
+                path.display()
+            )));
+        }
+    }
+
+    // Итоговый прогресс файла (последний чанк мог не попасть под троттлинг).
+    emit(downloaded, total_done.load(Ordering::SeqCst));
+
+    // Другой поток мог успеть положить такой же файл.
+    if path.exists() {
+        match expected_sha1 {
+            Some(expected) => {
+                if let Ok(existing) = sha1_hex_of_file(path).await {
+                    if existing.eq_ignore_ascii_case(expected) {
+                        return Ok(downloaded);
+                    }
+                }
+                let _ = tokio::fs::remove_file(path).await;
+            }
+            None => return Ok(downloaded),
+        }
+    }
+
+    // Антивирус/индексатор на Windows кратко держит свежий файл — rename может падать.
+    let mut last_err = None;
+    for i in 0..4u64 {
+        match tokio::fs::rename(&tmp_path, path).await {
+            Ok(()) => {
+                guard.disarm();
+                return Ok(downloaded);
+            }
+            Err(e) => {
+                last_err = Some(e);
+                tokio::time::sleep(Duration::from_millis(150 * (i + 1))).await;
+            }
+        }
+    }
+    let e = last_err.expect("loop ran at least once");
+    if path.exists() {
+        // Файл уже на месте (параллельная загрузка того же артефакта) — это успех.
+        return Ok(downloaded);
+    }
+    Err(AttemptError::Fatal(format!(
+        "Не удалось финализировать файл: {e} (url: {url}, target: {})",
+        path.display()
+    )))
+}
+
 const ASSETS_BASE_URL: &str = "https://resources.download.minecraft.net";
+
+fn asset_object_path(objects_dir: &Path, hash: &str) -> Option<std::path::PathBuf> {
+    if hash.len() < 2 || !hash.is_ascii() {
+        return None;
+    }
+    Some(objects_dir.join(&hash[..2]).join(hash))
+}
+
+async fn load_asset_index(
+    client: &Client,
+    asset_index: &AssetIndexRef,
+    indexes_dir: &Path,
+) -> Result<AssetIndexJson, String> {
+    let index_path = indexes_dir.join(format!("{}.json", asset_index.id));
+
+    if let Ok(text) = tokio::fs::read_to_string(&index_path).await {
+        if let Ok(parsed) = serde_json::from_str::<AssetIndexJson>(&text) {
+            return Ok(parsed);
+        }
+        // Битый/обрезанный индекс остался от прерванной установки — качаем заново.
+        let _ = tokio::fs::remove_file(&index_path).await;
+    }
+
+    let text = download_text_with_retries(client, &asset_index.url, DEFAULT_DOWNLOAD_RETRIES).await?;
+    let parsed: AssetIndexJson =
+        serde_json::from_str(&text).map_err(|e| format!("Ошибка разбора индекса ассетов: {e}"))?;
+    crate::infra::fs_atomic::write_atomic(&index_path, text.as_bytes())?;
+    Ok(parsed)
+}
 
 pub(crate) async fn download_assets(
     client: &Client,
@@ -468,59 +621,48 @@ pub(crate) async fn download_assets(
         .await
         .map_err(|e| format!("Не удалось создать папку objects: {e}"))?;
 
-    let index_path = indexes_dir.join(format!("{}.json", asset_index.id));
-    let index_json = if index_path.exists() {
-        tokio::fs::read_to_string(&index_path)
-            .await
-            .map_err(|e| format!("Ошибка чтения индекса: {e}"))?
-    } else {
-        let text = download_text_with_retries(client, &asset_index.url, DEFAULT_DOWNLOAD_RETRIES).await?;
-        tokio::fs::write(&index_path, &text)
-            .await
-            .map_err(|e| format!("Не удалось сохранить индекс: {e}"))?;
-        text
-    };
-
-    let index: AssetIndexJson = serde_json::from_str(&index_json)
-        .map_err(|e| format!("Ошибка разбора индекса ассетов: {e}"))?;
+    let index = load_asset_index(client, asset_index, &indexes_dir).await?;
 
     let sem = Arc::new(Semaphore::new(DEFAULT_DOWNLOAD_CONCURRENCY));
     let total_done = Arc::new(AtomicU64::new(total_downloaded));
     let mut tasks = futures_util::stream::FuturesUnordered::new();
+    let mut aborts: Vec<tokio::task::AbortHandle> = Vec::new();
+    // Один и тот же объект может встречаться под разными именами — качаем его один раз.
+    let mut queued = std::collections::HashSet::<&str>::new();
 
-    for (_path, obj) in &index.objects {
+    for obj in index.objects.values() {
         if CANCEL_DOWNLOAD.load(Ordering::SeqCst) {
-            return Err("Загрузка отменена пользователем".to_string());
+            for a in &aborts {
+                a.abort();
+            }
+            return Err(CANCELLED_MSG.to_string());
         }
         let hash = obj.hash.clone();
         let size = obj.size;
-        if hash.len() < 2 {
+        let Some(obj_path) = asset_object_path(&objects_dir, &hash) else {
+            continue;
+        };
+        if !queued.insert(obj.hash.as_str()) {
             continue;
         }
-        let prefix = hash[..2].to_string();
-        let obj_path = objects_dir.join(&prefix).join(&hash);
-        if obj_path.exists() {
+        // Размер сверяем дёшево; битые/обрезанные объекты перекачиваются, хеш проверит загрузчик.
+        if file_len_matches(&obj_path, size) || (size == 0 && obj_path.is_file()) {
             total_done.fetch_add(size, Ordering::SeqCst);
             continue;
         }
-        let url = format!("{ASSETS_BASE_URL}/{prefix}/{hash}");
+        let _ = tokio::fs::remove_file(&obj_path).await;
+        let url = format!("{ASSETS_BASE_URL}/{}/{hash}", &hash[..2]);
         let client = client.clone();
         let app = app.clone();
         let sem = sem.clone();
         let total_done = total_done.clone();
         let version_id = version_id.to_string();
-        let obj_path2 = obj_path.clone();
-        tasks.push(tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             let _permit = sem.acquire_owned().await.map_err(|_| "Semaphore закрыт".to_string())?;
-            if let Some(parent) = obj_path2.parent() {
-                tokio::fs::create_dir_all(parent)
-                    .await
-                    .map_err(|e| format!("Не удалось создать папку: {e}"))?;
-            }
             download_file_checked(
                 &client,
                 &url,
-                &obj_path2,
+                &obj_path,
                 Some(hash),
                 &app,
                 &version_id,
@@ -530,46 +672,178 @@ pub(crate) async fn download_assets(
             )
             .await?;
             Ok::<(), String>(())
-        }));
+        });
+        aborts.push(handle.abort_handle());
+        tasks.push(handle);
     }
 
     while let Some(res) = tasks.next().await {
-        res.map_err(|e| format!("Ошибка задачи загрузки ассетов: {e}"))??;
+        let outcome = res
+            .map_err(|e| format!("Ошибка задачи загрузки ассетов: {e}"))
+            .and_then(|r| r);
+        if let Err(e) = outcome {
+            // Не оставляем сотни фоновых загрузок работать после провала установки.
+            for a in &aborts {
+                a.abort();
+            }
+            return Err(e);
+        }
     }
 
     Ok(())
 }
 
+/// Для версий со старой схемой ассетов (`virtual` / `map_to_resources`, MC ≤ 1.7.2)
+/// игра ждёт файлы под их реальными именами, а не в `objects/<hash>`.
+fn sync_legacy_assets(
+    assets_root: &Path,
+    index: &AssetIndexJson,
+    resources_dir: Option<&Path>,
+) -> Result<(), String> {
+    let objects_dir = assets_root.join("objects");
+    let virtual_dir = assets_root.join("virtual").join("legacy");
+    for (name, obj) in &index.objects {
+        let Some(src) = asset_object_path(&objects_dir, &obj.hash) else {
+            continue;
+        };
+        if !src.is_file() {
+            continue;
+        }
+        let mut targets = Vec::new();
+        if index.is_virtual {
+            if let Some(p) = crate::services::game::core::safe_join(&virtual_dir, name) {
+                targets.push(p);
+            }
+        }
+        if index.map_to_resources {
+            if let Some(dir) = resources_dir {
+                if let Some(p) = crate::services::game::core::safe_join(dir, name) {
+                    targets.push(p);
+                }
+            }
+        }
+        for dest in targets {
+            if file_len_matches(&dest, obj.size) {
+                continue;
+            }
+            if let Some(parent) = dest.parent() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| format!("Не удалось создать папку ассетов: {e}"))?;
+            }
+            std::fs::copy(&src, &dest)
+                .map_err(|e| format!("Не удалось скопировать ассет {name}: {e}"))?;
+        }
+    }
+    Ok(())
+}
+
+/// Самовосстановление перед запуском: догружает недостающие/обрезанные ассеты (например,
+/// после очистки кэша или прерванной установки). Никогда не блокирует запуск ошибкой —
+/// игра способна стартовать и без части звуков/языков.
+pub(crate) async fn ensure_assets_for_launch(
+    client: &Client,
+    asset_index: &AssetIndexRef,
+    root: &Path,
+    app: &AppHandle,
+    version_id: &str,
+    game_dir: &Path,
+) {
+    let assets_root = root.join("assets");
+    let indexes_dir = assets_root.join("indexes");
+    let objects_dir = assets_root.join("objects");
+    let _ = tokio::fs::create_dir_all(&indexes_dir).await;
+
+    let index = match load_asset_index(client, asset_index, &indexes_dir).await {
+        Ok(i) => i,
+        Err(e) => {
+            log_to_console(app, &format!("[Launch] Индекс ассетов недоступен ({e}), запуск без проверки"));
+            return;
+        }
+    };
+
+    let missing = index
+        .objects
+        .values()
+        .filter(|o| {
+            asset_object_path(&objects_dir, &o.hash)
+                .map(|p| !(file_len_matches(&p, o.size) || (o.size == 0 && p.is_file())))
+                .unwrap_or(false)
+        })
+        .count();
+
+    if missing > 0 {
+        log_to_console(
+            app,
+            &format!("[Launch] Не хватает {missing} файлов ассетов — докачиваем"),
+        );
+        if let Err(e) = download_assets(client, asset_index, root, app, version_id, 0, 0).await {
+            log_to_console(app, &format!("[Launch] Не удалось докачать ассеты: {e}"));
+        }
+    }
+
+    if index.is_virtual || index.map_to_resources {
+        let resources = game_dir.join("resources");
+        let result = tokio::task::spawn_blocking(move || {
+            sync_legacy_assets(&assets_root, &index, Some(&resources))
+        })
+        .await
+        .map_err(|e| e.to_string())
+        .and_then(|r| r);
+        if let Err(e) = result {
+            log_to_console(app, &format!("[Launch] Ассеты старого формата: {e}"));
+        }
+    }
+}
+
+/// Распаковывает natives. Пути из архива не могут выйти за `out_dir`; уже распакованные
+/// файлы того же размера пропускаются (быстрее запуск и не трогаем DLL, занятые
+/// другим экземпляром игры на Windows).
 pub(crate) fn extract_natives_jar(jar_path: &Path, out_dir: &Path) -> Result<(), String> {
     let file = std::fs::File::open(jar_path)
         .map_err(|e| format!("Не удалось открыть jar: {e}"))?;
     let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Ошибка zip: {e}"))?;
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i).map_err(|e| format!("Ошибка чтения entry: {e}"))?;
-        let name = entry.name().to_string();
-        if name.ends_with('/') {
+        if entry.is_dir() {
             continue;
         }
+        let name = entry.name().to_string();
         if name.starts_with("META-INF/") {
             continue;
         }
-        let out_path = out_dir.join(&name);
-        if entry.is_dir() {
-            std::fs::create_dir_all(&out_path).map_err(|e| format!("Ошибка создания папки: {e}"))?;
-        } else {
-            if let Some(p) = out_path.parent() {
-                std::fs::create_dir_all(p).map_err(|e| format!("Ошибка создания папки: {e}"))?;
+        let Some(out_path) = crate::services::game::core::safe_join(out_dir, &name) else {
+            continue;
+        };
+        if file_len_matches(&out_path, entry.size()) {
+            continue;
+        }
+        if let Some(p) = out_path.parent() {
+            std::fs::create_dir_all(p).map_err(|e| format!("Ошибка создания папки: {e}"))?;
+        }
+        let tmp_path = out_path.with_extension("tmp-extract");
+        let write_result = (|| -> std::io::Result<()> {
+            let mut out_file = std::fs::File::create(&tmp_path)?;
+            std::io::copy(&mut entry, &mut out_file)?;
+            Ok(())
+        })();
+        match write_result {
+            Ok(()) => {
+                if let Err(e) = std::fs::rename(&tmp_path, &out_path) {
+                    let _ = std::fs::remove_file(&tmp_path);
+                    // Целевой файл занят запущенной игрой — он уже на месте, это не ошибка.
+                    if !out_path.is_file() {
+                        return Err(format!("Ошибка записи {}: {e}", out_path.display()));
+                    }
+                }
             }
-            let mut out_file =
-                std::fs::File::create(&out_path).map_err(|e| format!("Ошибка создания файла: {e}"))?;
-            std::io::copy(&mut entry, &mut out_file).map_err(|e| format!("Ошибка копирования: {e}"))?;
+            Err(e) => {
+                let _ = std::fs::remove_file(&tmp_path);
+                return Err(format!("Ошибка распаковки {name}: {e}"));
+            }
         }
     }
     Ok(())
 }
-
-
-
 
 pub(crate) async fn select_latest_quilt_loader(game_version: &str) -> Result<String, String> {
     let url = format!("https://meta.quiltmc.org/v3/versions/loader/{game_version}");
@@ -612,3 +886,36 @@ pub(crate) async fn select_latest_quilt_loader(game_version: &str) -> Result<Str
 
 
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn extract_natives_ignores_zip_slip_entries() {
+        let root = std::env::temp_dir().join(format!("mc16-natives-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let jar = root.join("n.jar");
+        {
+            let mut zip = zip::ZipWriter::new(std::fs::File::create(&jar).unwrap());
+            let opts = zip::write::SimpleFileOptions::default();
+            zip.start_file("lwjgl.dll", opts).unwrap();
+            zip.write_all(b"dll").unwrap();
+            zip.start_file("../escaped.dll", opts).unwrap();
+            zip.write_all(b"evil").unwrap();
+            zip.start_file("META-INF/MANIFEST.MF", opts).unwrap();
+            zip.write_all(b"m").unwrap();
+            zip.finish().unwrap();
+        }
+        let out = root.join("natives");
+        extract_natives_jar(&jar, &out).unwrap();
+        // повторная распаковка идемпотентна
+        extract_natives_jar(&jar, &out).unwrap();
+        assert!(out.join("lwjgl.dll").is_file());
+        assert!(!root.join("escaped.dll").exists());
+        assert!(!out.join("META-INF").exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}

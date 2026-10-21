@@ -11,16 +11,15 @@ type Props = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 const providerClasses: Record<"microsoft" | "ely", string> = {
   microsoft:
-    "border border-[#0078d4]/60 bg-[#0078d4] text-white shadow-soft hover:bg-[#106ebe]",
-  ely: "border border-emerald-500/35 bg-[#2d7d46] text-white shadow-soft hover:bg-[#248338]",
+    "bg-[#0078d4] text-white hover:bg-[#106ebe]",
+  ely: "bg-[#2d7d46] text-white hover:bg-[#248338]",
 };
 
+// Same size and radius as every other launcher button; only the brand colour differs.
 const baseClasses = [
-  "inline-flex items-center justify-center gap-2 font-semibold tracking-wide transition-colors duration-200",
-  "rounded-xl px-4 py-2.5 text-sm",
-  "interactive-press",
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent focus-visible:ring-white/35",
-  "disabled:cursor-not-allowed disabled:opacity-45 disabled:transform-none",
+  "btn",
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-950 focus-visible:ring-white/35",
+  "disabled:cursor-not-allowed",
 ].join(" ");
 
 export function OnboardingButton({

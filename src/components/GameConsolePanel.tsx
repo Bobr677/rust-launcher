@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useT, type Language } from "../i18n";
 import { copyTextToClipboard } from "../lib/clipboard";
 import type { GameConsoleLine, GameStatus } from "../lib/gameConsoleWindow";
+import { LogAnalyzerPanel } from "./LogAnalyzerPanel";
 
 type GameConsolePanelProps = {
   consoleLines: GameConsoleLine[];
@@ -12,6 +13,8 @@ type GameConsolePanelProps = {
   onClearConsole: () => void;
   onToggleConsole: () => void;
   onToggleDetached: () => void;
+  /** Profile/instance whose latest.log + crash-reports to analyze. */
+  profileId?: string | null;
   showHint?: boolean;
   embedded?: boolean;
   className?: string;
@@ -26,6 +29,7 @@ export function GameConsolePanel({
   onClearConsole,
   onToggleConsole,
   onToggleDetached,
+  profileId = null,
   showHint = true,
   embedded = false,
   className = "",
@@ -68,7 +72,7 @@ export function GameConsolePanel({
           <span
             className={`h-2 w-2 rounded-full ${statusDotClass}`}
           />
-          <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/70">
+          <span className="text-[0.8125rem] font-semibold text-white/70">
             {tt("play.console.title")}
           </span>
         </div>
@@ -76,14 +80,14 @@ export function GameConsolePanel({
           <button
             type="button"
             onClick={onClearConsole}
-            className="interactive-press rounded-full bg-white/10 px-3 py-1 text-[11px] font-medium text-white/80 hover:bg-white/20"
+            className="interactive-press rounded-xl bg-white/10 px-3 py-1 text-[0.8125rem] font-medium text-white/80 hover:bg-white/20"
           >
             {tt("play.console.clear")}
           </button>
           <button
             type="button"
             onClick={onToggleConsole}
-            className="interactive-press rounded-full bg-white/10 px-3 py-1 text-[11px] font-medium text-white/80 hover:bg-white/20"
+            className="interactive-press rounded-xl bg-white/10 px-3 py-1 text-[0.8125rem] font-medium text-white/80 hover:bg-white/20"
           >
             {isConsoleVisible
               ? tt("play.console.hide")
@@ -94,7 +98,7 @@ export function GameConsolePanel({
             type="button"
             onClick={handleCopyConsole}
             disabled={isCopyingConsole}
-            className="interactive-press inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-white/80 hover:bg-white/20 disabled:opacity-50"
+            className="interactive-press inline-flex h-7 w-7 items-center justify-center rounded-lg bg-white/10 text-white/80 hover:bg-white/20 disabled:opacity-50"
             title={
               isConsoleCopied ? tt("app.toast.copied") : tt("app.toast.copy")
             }
@@ -110,7 +114,7 @@ export function GameConsolePanel({
           <button
             type="button"
             onClick={onToggleDetached}
-            className="interactive-press inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-white/80 hover:bg-white/20"
+            className="interactive-press inline-flex h-7 w-7 items-center justify-center rounded-lg bg-white/10 text-white/80 hover:bg-white/20"
             title={
               isDetached
                 ? tt("play.console.attach")
@@ -133,10 +137,18 @@ export function GameConsolePanel({
 
       {isConsoleVisible && (
         <>
+          <LogAnalyzerPanel
+            lines={consoleLines.map((e) => e.line)}
+            language={language}
+            profileId={profileId}
+            gameStatus={gameStatus}
+            compact={embedded}
+            className={embedded ? "mt-1.5" : "mb-1.5"}
+          />
           {consoleLines.length > 0 ? (
             <div
-              className={`overflow-y-auto rounded-xl bg-black/80 px-3 py-2 text-[11px] font-mono text-white/80 ${
-                embedded ? "mt-2 h-44 w-full" : "min-h-0 flex-1"
+              className={`overflow-y-auto rounded-xl bg-black/80 px-3 py-2 text-[0.8125rem] font-mono text-white/80 ${
+                embedded ? "mt-1.5 h-44 w-full" : "min-h-0 flex-1"
               }`}
             >
               {consoleLines.map((entry) => (
@@ -154,7 +166,7 @@ export function GameConsolePanel({
             </div>
           ) : (
             <div
-              className={`flex h-24 w-full items-center justify-center rounded-xl bg-black/70 px-3 py-2 text-[11px] text-white/60 ${
+              className={`flex h-24 w-full items-center justify-center rounded-xl bg-black/70 px-3 py-2 text-[0.8125rem] text-white/60 ${
                 embedded ? "mt-2" : ""
               }`}
             >
@@ -163,7 +175,7 @@ export function GameConsolePanel({
           )}
 
           {showHint && (
-            <p className="mt-2 shrink-0 text-[10px] text-white/40">
+            <p className="mt-2 shrink-0 text-[0.75rem] text-white/40">
               {tt("play.console.hint")}
             </p>
           )}

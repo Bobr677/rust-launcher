@@ -9,14 +9,26 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { PhysicalPosition } from "@tauri-apps/api/dpi";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { disposeWhenResolved, subscribeTauriEvent } from "../lib/tauriEvents";
 import { open as openFileDialog, save as saveFileDialog } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { ChevronDown, Download, UploadCloud } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  Download,
+  FolderPlus,
+  History,
+  MoreHorizontal,
+  Play,
+  UploadCloud,
+  X,
+} from "lucide-react";
 import { SettingsToggle, SettingsSlider } from "../settings-ui/SettingsComponents";
 import { JavaSettingsTab } from "./JavaSettings";
 import {
@@ -39,7 +51,6 @@ import {
   newProfileGroupId,
   PROFILE_GROUP_COLOR_STYLES,
   PROFILE_GROUP_COLORS,
-  pruneEmptyProfileGroups,
   sanitizeProfileGroups,
   saveProfileGroups,
   ungroupProfiles,
@@ -76,6 +87,7 @@ import {
   type JarModInfo,
   type ProfileConflict,
 } from "../lib/profileConflicts";
+import { LogAnalyzerPanel } from "../components/LogAnalyzerPanel";
 
 type LoaderId = "vanilla" | "fabric" | "forge" | "quilt" | "neoforge";
 type LoaderVersionChannel = "stable" | "beta" | "alpha";
@@ -492,7 +504,7 @@ function RefreshIcon({ className }: IconProps) {
 }
 
 function ModsIcon({ className }: IconProps) {
-  return <ImageIcon src="/launcher-assets/mods.png" className={className} />;
+  return <ImageIcon src="/launcher-assets/mods.svg" className={className} />;
 }
 
 function ProfileItemSourceIcon({
@@ -596,7 +608,7 @@ function ProfileItemIcon({
   }
 
   return (
-    <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/10 text-[11px]">
+    <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/10 text-[0.8125rem]">
       {contentTab === "mods" ? (
         <ModsIcon className="h-5 w-5" />
       ) : contentTab === "resourcepacks" ? (
@@ -609,7 +621,7 @@ function ProfileItemIcon({
 }
 
 function SettingsIcon({ className }: IconProps) {
-  return <ImageIcon src="/launcher-assets/settings.png" className={className} />;
+  return <ImageIcon src="/launcher-assets/settings.svg" className={className} />;
 }
 
 function SearchIcon({ className }: IconProps) {
@@ -673,8 +685,14 @@ const MANAGE_ACTION_BTN_CLASS =
 const MANAGE_ICON_BTN_CLASS =
   "interactive-press inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl text-white";
 
-const CONTENT_CHIP_CLASS =
-  "interactive-press inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-semibold leading-none";
+const CONTENT_SEG_BTN_CLASS =
+  "interactive-press inline-flex h-full shrink-0 items-center gap-1.5 rounded-[0.5rem] px-3 text-xs font-semibold leading-none transition-colors";
+
+/** Gently enlarge the tab on wide windows: 1x up to 1280px, +25% at 2560px. */
+function computeTabUiScale(width: number): number {
+  const t = Math.min(1, Math.max(0, (width - 1280) / 1280));
+  return Math.round((1 + t * 0.25) * 100) / 100;
+}
 
 const MODPACK_MANAGE_SPLIT_STORAGE_KEY = "modpack_manage_main_width_frac";
 const MODPACK_MANAGE_SPLIT_MIN = 0.22;
@@ -845,7 +863,20 @@ export function ModpackTab({
   const [isGroupProfilesDropdownOpen, setIsGroupProfilesDropdownOpen] = useState(false);
   const [multiSelectedProfileIds, setMultiSelectedProfileIds] = useState<Set<string>>(new Set());
   const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null);
-  const profileDragIdsRef = useRef<string[]>([]);
+  // Pointer-driven drag: HTML5 drag-and-drop is swallowed by the native file-drop handler on Windows.
+  const [profileDrag, setProfileDrag] = useState<{ ids: string[]; x: number; y: number } | null>(
+    null,
+  );
+  const profilePointerDragRef = useRef<{
+    ids: string[];
+    startX: number;
+    startY: number;
+    active: boolean;
+  } | null>(null);
+  const profileDragListenersRef = useRef<(() => void) | null>(null);
+  const profileDragGhostRef = useRef<HTMLDivElement | null>(null);
+  const profileDragSuppressClickRef = useRef(false);
+  const profilesScrollRef = useRef<HTMLDivElement | null>(null);
   const [isResourcePackReorderMode, setIsResourcePackReorderMode] = useState(false);
   const [resourcePackDragIndex, setResourcePackDragIndex] = useState<number | null>(null);
   const [resourcePackDragOverIndex, setResourcePackDragOverIndex] = useState<number | null>(null);
@@ -925,6 +956,15 @@ export function ModpackTab({
   }>({ left: 0, width: 0 });
   const manageDropZoneRef = useRef<HTMLDivElement | null>(null);
   const [isManageDropTarget, setIsManageDropTarget] = useState(false);
+
+  const [uiScale, setUiScale] = useState(() =>
+    typeof window === "undefined" ? 1 : computeTabUiScale(window.innerWidth),
+  );
+  useEffect(() => {
+    const onResize = () => setUiScale(computeTabUiScale(window.innerWidth));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   const [manageConsoleExpanded, setManageConsoleExpanded] = useState(() => {
     if (typeof window === "undefined") return true;
@@ -1756,76 +1796,58 @@ export function ModpackTab({
 
   useLayoutEffect(() => {
     if (!isExportOpen) return;
-    let unlistenProgress: (() => void) | undefined;
-    let unlistenFinished: (() => void) | undefined;
-    let unlistenError: (() => void) | undefined;
-
-    (async () => {
-      try {
-        unlistenProgress = await listen<ExportProgressPayload>("export-progress", (event) => {
-          const p = event.payload;
-          setExportProgress(p);
-          const now = Date.now();
-          const prev = lastProgressRef.current;
-          if (prev && p.bytes_written >= prev.bytes) {
-            const dt = Math.max(1, now - prev.t);
-            const db = p.bytes_written - prev.bytes;
-            const bps = (db * 1000) / dt;
-            if (Number.isFinite(bps)) {
-              setExportSpeedLabel(
-                `${formatByteSize(language, bps)}${tt("modpacks.export.perSecond")}`,
-              );
-            }
-          }
-          lastProgressRef.current = { t: now, bytes: p.bytes_written };
-        });
-      } catch (e) {
-        console.error(e);
-      }
-
-      try {
-        unlistenFinished = await listen<ExportFinishedPayload>("export-finished", (event) => {
-          const p = event.payload;
-          setExportResultPath(p.path);
-          setExportSkippedFiles(Array.isArray(p.skipped_files) ? p.skipped_files : []);
-          setExportResolvedCount(
-            typeof p.resolved_count === "number" ? p.resolved_count : 0,
+    const unlistenProgress = subscribeTauriEvent<ExportProgressPayload>("export-progress", (event) => {
+      const p = event.payload;
+      setExportProgress(p);
+      const now = Date.now();
+      const prev = lastProgressRef.current;
+      if (prev && p.bytes_written >= prev.bytes) {
+        const dt = Math.max(1, now - prev.t);
+        const db = p.bytes_written - prev.bytes;
+        const bps = (db * 1000) / dt;
+        if (Number.isFinite(bps)) {
+          setExportSpeedLabel(
+            `${formatByteSize(language, bps)}${tt("modpacks.export.perSecond")}`,
           );
-          setExportOverrideCount(
-            typeof p.override_count === "number" ? p.override_count : 0,
-          );
-          setExportBusy(false);
-          setExportProgress(null);
-          showNotification(
-            "success",
-            tt("modpacks.export.finished"),
-          );
-        });
-      } catch (e) {
-        console.error(e);
+        }
       }
+      lastProgressRef.current = { t: now, bytes: p.bytes_written };
+    });
 
-      try {
-        unlistenError = await listen<ExportErrorPayload>("export-error", (event) => {
-          const p = event.payload;
-          const msg =
-            typeof p === "string"
-              ? p
-              : p && typeof p.message === "string"
-                ? p.message
-                : tt("modpacks.export.errorGeneric");
-          setExportBusy(false);
-          showNotification("error", msg);
-        });
-      } catch (e) {
-        console.error(e);
-      }
-    })();
+    const unlistenFinished = subscribeTauriEvent<ExportFinishedPayload>("export-finished", (event) => {
+      const p = event.payload;
+      setExportResultPath(p.path);
+      setExportSkippedFiles(Array.isArray(p.skipped_files) ? p.skipped_files : []);
+      setExportResolvedCount(
+        typeof p.resolved_count === "number" ? p.resolved_count : 0,
+      );
+      setExportOverrideCount(
+        typeof p.override_count === "number" ? p.override_count : 0,
+      );
+      setExportBusy(false);
+      setExportProgress(null);
+      showNotification(
+        "success",
+        tt("modpacks.export.finished"),
+      );
+    });
+
+    const unlistenError = subscribeTauriEvent<ExportErrorPayload>("export-error", (event) => {
+      const p = event.payload;
+      const msg =
+        typeof p === "string"
+          ? p
+          : p && typeof p.message === "string"
+            ? p.message
+            : tt("modpacks.export.errorGeneric");
+      setExportBusy(false);
+      showNotification("error", msg);
+    });
 
     return () => {
-      unlistenProgress?.();
-      unlistenFinished?.();
-      unlistenError?.();
+      unlistenProgress();
+      unlistenFinished();
+      unlistenError();
     };
   }, [isExportOpen, language, showNotification]);
 
@@ -2300,6 +2322,8 @@ export function ModpackTab({
     return () => {
       resourcePackReorderListenersRef.current?.();
       resourcePackReorderListenersRef.current = null;
+      profileDragListenersRef.current?.();
+      profileDragListenersRef.current = null;
     };
   }, []);
 
@@ -2871,8 +2895,6 @@ export function ModpackTab({
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [isGroupProfilesDropdownOpen]);
 
-  const totalProfilesLabel = tt("modpacks.header.totalProfiles", { count: profiles.length });
-
   const manageTabLabels = useMemo(
     () =>
       Object.fromEntries(
@@ -2889,9 +2911,7 @@ export function ModpackTab({
       ? tt("modpacks.create.title")
       : activeView === "import"
         ? tt("modpacks.header.importMrpack")
-        : activeView === "manage"
-          ? selectedProfile?.name ?? ""
-          : tt("modpacks.header.profiles");
+        : tt("modpacks.header.profiles");
 
   async function handleChooseIcon() {
     try {
@@ -3326,25 +3346,24 @@ export function ModpackTab({
 
   useEffect(() => {
     if (activeView !== "import") return;
-    let unlisten: (() => void) | undefined;
     const webview = getCurrentWebview();
-    void webview.onDragDropEvent((event: { payload: { type: string; paths?: string[] } }) => {
-      if (event.payload.type === "drop" && event.payload.paths?.length) {
-        const path = event.payload.paths.find((p: string) =>
-          p.toLowerCase().endsWith(".mrpack"),
-        );
-        if (path) void handleImportMrpack(path);
-      }
-    }).then((fn) => { unlisten = fn; }).catch(console.error);
-    return () => { unlisten?.(); };
+    return disposeWhenResolved(
+      webview.onDragDropEvent((event: { payload: { type: string; paths?: string[] } }) => {
+        if (event.payload.type === "drop" && event.payload.paths?.length) {
+          const path = event.payload.paths.find((p: string) =>
+            p.toLowerCase().endsWith(".mrpack"),
+          );
+          if (path) void handleImportMrpack(path);
+        }
+      }),
+    );
   }, [activeView]);
 
   useEffect(() => {
     if (activeView !== "manage" || !selectedProfile) return;
-    let unlisten: (() => void) | undefined;
     const webview = getCurrentWebview();
-    void webview
-      .onDragDropEvent(async (event) => {
+    const disposeDragDrop = disposeWhenResolved(
+      webview.onDragDropEvent(async (event) => {
         const p = event.payload;
         if (p.type === "leave") {
           setIsManageDropTarget(false);
@@ -3377,14 +3396,11 @@ export function ModpackTab({
           }
           await addProfileFilesFromPaths(filtered);
         }
-      })
-      .then((fn) => {
-        unlisten = fn;
-      })
-      .catch(console.error);
+      }),
+    );
     return () => {
       setIsManageDropTarget(false);
-      unlisten?.();
+      disposeDragDrop();
     };
   }, [activeView, selectedProfile?.id, contentTab, language]);
 
@@ -4107,11 +4123,11 @@ export function ModpackTab({
     }
   }
 
-  function openCreateGroupModal() {
+  function openCreateGroupModal(initialProfileIds: string[] = []) {
     setEditingGroupId(null);
     setGroupFormName("");
     setGroupFormColor("purple");
-    setGroupFormProfileIds(new Set());
+    setGroupFormProfileIds(new Set(initialProfileIds));
     setIsGroupProfilesDropdownOpen(false);
     setIsGroupModalOpen(true);
   }
@@ -4141,29 +4157,19 @@ export function ModpackTab({
 
       if (isEditing && editingId) {
         savedAsEdit = true;
-        const otherGroups = prev.filter((group) => group.id !== editingId);
-        const cleanedOthers =
-          profileIds.length > 0
-            ? pruneEmptyProfileGroups(ungroupProfiles(otherGroups, profileIds))
-            : pruneEmptyProfileGroups(otherGroups);
-        const existing = prev.find((group) => group.id === editingId)!;
-        const next = dedupeProfileGroupAssignments([
-          ...cleanedOthers,
-          {
-            ...existing,
-            name,
-            color: groupFormColor,
-            profileIds,
-          },
-        ]);
+        // Edit in place so the group keeps its position in the list.
+        const next = dedupeProfileGroupAssignments(
+          ungroupProfiles(prev, profileIds).map((group) =>
+            group.id === editingId
+              ? { ...group, name, color: groupFormColor, profileIds }
+              : group,
+          ),
+        );
         saveProfileGroups(next);
         return next;
       }
 
-      const cleaned =
-        profileIds.length > 0
-          ? pruneEmptyProfileGroups(ungroupProfiles(prev, profileIds))
-          : prev;
+      const cleaned = profileIds.length > 0 ? ungroupProfiles(prev, profileIds) : prev;
       const newGroup: ProfileGroup = {
         id: newProfileGroupId(),
         name,
@@ -4188,7 +4194,7 @@ export function ModpackTab({
 
   function handleDeleteGroup(groupId: string) {
     setProfileGroups((prev) => {
-      const next = pruneEmptyProfileGroups(prev.filter((group) => group.id !== groupId));
+      const next = prev.filter((group) => group.id !== groupId);
       saveProfileGroups(next);
       return next;
     });
@@ -4207,35 +4213,98 @@ export function ModpackTab({
     });
   }
 
-  function handleDropProfilesOnGroup(groupId: string | "ungrouped") {
-    const ids = profileDragIdsRef.current;
+  // Groups are only removed explicitly, so moving the last profile out keeps the group as a drop target.
+  function moveProfilesToGroup(groupId: string | "ungrouped", ids: string[]) {
     if (ids.length === 0) return;
-    if (groupId === "ungrouped") {
-      setProfileGroups((prev) => {
-        const next = pruneEmptyProfileGroups(ungroupProfiles(prev, ids));
-        saveProfileGroups(next);
-        return next;
-      });
-    } else {
-      setProfileGroups((prev) => {
-        const next = dedupeProfileGroupAssignments(assignProfilesToGroup(prev, groupId, ids));
-        saveProfileGroups(next);
-        return next;
-      });
-    }
-    setDragOverGroupId(null);
+    setProfileGroups((prev) => {
+      const next =
+        groupId === "ungrouped"
+          ? ungroupProfiles(prev, ids)
+          : dedupeProfileGroupAssignments(assignProfilesToGroup(prev, groupId, ids));
+      saveProfileGroups(next);
+      return next;
+    });
     setMultiSelectedProfileIds(new Set());
-    profileDragIdsRef.current = [];
   }
 
-  function handleProfileDragStart(profileId: string, e: React.DragEvent) {
-    const dragIds =
-      multiSelectedProfileIds.has(profileId) && multiSelectedProfileIds.size > 0
-        ? [...multiSelectedProfileIds]
-        : [profileId];
-    profileDragIdsRef.current = dragIds;
-    e.dataTransfer.setData("text/plain", dragIds.join(","));
-    e.dataTransfer.effectAllowed = "move";
+  function profileIdsForAction(profileId: string): string[] {
+    return multiSelectedProfileIds.has(profileId) ? [...multiSelectedProfileIds] : [profileId];
+  }
+
+  function handleProfilePointerDown(profileId: string, e: ReactPointerEvent<HTMLDivElement>) {
+    if (e.button !== 0) return;
+    if ((e.target as HTMLElement).closest("button, a, input")) return;
+    profileDragListenersRef.current?.();
+    profilePointerDragRef.current = {
+      ids: profileIdsForAction(profileId),
+      startX: e.clientX,
+      startY: e.clientY,
+      active: false,
+    };
+
+    const groupAt = (x: number, y: number) => {
+      const el = document.elementFromPoint(x, y) as HTMLElement | null;
+      return el?.closest<HTMLElement>("[data-group-drop]")?.dataset.groupDrop ?? null;
+    };
+
+    const onMove = (ev: PointerEvent) => {
+      const drag = profilePointerDragRef.current;
+      if (!drag) return;
+      if (!drag.active) {
+        if (Math.hypot(ev.clientX - drag.startX, ev.clientY - drag.startY) < 6) return;
+        drag.active = true;
+        document.body.style.userSelect = "none";
+        setProfileDrag({ ids: drag.ids, x: ev.clientX, y: ev.clientY });
+      }
+      const ghost = profileDragGhostRef.current;
+      if (ghost) {
+        ghost.style.transform = `translate(${ev.clientX + 14}px, ${ev.clientY + 12}px)`;
+      }
+      setDragOverGroupId(groupAt(ev.clientX, ev.clientY));
+      const scroller = profilesScrollRef.current;
+      if (scroller) {
+        const rect = scroller.getBoundingClientRect();
+        if (ev.clientY < rect.top + 48) scroller.scrollBy(0, -16);
+        else if (ev.clientY > rect.bottom - 48) scroller.scrollBy(0, 16);
+      }
+    };
+
+    const cleanup = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+      window.removeEventListener("keydown", onKey);
+      profilePointerDragRef.current = null;
+      profileDragListenersRef.current = null;
+      document.body.style.userSelect = "";
+      setProfileDrag(null);
+      setDragOverGroupId(null);
+    };
+
+    const finish = (point: { x: number; y: number } | null) => {
+      const drag = profilePointerDragRef.current;
+      cleanup();
+      if (!drag?.active) return;
+      // The click that follows pointerup must not open the profile that was just dropped.
+      profileDragSuppressClickRef.current = true;
+      window.setTimeout(() => {
+        profileDragSuppressClickRef.current = false;
+      }, 0);
+      const target = point ? groupAt(point.x, point.y) : null;
+      if (target) moveProfilesToGroup(target, drag.ids);
+    };
+
+    const onUp = (ev: PointerEvent) => finish({ x: ev.clientX, y: ev.clientY });
+    const onCancel = () => finish(null);
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === "Escape") finish(null);
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+    window.addEventListener("keydown", onKey);
+    profileDragListenersRef.current = cleanup;
   }
 
   function handleListAreaContextMenuCapture(e: React.MouseEvent) {
@@ -4248,30 +4317,31 @@ export function ModpackTab({
     setListContextMenu({ x: e.clientX, y: e.clientY });
   }
 
-  const profilesGridClass = "grid grid-cols-1 gap-2 sm:grid-cols-2 items-start";
+  // Columns follow the panel width rather than the viewport, so the sidebar state doesn't squeeze cards.
+  const profilesGridClass = "grid grid-cols-[repeat(auto-fill,minmax(21rem,1fr))] gap-2.5";
 
   function renderProfileCard(p: InstanceProfile) {
     const isSelected = selectedProfileId === p.id;
     const isPinned = isPinnedInSidebar?.(p.id) ?? false;
     const isMultiSelected = multiSelectedProfileIds.has(p.id);
+    const isDragged = profileDrag?.ids.includes(p.id) ?? false;
+    const iconRevision = profileIconRevisions[p.id] ?? 0;
+    const lastPlayed = formatLastPlayedAt(p.last_played_at, language);
     return (
       <div
         key={p.id}
         data-profile-card
-        draggable
-        onDragStart={(e) => handleProfileDragStart(p.id, e)}
-        onDragEnd={() => {
-          setDragOverGroupId(null);
-          profileDragIdsRef.current = [];
-        }}
-        className={`relative flex items-center justify-between overflow-hidden rounded-2xl border px-4 py-3 shadow-soft transition ${
+        onPointerDown={(e) => handleProfilePointerDown(p.id, e)}
+        onDragStart={(e) => e.preventDefault()}
+        className={`relative flex cursor-pointer select-none items-center gap-3 overflow-hidden rounded-2xl border px-3 py-2.5 transition ${
           isMultiSelected
-            ? "border-sky-400/80 bg-sky-500/10 ring-1 ring-sky-400/40"
+            ? "border-accent-to/70 bg-accent-from/15 ring-1 ring-accent-to/40"
             : isSelected
-              ? "border-emerald-400/80 bg-white/15"
-              : "border-white/10 bg-black/40 hover:border-white/40 hover:bg-black/60"
-        }`}
+              ? "border-accent-to/55 bg-ink-900/95 ring-1 ring-accent-to/25"
+              : "border-white/[0.07] bg-ink-900/90 hover:border-white/15 hover:bg-ink-850"
+        } ${isDragged ? "opacity-40" : ""}`}
         onClick={(e) => {
+          if (profileDragSuppressClickRef.current) return;
           if (e.ctrlKey || e.metaKey) {
             e.stopPropagation();
             setMultiSelectedProfileIds((prev) => {
@@ -4297,135 +4367,206 @@ export function ModpackTab({
           });
         }}
       >
-        <ProfileCardIconBackdrop
-          profileId={p.id}
-          refreshKey={profileIconRevisions[p.id] ?? 0}
+        <ProfileCardIconBackdrop profileId={p.id} refreshKey={iconRevision} />
+        <ProfileInstanceIcon
+          profile={p}
+          refreshKey={iconRevision}
+          className="z-[1] h-12 w-12 shrink-0"
         />
-        <div className="relative z-[1] flex items-center gap-3">
-          <ProfileInstanceIcon
-            profile={p}
-            refreshKey={profileIconRevisions[p.id] ?? 0}
-          />
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="truncate text-sm font-semibold text-white">{p.name}</span>
-              {isPinned && (
-                <img
-                  src="/launcher-assets/favorite.png"
-                  alt=""
-                  className="h-3.5 w-3.5 object-contain opacity-90"
-                />
-              )}
-              {isSelected && (
-                <span className="rounded-full bg-emerald-500/90 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-white">
-                  {tt("modpacks.list.activeBadge")}
-                </span>
-              )}
-            </div>
-            <div className="mt-0.5 flex flex-col gap-1 text-[11px] text-white/70">
-              <div className="flex flex-wrap items-center gap-2">
-                <span>{`${p.game_version} • ${p.loader}`}</span>
-                <span className="flex items-center gap-1">
-                  <img
-                    src="/launcher-assets/cllock.png"
-                    alt=""
-                    title={tt("modpacks.list.playtimeLabel")}
-                    className="h-3 w-3 object-contain opacity-80"
-                    onError={(e) => {
-                      const img = e.currentTarget;
-                      if (img.dataset.failedOnce !== "1") {
-                        img.dataset.failedOnce = "1";
-                        img.src = "/launcher-assets/clock.png";
-                        return;
-                      }
-                      img.style.display = "none";
-                    }}
-                  />
-                  <span>{formatPlaytimeShort(language, p.play_time_seconds)}</span>
-                </span>
-                <span className="flex items-center gap-1">
-                  <ModsIcon className="h-3 w-3" />
-                  <span>{countLabel(p.mods_count, language)}</span>
-                </span>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="flex items-center gap-1">
-                  <WeightIcon className="h-3 w-3" />
-                  <span>{formatByteSize(language, p.total_size_bytes)}</span>
-                </span>
-                <span className="text-white/55">
-                  {tt("modpacks.list.lastPlayed", {
-                    date: formatLastPlayedAt(p.last_played_at, language),
-                  })}
-                </span>
-              </div>
-            </div>
+        <div className="relative z-[1] min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-sm font-semibold text-white">{p.name}</span>
+            {isPinned && (
+              <img
+                src="/launcher-assets/favorite.png"
+                alt=""
+                className="h-3.5 w-3.5 shrink-0 object-contain opacity-90"
+              />
+            )}
+          </div>
+          <div className="mt-1 flex min-w-0 items-center gap-1.5">
+            <span className="tag shrink-0">{p.game_version}</span>
+            <span className="tag shrink-0">
+              {loaderLabels[p.loader as LoaderId] ?? p.loader}
+            </span>
+            {isSelected && (
+              <span className="tag tag-accent truncate">{tt("modpacks.list.activeBadge")}</span>
+            )}
+          </div>
+          {/* Kept to one line: items that don't fit wrap onto a clipped second line instead of growing the card. */}
+          <div className="mt-1.5 flex h-4 flex-wrap items-center gap-x-3 overflow-hidden text-caption text-white/50">
+            <span className="flex h-4 items-center gap-1" title={tt("modpacks.list.playtimeLabel")}>
+              <img
+                src="/launcher-assets/cllock.png"
+                alt=""
+                className="h-3 w-3 object-contain opacity-70"
+                onError={(e) => {
+                  const img = e.currentTarget;
+                  if (img.dataset.failedOnce !== "1") {
+                    img.dataset.failedOnce = "1";
+                    img.src = "/launcher-assets/clock.png";
+                    return;
+                  }
+                  img.style.display = "none";
+                }}
+              />
+              {formatPlaytimeShort(language, p.play_time_seconds)}
+            </span>
+            <span className="flex h-4 items-center gap-1">
+              <ModsIcon className="h-3 w-3" />
+              {countLabel(p.mods_count, language)}
+            </span>
+            <span className="flex h-4 items-center gap-1">
+              <WeightIcon className="h-3 w-3" />
+              {formatByteSize(language, p.total_size_bytes)}
+            </span>
+            <span
+              className="flex h-4 items-center gap-1"
+              title={tt("modpacks.list.lastPlayed", { date: lastPlayed })}
+            >
+              <History className="h-3 w-3" />
+              {lastPlayed}
+            </span>
           </div>
         </div>
-        <div className="relative z-[1] flex items-center gap-2">
-          {isSelected && (
+        <div className="relative z-[1] flex shrink-0 items-center gap-1">
+          {isSelected ? (
+            <>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onPlaySelectedProfile?.();
+                }}
+                className="btn btn-accent btn-sm"
+                title={tt("modpacks.list.playSelectedTitle")}
+              >
+                <Play className="h-3.5 w-3.5 fill-current" />
+                {tt("modpacks.actions.play")}
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleSelectProfile(p);
+                }}
+                className="icon-btn"
+                title={tt("modpacks.actions.unselect")}
+                aria-label={tt("modpacks.actions.unselect")}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </>
+          ) : (
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                onPlaySelectedProfile?.();
+                void handleSelectProfile(p);
               }}
-              className="interactive-press rounded-xl accent-bg px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-soft hover:opacity-90"
-              title={tt("modpacks.list.playSelectedTitle")}
+              className="btn btn-soft btn-sm"
             >
-              {tt("modpacks.actions.play")}
+              {tt("modpacks.actions.select")}
             </button>
           )}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              void handleSelectProfile(p);
-            }}
-            className={`interactive-press inline-flex shrink-0 items-center justify-center rounded-xl px-2.5 py-1.5 text-[11px] font-semibold whitespace-nowrap ${
-              isSelected
-                ? "min-w-[96px] bg-white/10 text-white/80 hover:bg-white/20"
-                : "accent-bg text-white hover:opacity-90"
-            }`}
-          >
-            {isSelected ? tt("modpacks.actions.unselect") : tt("modpacks.actions.select")}
-          </button>
         </div>
       </div>
     );
   }
 
-  function renderGroupDropZone(
-    groupId: string | "ungrouped",
-    children: ReactNode,
-    className?: string,
-  ) {
-    const isOver = dragOverGroupId === groupId;
+  function renderProfilesGrid(list: InstanceProfile[]) {
     return (
-      <div
-        className={className}
-        onDragOver={(e) => {
-          e.preventDefault();
-          e.dataTransfer.dropEffect = "move";
-          setDragOverGroupId(groupId);
-        }}
-        onDragLeave={(e) => {
-          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-            setDragOverGroupId((prev) => (prev === groupId ? null : prev));
-          }
-        }}
-        onDrop={(e) => {
-          e.preventDefault();
-          handleDropProfilesOnGroup(groupId);
-        }}
+      <div className={profilesLayout === "grid" ? profilesGridClass : "flex flex-col gap-2"}>
+        {list.map((p) => renderProfileCard(p))}
+      </div>
+    );
+  }
+
+  function renderGroupSection(group: (typeof visibleProfileGroups)[number]) {
+    const styles = PROFILE_GROUP_COLOR_STYLES[group.color];
+    const isOver = dragOverGroupId === group.id;
+    return (
+      <section
+        key={group.id}
+        data-group-drop={group.id}
+        className={`rounded-2xl p-1.5 transition ${isOver ? `${styles.headerBg} ring-2 ${styles.ring}` : ""}`}
       >
-        {isOver && (
-          <div className="pointer-events-none mb-2 rounded-xl border border-dashed border-white/30 bg-white/5 px-3 py-2 text-center text-[11px] text-white/60">
-            {tt("modpacks.list.dropHint")}
+        <div
+          data-group-header
+          className="group/header flex h-9 items-center gap-2"
+          onContextMenu={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setGroupContextMenu({ groupId: group.id, x: e.clientX, y: e.clientY });
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => toggleGroupCollapsed(group.id)}
+            className="interactive-press flex min-w-0 items-center gap-2 rounded-lg py-1 pl-1 pr-2 hover:bg-white/[0.05]"
+            aria-expanded={!group.collapsed}
+          >
+            <ChevronDown
+              className={`h-4 w-4 shrink-0 text-white/45 transition ${group.collapsed ? "-rotate-90" : ""}`}
+            />
+            <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${styles.dot}`} />
+            <span className="truncate text-sm font-semibold text-white">{group.name}</span>
+            <span className="tag shrink-0">{group.profileIds.length}</span>
+          </button>
+          <div className="h-px min-w-4 flex-1 bg-white/[0.06]" />
+          <button
+            type="button"
+            onClick={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect();
+              setGroupContextMenu({ groupId: group.id, x: rect.left, y: rect.bottom + 4 });
+            }}
+            className="icon-btn h-7 w-7 opacity-0 transition-opacity focus-visible:opacity-100 group-hover/header:opacity-100"
+            title={tt("modpacks.list.groupActions")}
+            aria-label={tt("modpacks.list.groupActions")}
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </button>
+        </div>
+        {!group.collapsed && (
+          <div className="mt-1.5">
+            {group.profiles.length > 0 ? (
+              renderProfilesGrid(group.profiles)
+            ) : (
+              <div className="rounded-2xl border border-dashed border-white/[0.12] px-3 py-4 text-center text-meta text-white/45">
+                {tt("modpacks.list.dropHint")}
+              </div>
+            )}
           </div>
         )}
-        {children}
-      </div>
+      </section>
+    );
+  }
+
+  function renderProfileDragGhost() {
+    if (!profileDrag) return null;
+    const first = profilesById.get(profileDrag.ids[0]);
+    return createPortal(
+      <div
+        ref={profileDragGhostRef}
+        className="pointer-events-none fixed left-0 top-0 z-[100]"
+        style={{ transform: `translate(${profileDrag.x + 14}px, ${profileDrag.y + 12}px)` }}
+      >
+        <div className="glass-popover flex max-w-[16rem] items-center gap-2 px-2.5 py-1.5 text-sm font-semibold text-white">
+          {first && (
+            <ProfileInstanceIcon
+              profile={first}
+              className="h-7 w-7 shrink-0"
+              initialClassName="text-xs"
+            />
+          )}
+          <span className="truncate">
+            {profileDrag.ids.length > 1
+              ? tt("modpacks.list.dragCount", { count: profileDrag.ids.length })
+              : first?.name}
+          </span>
+        </div>
+      </div>,
+      document.body,
     );
   }
 
@@ -4461,7 +4602,7 @@ export function ModpackTab({
                   void refreshBuildPresets();
                   setIsPresetsModalOpen(true);
                 }}
-                className="interactive-press inline-flex items-center gap-2 rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white shadow-soft hover:bg-white/20"
+                className="interactive-press inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-sm font-semibold text-white shadow-soft hover:bg-white/20"
               >
                 <span>{tt("modpacks.presets.manage")}</span>
               </button>
@@ -4469,7 +4610,7 @@ export function ModpackTab({
             <button
               type="button"
               onClick={handleOpenCreateView}
-              className="interactive-press inline-flex items-center gap-2 rounded-2xl border border-white/20 accent-bg px-4 py-2 text-sm font-semibold text-white shadow-soft hover:opacity-90"
+              className="interactive-press inline-flex items-center gap-2 rounded-xl border border-white/15 accent-bg px-4 py-2 text-sm font-semibold text-white shadow-soft hover:opacity-90"
             >
               <PlusIcon className="h-4 w-4" />
               <span>{tt("modpacks.actions.create")}</span>
@@ -4477,7 +4618,7 @@ export function ModpackTab({
             <button
               type="button"
               onClick={handleOpenImportView}
-              className="interactive-press inline-flex items-center gap-2 rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white shadow-soft hover:bg-white/20"
+              className="interactive-press inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-sm font-semibold text-white shadow-soft hover:bg-white/20"
             >
               <UploadCloud className="h-4 w-4" />
               <span>{tt("modpacks.actions.import")}</span>
@@ -4485,12 +4626,12 @@ export function ModpackTab({
             <button
               type="button"
               onClick={() => void refreshProfiles()}
-              className="interactive-press inline-flex items-center gap-2 rounded-2xl border border-white/15 bg-black/40 px-3 py-2 text-sm font-semibold text-white/80 shadow-soft hover:bg-black/60"
+              className="interactive-press inline-flex items-center gap-2 rounded-xl border border-white/15 bg-black/40 px-4 py-2 text-sm font-semibold text-white/80 shadow-soft hover:bg-black/60"
             >
               <RefreshIcon className="h-4 w-4" />
               <span>{tt("modpacks.actions.refresh")}</span>
             </button>
-            <div className="flex items-center gap-1 rounded-2xl border border-white/20 bg-black/40 p-1">
+            <div className="flex items-center gap-1 rounded-2xl border border-white/15 bg-black/40 p-1">
               <button
                 type="button"
                 onClick={() => {
@@ -4505,7 +4646,7 @@ export function ModpackTab({
                 }}
                 className={`interactive-press rounded-xl p-1.5 ${
                   profilesLayout === "list"
-                    ? "bg-white text-black shadow-soft"
+                    ? "seg-on"
                     : "text-white/70 hover:bg-white/10"
                 }`}
                 title={tt("modpacks.list.layout.list")}
@@ -4533,7 +4674,7 @@ export function ModpackTab({
                 }}
                 className={`interactive-press rounded-xl p-1.5 ${
                   profilesLayout === "grid"
-                    ? "bg-white text-black shadow-soft"
+                    ? "seg-on"
                     : "text-white/70 hover:bg-white/10"
                 }`}
                 title={tt("modpacks.list.layout.grid")}
@@ -4552,126 +4693,89 @@ export function ModpackTab({
         </div>
 
         <div className="glass-panel relative flex min-h-0 flex-1 flex-col overflow-hidden">
-          <div className="mb-1 flex shrink-0 items-center justify-between pl-3 text-xs text-white/60">
-            <div className="flex items-center gap-3">
-              <span>{totalProfilesLabel}</span>
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/[0.06] py-2 pl-4 pr-2">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="truncate text-sm font-semibold text-white">
+                {tt("modpacks.list.title")}
+              </span>
+              <span className="tag shrink-0">{profiles.length}</span>
               {multiSelectedProfileIds.size > 0 && (
-                <span className="rounded-full bg-sky-500/20 px-2 py-0.5 text-[10px] font-medium text-sky-200">
+                <span className="tag tag-accent shrink-0 pr-1">
                   {tt("modpacks.list.selectedCount", { count: multiSelectedProfileIds.size })}
+                  <button
+                    type="button"
+                    onClick={() => setMultiSelectedProfileIds(new Set())}
+                    className="rounded p-0.5 hover:bg-white/10"
+                    title={tt("modpacks.list.clearSelection")}
+                    aria-label={tt("modpacks.list.clearSelection")}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
                 </span>
               )}
+              {loadingProfiles && (
+                <span className="ui-caption shrink-0">{tt("modpacks.common.loading")}</span>
+              )}
             </div>
-            {loadingProfiles && <span>{tt("modpacks.common.loading")}</span>}
+            <button
+              type="button"
+              onClick={() => openCreateGroupModal()}
+              className="btn btn-ghost btn-sm"
+            >
+              <FolderPlus className="h-4 w-4" />
+              {tt("modpacks.list.newGroup")}
+            </button>
           </div>
-          <div className="custom-scrollbar -mr-2 min-h-0 flex-1 overflow-y-auto px-4 pr-3">
-            <div className="flex flex-col gap-4">
-              {visibleProfileGroups.map((group) => {
-                const styles = PROFILE_GROUP_COLOR_STYLES[group.color];
-                const showProfiles = !group.collapsed;
-                if (search.trim() && group.profileIds.length > 0 && group.profiles.length === 0) {
-                  return null;
-                }
-                return (
-                  <div
-                    key={group.id}
-                    className={`rounded-2xl border p-2 transition ${styles.border} ${
-                      dragOverGroupId === group.id ? `ring-2 ${styles.ring}` : ""
-                    }`}
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      e.dataTransfer.dropEffect = "move";
-                      setDragOverGroupId(group.id);
-                    }}
-                    onDragLeave={(e) => {
-                      if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                        setDragOverGroupId((prev) => (prev === group.id ? null : prev));
-                      }
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      handleDropProfilesOnGroup(group.id);
-                    }}
-                  >
-                    <div
-                      data-group-header
-                      className={`mb-2 flex items-center gap-2 rounded-xl px-3 py-2 ${styles.headerBg}`}
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setGroupContextMenu({
-                          groupId: group.id,
-                          x: e.clientX,
-                          y: e.clientY,
-                        });
-                      }}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => toggleGroupCollapsed(group.id)}
-                        className="interactive-press rounded-lg p-1 text-white/70 hover:bg-white/10"
-                        aria-label={group.collapsed ? "Expand" : "Collapse"}
-                      >
-                        <ChevronDown
-                          className={`h-4 w-4 transition ${group.collapsed ? "-rotate-90" : ""}`}
-                        />
-                      </button>
-                      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${styles.dot}`} />
-                      <span className={`truncate text-sm font-semibold ${styles.accent}`}>
-                        {group.name}
+          <div
+            ref={profilesScrollRef}
+            className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-2.5 py-2.5"
+          >
+            <div className="flex flex-col gap-2">
+              {visibleProfileGroups.map((group) =>
+                search.trim() && group.profiles.length === 0 ? null : renderGroupSection(group),
+              )}
+
+              {(ungroupedProfiles.length > 0 ||
+                profileGroups.length === 0 ||
+                profileDrag !== null) && (
+                <section
+                  data-group-drop="ungrouped"
+                  className={`rounded-2xl p-1.5 transition ${
+                    dragOverGroupId === "ungrouped" ? "bg-white/[0.04] ring-2 ring-white/25" : ""
+                  }`}
+                >
+                  {profileGroups.length > 0 && (
+                    <div className="mb-1.5 flex h-9 items-center gap-2 pl-1">
+                      <span className="h-4 w-4 shrink-0" />
+                      <span className="h-2.5 w-2.5 shrink-0 rounded-full border border-white/35" />
+                      <span className="text-sm font-semibold text-white/70">
+                        {tt("modpacks.list.ungroupedTitle")}
                       </span>
-                      <span className="text-[11px] text-white/45">{group.profileIds.length}</span>
+                      <span className="tag shrink-0">{ungroupedProfiles.length}</span>
+                      <div className="ml-2 h-px flex-1 bg-white/[0.06]" />
                     </div>
-                    {showProfiles && (
-                      <div
-                        className={
-                          profilesLayout === "grid" ? profilesGridClass : "flex flex-col gap-2"
-                        }
-                      >
-                        {group.profiles.map((p) => renderProfileCard(p))}
-                        {group.profiles.length === 0 && (
-                          <div className="rounded-xl border border-dashed border-white/15 px-3 py-4 text-center text-[11px] text-white/45">
-                            {tt("modpacks.list.dropHint")}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {!showProfiles && dragOverGroupId === group.id && (
-                      <div className="rounded-xl border border-dashed border-white/20 bg-white/5 px-3 py-2 text-center text-[11px] text-white/55">
+                  )}
+                  {ungroupedProfiles.length > 0 ? (
+                    renderProfilesGrid(ungroupedProfiles)
+                  ) : (
+                    profileDrag !== null && (
+                      <div className="rounded-2xl border border-dashed border-white/[0.12] px-3 py-4 text-center text-meta text-white/45">
                         {tt("modpacks.list.dropHint")}
                       </div>
-                    )}
-                  </div>
-                );
-              })}
-
-              {(ungroupedProfiles.length > 0 || profileGroups.length === 0) &&
-                renderGroupDropZone(
-                  "ungrouped",
-                  <div>
-                    {(profileGroups.length > 0 || ungroupedProfiles.length > 0) && (
-                      <div className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/40">
-                        {tt("modpacks.list.ungroupedTitle")}
-                      </div>
-                    )}
-                    <div
-                      className={
-                        profilesLayout === "grid" ? profilesGridClass : "flex flex-col gap-2"
-                      }
-                    >
-                      {ungroupedProfiles.map((p) => renderProfileCard(p))}
-                    </div>
-                  </div>,
-                  dragOverGroupId === "ungrouped" ? "rounded-2xl ring-2 ring-white/25" : "",
-                )}
+                    )
+                  )}
+                </section>
+              )}
 
               {!loadingProfiles && filteredProfiles.length === 0 && (
-                <div className="mt-4 rounded-2xl border border-dashed border-white/20 bg-black/40 px-4 py-6 text-center text-sm text-white/70">
+                <div className="mt-2 rounded-2xl border border-dashed border-white/15 bg-black/40 px-4 py-6 text-center text-sm text-white/70">
                   {tt("modpacks.list.empty")}
                 </div>
               )}
             </div>
           </div>
         </div>
+        {renderProfileDragGhost()}
       </div>
     );
   }
@@ -4686,7 +4790,7 @@ export function ModpackTab({
           <button
             type="button"
             onClick={() => setActiveView("list")}
-            className="interactive-press rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-white/80 hover:bg-white/20"
+            className="interactive-press rounded-xl bg-white/10 px-3 py-1 text-xs font-medium text-white/80 hover:bg-white/20"
           >
             {tt("modpacks.common.backToList")}
           </button>
@@ -4697,7 +4801,7 @@ export function ModpackTab({
             <button
               type="button"
               onClick={() => void handleChooseIcon()}
-              className="interactive-press flex h-28 w-24 items-center justify-center overflow-hidden rounded-2xl border border-white/20 bg-black/40 text-xs text-white/70 hover:bg-black/60"
+              className="interactive-press flex h-28 w-24 items-center justify-center overflow-hidden rounded-2xl border border-white/15 bg-black/40 text-xs text-white/70 hover:bg-black/60"
             >
               {createIconPath ? (
                 <img
@@ -4719,7 +4823,7 @@ export function ModpackTab({
               <button
                 type="button"
                 onClick={() => setCreateIconPath(null)}
-                className="interactive-press text-[11px] text-white/60 hover:text-white/90"
+                className="interactive-press text-[0.8125rem] text-white/60 hover:text-white/90"
               >
                 {tt("modpacks.create.removeIcon")}
               </button>
@@ -4786,7 +4890,7 @@ export function ModpackTab({
                   placeholder={
                     tt("modpacks.create.namePlaceholder")
                   }
-                  className={`w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-white/40 focus:outline-none ${
+                  className={`glass-control w-full rounded-xl border px-3 py-2 text-sm text-white placeholder:text-white/40 focus:outline-none ${
                     createName ? "pr-9" : ""
                   }`}
                 />
@@ -4800,7 +4904,7 @@ export function ModpackTab({
                   aria-label={tt("common.clear")}
                 />
               </div>
-              <span className="mt-0.5 block text-[10px] text-white/50">
+              <span className="mt-0.5 block text-[0.75rem] text-white/50">
                 {createName.length}/50
               </span>
             </div>
@@ -4819,9 +4923,9 @@ export function ModpackTab({
                         setCreateLoader(id);
                         setIsLoaderVersionDropdownOpen(false);
                       }}
-                      className={`interactive-press rounded-full px-3 py-1.5 text-xs font-semibold ${
+                      className={`interactive-press rounded-xl px-3 py-1.5 text-xs font-semibold ${
                         createLoader === id
-                          ? "bg-white text-black shadow-soft"
+                          ? "seg-on"
                           : "bg-white/10 text-white/80 hover:bg-white/20"
                       }`}
                     >
@@ -4836,7 +4940,7 @@ export function ModpackTab({
               <label className="text-xs font-medium text-white/70">
                 {tt("modpacks.create.gameVersionLabel")}
               </label>
-              <div className="relative inline-flex w-60 items-center justify-between rounded-full border border-white/20 bg-black/60 px-3 py-1.5 text-xs text-white/90">
+              <div className="relative inline-flex w-60 items-center justify-between rounded-xl border border-white/15 bg-black/60 px-3 py-1.5 text-xs text-white/90">
                 <button
                   type="button"
                   onClick={() => {
@@ -4868,12 +4972,12 @@ export function ModpackTab({
                           }}
                           className={`flex w-full items-center justify-between rounded-xl px-3 py-1.5 text-left transition-colors ${
                             createGameVersion === v.id
-                              ? "bg-white/90 text-black"
+                              ? "seg-on"
                               : "text-white/80 hover:bg-white/10"
                           }`}
                         >
                           <span>{v.id}</span>
-                          <span className="ml-2 text-[10px] uppercase text-gray-400">
+                          <span className="ml-2 text-[0.75rem] text-gray-400">
                             {v.version_type}
                           </span>
                         </button>
@@ -4902,7 +5006,7 @@ export function ModpackTab({
                 <label className="text-xs font-medium text-white/70">
                   {tt("modpacks.create.loaderVersionLabel")}
                 </label>
-                <div className="relative inline-flex w-72 items-center justify-between rounded-full border border-white/20 bg-black/60 px-3 py-1.5 text-xs text-white/90">
+                <div className="relative inline-flex w-72 items-center justify-between rounded-xl border border-white/15 bg-black/60 px-3 py-1.5 text-xs text-white/90">
                   <button
                     type="button"
                     onClick={() => {
@@ -4922,7 +5026,7 @@ export function ModpackTab({
                       </span>
                       {selectedLoaderVersionOption?.channel && (
                         <span
-                          className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                          className={`shrink-0 rounded-md px-1.5 py-0.5 text-[0.75rem] font-semibold ${
                             selectedLoaderVersionOption.channel === "stable"
                               ? "bg-emerald-500/20 text-emerald-200"
                               : selectedLoaderVersionOption.channel === "alpha"
@@ -4956,14 +5060,14 @@ export function ModpackTab({
                             }}
                             className={`flex w-full items-center justify-between gap-2 rounded-xl px-3 py-1.5 text-left transition-colors ${
                               selected
-                                ? "bg-white/90 text-black"
+                                ? "seg-on"
                                 : "text-white/80 hover:bg-white/10"
                             }`}
                           >
                             <span className="truncate">{opt.version}</span>
                             {channelLabel && (
                               <span
-                                className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                                className={`shrink-0 rounded-md px-1.5 py-0.5 text-[0.75rem] font-semibold ${
                                   selected
                                     ? opt.channel === "stable"
                                       ? "bg-emerald-600/25 text-emerald-900"
@@ -5001,7 +5105,7 @@ export function ModpackTab({
               type="button"
               disabled={createBusy}
               onClick={() => void handleSaveBuildPresetFromForm()}
-              className="interactive-press rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-xs font-semibold text-white/85 hover:bg-white/20 disabled:opacity-60"
+              className="interactive-press rounded-xl border border-white/15 bg-white/10 px-3.5 py-2 text-xs font-semibold text-white/85 hover:bg-white/20 disabled:opacity-60"
             >
               {tt("modpacks.create.saveFormAsPreset")}
             </button>
@@ -5010,7 +5114,7 @@ export function ModpackTab({
             type="button"
             disabled={createBusy}
             onClick={() => void handleCreateProfile()}
-            className="interactive-press inline-flex items-center gap-2 rounded-2xl accent-bg px-6 py-2.5 text-sm font-semibold text-white shadow-soft hover:opacity-90 disabled:opacity-60"
+            className="interactive-press inline-flex items-center gap-2 rounded-xl accent-bg px-5 py-2.5 text-sm font-semibold text-white shadow-soft hover:opacity-90 disabled:opacity-60"
           >
             <PlusIcon className="h-4 w-4" />
             <span>{tt("modpacks.actions.create")}</span>
@@ -5030,14 +5134,14 @@ export function ModpackTab({
           <button
             type="button"
             onClick={() => setActiveView("list")}
-            className="interactive-press rounded-full bg-white/10 px-5 py-1 text-xs font-medium text-white/80 hover:bg-white/20"
+            className="interactive-press rounded-xl bg-white/10 px-3.5 py-1 text-xs font-medium text-white/80 hover:bg-white/20"
           >
             {tt("modpacks.common.backToList")}
           </button>
         </div>
 
         {mrpackBusy && (
-          <div className="flex flex-col gap-2 rounded-2xl border border-white/20 bg-white/10 px-4 py-3">
+          <div className="flex flex-col gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 py-3">
             <div className="flex items-start justify-between gap-3">
               <p className="text-sm font-medium text-white">
                 {mrpackProgress?.phase === "start"
@@ -5057,7 +5161,7 @@ export function ModpackTab({
               <button
                 type="button"
                 onClick={() => void handleCancelMrpackImport()}
-                className="interactive-press shrink-0 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white/80 hover:bg-white/20"
+                className="interactive-press shrink-0 rounded-xl bg-white/10 px-3 py-1 text-xs font-semibold text-white/80 hover:bg-white/20"
               >
                 {tt("common.cancel")}
               </button>
@@ -5067,7 +5171,7 @@ export function ModpackTab({
               mrpackProgress.current != null && (
                 <div className="h-2 w-full overflow-hidden rounded-full bg-white/20">
                   <div
-                    className="h-full rounded-full bg-emerald-500 transition-all duration-300"
+                    className="progress-fill h-full rounded-full transition-all duration-300"
                     style={{
                       width: `${Math.round(
                         (mrpackProgress.current / mrpackProgress.total) * 100,
@@ -5100,7 +5204,7 @@ export function ModpackTab({
               type="button"
               disabled={mrpackBusy}
               onClick={() => void handleImportMrpack()}
-              className="interactive-press inline-flex items-center gap-2 rounded-2xl bg-white/15 px-4 py-2 text-xs font-semibold text-white hover:bg-white/25 disabled:opacity-60"
+              className="interactive-press inline-flex items-center gap-2 rounded-xl bg-white/15 px-3.5 py-2 text-xs font-semibold text-white hover:bg-white/25 disabled:opacity-60"
             >
               <Download className="h-4 w-4" />
               <span>{tt("modpacks.import.chooseFile")}</span>
@@ -5128,14 +5232,14 @@ export function ModpackTab({
                   : tt("modpacks.externalImport.importing")}
               </p>
               <div className="h-2 w-full overflow-hidden rounded-full bg-white/20">
-                <div className="h-full w-1/2 rounded-full bg-emerald-500/90" />
+                <div className="progress-fill h-full w-1/2 rounded-full" />
               </div>
             </div>
           )}
 
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             <div className="sm:col-span-1">
-              <label className="mb-1 block text-[11px] font-semibold text-white/70">
+              <label className="mb-1 block text-[0.8125rem] font-semibold text-white/70">
                 {tt("modpacks.externalImport.launcher")}
               </label>
               <div ref={externalLauncherDropdownRef} className="relative">
@@ -5145,7 +5249,7 @@ export function ModpackTab({
                     setIsExternalLauncherDropdownOpen((v) => !v);
                     setIsExternalSortDropdownOpen(false);
                   }}
-                  className="interactive-press flex w-full items-center justify-between gap-2 rounded-2xl border border-white/15 bg-black/60 px-3 py-2 text-left text-xs text-white hover:border-white/35 focus:outline-none"
+                  className="interactive-press flex w-full items-center justify-between gap-2 rounded-xl border border-white/15 bg-black/60 px-3 py-2 text-left text-xs text-white hover:border-white/20 focus:outline-none"
                 >
                   <span className="truncate">
                     {externalImportLauncher === "auto"
@@ -5169,7 +5273,7 @@ export function ModpackTab({
                   />
                 </button>
                 {isExternalLauncherDropdownOpen && (
-                  <div className="absolute left-0 right-0 top-full z-[120] mt-1 overflow-hidden rounded-2xl border border-white/12 bg-black/95 p-1 text-xs shadow-soft">
+                  <div className="absolute left-0 right-0 top-full z-[120] mt-1 overflow-hidden rounded-2xl border border-white/10 bg-black/95 p-1 text-xs shadow-soft">
                     {(
                       [
                         { id: "auto", label: tt("modpacks.externalImport.auto") },
@@ -5196,7 +5300,7 @@ export function ModpackTab({
                           }}
                           className={`interactive-press flex w-full items-center rounded-xl px-3 py-1.5 text-left transition-colors ${
                             active
-                              ? "bg-white/90 font-semibold text-black"
+                              ? "seg-on font-semibold"
                               : "text-white/80 hover:bg-white/10"
                           }`}
                         >
@@ -5210,7 +5314,7 @@ export function ModpackTab({
             </div>
 
             <div className="sm:col-span-2">
-              <label className="mb-1 block text-[11px] font-semibold text-white/70">
+              <label className="mb-1 block text-[0.8125rem] font-semibold text-white/70">
                 {tt("modpacks.externalImport.path")}
               </label>
               <div className="flex items-center gap-2">
@@ -5222,7 +5326,7 @@ export function ModpackTab({
                     placeholder={
                       tt("modpacks.externalImport.pathPlaceholder")
                     }
-                    className={`min-w-0 w-full rounded-2xl border border-white/15 bg-black/60 px-3 py-2 text-xs text-white/90 placeholder:text-white/35 focus:outline-none ${
+                    className={`glass-control min-w-0 w-full rounded-2xl border px-3 py-2 text-xs text-white/90 placeholder:text-white/35 focus:outline-none ${
                       externalImportPath ? "pr-9" : ""
                     }`}
                   />
@@ -5237,7 +5341,7 @@ export function ModpackTab({
                   type="button"
                   disabled={externalImportScanBusy || externalImportBusy}
                   onClick={() => void handleBrowseExternalImportPath()}
-                  className="interactive-press shrink-0 rounded-2xl bg-white/10 px-3 py-2 text-xs font-semibold text-white/85 hover:bg-white/20 disabled:opacity-60"
+                  className="interactive-press shrink-0 rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold text-white/85 hover:bg-white/20 disabled:opacity-60"
                 >
                   {tt("common.browse")}
                 </button>
@@ -5245,7 +5349,7 @@ export function ModpackTab({
                   type="button"
                   disabled={externalImportScanBusy || externalImportBusy}
                   onClick={() => void handleScanExternalInstances()}
-                  className="interactive-press shrink-0 rounded-2xl accent-bg px-4 py-2 text-xs font-semibold text-white shadow-soft hover:opacity-90 disabled:opacity-60"
+                  className="interactive-press shrink-0 rounded-xl accent-bg px-3.5 py-2 text-xs font-semibold text-white shadow-soft hover:opacity-90 disabled:opacity-60"
                 >
                   {externalImportScanBusy
                     ? tt("modpacks.externalImport.scanning")
@@ -5267,7 +5371,7 @@ export function ModpackTab({
                     value={externalImportSearch}
                     onChange={(e) => setExternalImportSearch(e.target.value)}
                     placeholder={tt("common.search")}
-                    className={`w-full rounded-2xl border border-white/15 bg-black/60 px-3 py-2 text-xs text-white/90 placeholder:text-white/35 focus:outline-none ${
+                    className={`glass-control w-full rounded-2xl border px-3 py-2 text-xs text-white/90 placeholder:text-white/35 focus:outline-none ${
                       externalImportSearch ? "pr-9" : ""
                     }`}
                   />
@@ -5279,7 +5383,7 @@ export function ModpackTab({
                   />
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-semibold text-white/60">
+                  <span className="text-[0.8125rem] font-semibold text-white/60">
                     {tt("modpacks.externalImport.sort")}
                   </span>
                   <div ref={externalSortDropdownRef} className="relative">
@@ -5289,7 +5393,7 @@ export function ModpackTab({
                         setIsExternalSortDropdownOpen((v) => !v);
                         setIsExternalLauncherDropdownOpen(false);
                       }}
-                      className="interactive-press flex min-w-[7.5rem] items-center justify-between gap-2 rounded-2xl border border-white/15 bg-black/60 px-3 py-2 text-left text-xs text-white hover:border-white/35 focus:outline-none"
+                      className="interactive-press flex min-w-[7.5rem] items-center justify-between gap-2 rounded-xl border border-white/15 bg-black/60 px-3 py-2 text-left text-xs text-white hover:border-white/20 focus:outline-none"
                     >
                       <span className="truncate">
                         {externalImportSort === "name"
@@ -5305,7 +5409,7 @@ export function ModpackTab({
                       />
                     </button>
                     {isExternalSortDropdownOpen && (
-                      <div className="absolute right-0 top-full z-[120] mt-1 min-w-full overflow-hidden rounded-2xl border border-white/12 bg-black/95 p-1 text-xs shadow-soft">
+                      <div className="absolute right-0 top-full z-[120] mt-1 min-w-full overflow-hidden rounded-2xl border border-white/10 bg-black/95 p-1 text-xs shadow-soft">
                         {(
                           [
                             { id: "name", key: "modpacks.externalImport.sortName" },
@@ -5324,7 +5428,7 @@ export function ModpackTab({
                               }}
                               className={`interactive-press flex w-full items-center rounded-xl px-3 py-1.5 text-left transition-colors ${
                                 active
-                                  ? "bg-white/90 font-semibold text-black"
+                                  ? "seg-on font-semibold"
                                   : "text-white/80 hover:bg-white/10"
                               }`}
                             >
@@ -5361,7 +5465,7 @@ export function ModpackTab({
                     return a.display_name.toLowerCase().localeCompare(b.display_name.toLowerCase());
                   })
                   .map((p) => {
-                    const iconSrc = p.icon_data_uri || p.icon_path || "/launcher-assets/modpack_icon.png";
+                    const iconSrc = p.icon_data_uri || p.icon_path || "/launcher-assets/modpack_icon.svg";
                     const meta = [
                       p.loader ? p.loader : null,
                       p.game_version ? p.game_version : null,
@@ -5386,7 +5490,7 @@ export function ModpackTab({
                             <div className="truncate text-sm font-semibold text-white">
                               {p.display_name}
                             </div>
-                            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-white/60">
+                            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[0.8125rem] text-white/60">
                               {meta.length > 0 && <span>{meta.join(" • ")}</span>}
                               <span className="truncate">{p.path}</span>
                             </div>
@@ -5397,7 +5501,7 @@ export function ModpackTab({
                             type="button"
                             disabled={externalImportBusy}
                             onClick={() => void handleImportExternalInstance(p)}
-                            className="interactive-press rounded-2xl accent-bg px-4 py-2 text-xs font-semibold text-white shadow-soft hover:opacity-90 disabled:opacity-60"
+                            className="interactive-press rounded-xl accent-bg px-3.5 py-2 text-xs font-semibold text-white shadow-soft hover:opacity-90 disabled:opacity-60"
                           >
                             {tt("modpacks.actions.import")}
                           </button>
@@ -5449,9 +5553,9 @@ export function ModpackTab({
 
     return (
       <div className="custom-scrollbar flex min-h-0 w-full flex-1 flex-col gap-3 overflow-y-auto pr-1">
-        <div className="sticky top-0 z-20 -mx-1 flex w-full shrink-0 flex-wrap items-start justify-between gap-3">
+        <div className="sticky top-0 z-20 -mx-1 flex w-full shrink-0 flex-wrap items-stretch justify-between gap-3">
           {isRenaming ? (
-            <div className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl border border-white/10 bg-black/55 px-4 py-3 backdrop-blur-md">
+            <div className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl border border-white/10 bg-ink-900/90 px-4 py-3">
               <ProfileInstanceIcon
                 profile={selectedProfile}
                 refreshKey={profileIconRevisions[selectedProfile.id] ?? 0}
@@ -5469,7 +5573,7 @@ export function ModpackTab({
                       setIsRenaming(false);
                     }
                   }}
-                  className={`min-w-0 w-full rounded-xl border border-white/30 bg-black/60 px-2 py-1 text-sm text-white focus:outline-none ${
+                  className={`min-w-0 w-full rounded-xl border border-white/20 bg-black/60 px-2 py-1 text-sm text-white focus:outline-none ${
                     renameValue ? "pr-9" : ""
                   }`}
                 />
@@ -5483,20 +5587,20 @@ export function ModpackTab({
               <button
                 type="button"
                 onClick={() => void handleRenameConfirm()}
-                className="interactive-press rounded-full accent-bg p-1 text-white hover:opacity-90"
+                className="interactive-press rounded-lg accent-bg p-1 text-white hover:opacity-90"
               >
                 ✓
               </button>
               <button
                 type="button"
                 onClick={() => setIsRenaming(false)}
-                className="interactive-press rounded-full bg-white/10 p-1 text-white hover:bg-white/20"
+                className="interactive-press rounded-lg bg-white/10 p-1 text-white hover:bg-white/20"
               >
                 ✕
               </button>
             </div>
           ) : (
-            <div className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl border border-white/10 bg-black/55 px-4 py-3 backdrop-blur-md">
+            <div className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl border border-white/10 bg-ink-900/90 px-4 py-3">
               <ProfileInstanceIcon
                 profile={selectedProfile}
                 refreshKey={profileIconRevisions[selectedProfile.id] ?? 0}
@@ -5512,7 +5616,7 @@ export function ModpackTab({
                   <button
                     type="button"
                     onClick={() => setProfileInfoProfile(selectedProfile)}
-                    className="interactive-press rounded-full bg-white/10 p-0.5 text-white/70 hover:bg-white/20"
+                    className="interactive-press rounded-lg bg-white/10 p-0.5 text-white/70 hover:bg-white/20"
                     title={tt("modpacks.profileInfo.buttonTitle")}
                   >
                     <ProfileInfoIcon className="h-3 w-3" />
@@ -5523,13 +5627,13 @@ export function ModpackTab({
                       setRenameValue(selectedProfile.name);
                       setIsRenaming(true);
                     }}
-                    className="interactive-press rounded-full bg-white/10 p-1 text-white/70 hover:bg-white/20"
+                    className="interactive-press rounded-lg bg-white/10 p-1 text-white/70 hover:bg-white/20"
                     title={tt("common.rename")}
                   >
                     <EditIcon className="h-3.5 w-3.5" />
                   </button>
                 </div>
-                <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-white/70">
+                <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[0.8125rem] text-white/70">
                   <span>{`${selectedProfile.game_version} • ${selectedProfile.loader}`}</span>
                   <span className="flex items-center gap-1">
                     <img
@@ -5571,7 +5675,7 @@ export function ModpackTab({
             </div>
           )}
 
-          <div className="ml-auto flex w-fit shrink-0 items-center justify-end gap-2 rounded-2xl border border-white/10 bg-black/55 px-2 py-2 backdrop-blur-md">
+          <div className="ml-auto flex w-fit shrink-0 items-center justify-end gap-2 rounded-2xl border border-white/10 bg-ink-900/90 px-2 py-2">
             <button
               type="button"
               onClick={() => onPlaySelectedProfile?.()}
@@ -5817,7 +5921,7 @@ export function ModpackTab({
                 {tt("modpacks.changeVersion.description")}
               </div>
             </div>
-            <div className="rounded-2xl border border-white/12 bg-black/35 px-4 py-3 text-sm text-white/90">
+            <div className="rounded-2xl border border-white/10 bg-black/35 px-4 py-3 text-sm text-white/90">
               {tt("modpacks.changeVersion.currentVersion")}: {selectedProfile.game_version}
               {selectedProfile.loader !== "vanilla"
                 ? ` · ${selectedProfile.loader}${selectedProfile.loader_version ? ` ${selectedProfile.loader_version}` : ""}`
@@ -5840,7 +5944,7 @@ export function ModpackTab({
             <button
               type="button"
               onClick={openChangeVersionModal}
-              className="interactive-press rounded-2xl accent-bg px-4 py-2.5 text-sm font-semibold text-white shadow-soft hover:opacity-90"
+              className="interactive-press rounded-xl accent-bg px-4 py-2.5 text-sm font-semibold text-white shadow-soft hover:opacity-90"
             >
               {tt("modpacks.changeVersion.button")}
             </button>
@@ -5855,31 +5959,38 @@ export function ModpackTab({
             } as CSSProperties
           }
         >
-          <div className="glass-panel flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden lg:flex-none lg:shrink-0 lg:pr-2 lg:[flex-basis:calc(var(--modpack-main-frac,0.68)*100%)]">
-          <div className="mb-3 flex flex-wrap items-center gap-3">
-            <div className="glass-toolbar flex min-w-0 flex-1 basis-[18rem] items-center gap-3 px-4 py-2">
-              <SearchIcon className="h-4 w-4" />
+          <div
+            className={`glass-panel flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden p-3 ${
+              manageConsoleExpanded
+                ? "lg:flex-none lg:shrink-0 lg:[flex-basis:calc(var(--modpack-main-frac,0.68)*100%)]"
+                : ""
+            }`}
+          >
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <label className="glass-control flex h-9 min-w-0 flex-1 basis-[14rem] cursor-text items-center gap-2.5 px-3 focus-within:!border-[color:var(--accent-line)]">
+              <SearchIcon className="h-4 w-4 shrink-0 opacity-60" />
               <input
                 type="text"
                 placeholder={tt("modpacks.manage.searchFiles")}
                 value={itemsSearch}
                 onChange={(e) => setItemsSearch(e.target.value)}
-                className="min-w-0 w-full bg-transparent text-sm text-white placeholder:text-white/40 focus:outline-none"
+                className="min-w-0 w-full bg-transparent text-[0.8125rem] text-white placeholder:text-white/40 focus:outline-none"
               />
               <InputClearButton
                 value={itemsSearch}
                 onClear={() => setItemsSearch("")}
                 aria-label={tt("common.clear")}
               />
-            </div>
-            <div className="flex w-full flex-wrap items-center justify-end gap-2 lg:w-auto lg:flex-nowrap">
+            </label>
+            <div className="flex shrink-0 items-center gap-1.5">
               <button
                 type="button"
                 onClick={() =>
                   selectedProfile && void refreshItems(selectedProfile.id, contentTab)
                 }
-                className="interactive-press rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20"
+                className="btn btn-soft w-9 px-0"
                 title={tt("modpacks.manage.rescan")}
+                aria-label={tt("modpacks.manage.rescan")}
               >
                 <RefreshIcon className="h-3.5 w-3.5" />
               </button>
@@ -5887,8 +5998,7 @@ export function ModpackTab({
                 type="button"
                 onClick={() => void handleCheckContentUpdates()}
                 disabled={contentUpdatesChecking || !selectedProfile}
-                className="interactive-press rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
-                title={tt("modpacks.contentUpdates.check")}
+                className="btn btn-soft px-3.5 text-xs disabled:cursor-not-allowed"
               >
                 {contentUpdatesChecking
                   ? tt("modpacks.contentUpdates.checking")
@@ -5898,21 +6008,22 @@ export function ModpackTab({
                 <button
                   type="button"
                   onClick={() => setIsAddMenuOpen((v) => !v)}
-                  className="interactive-press inline-flex items-center gap-2 rounded-full accent-bg px-4 py-1.5 text-xs font-semibold text-white shadow-soft hover:opacity-90"
+                  className="btn btn-accent gap-1.5 px-3.5 text-xs"
+                  aria-expanded={isAddMenuOpen}
                 >
                   <PlusIcon className="h-3.5 w-3.5" />
                   <span>{tt("common.add")}</span>
-                  <ChevronDown className="h-3 w-3" />
+                  <ChevronDown className={`h-3 w-3 transition-transform ${isAddMenuOpen ? "rotate-180" : ""}`} />
                 </button>
                 {isAddMenuOpen && (
-                  <div className="absolute right-0 z-30 mt-1 w-44 glass-popover p-1 text-xs text-white">
+                  <div className="absolute right-0 z-30 mt-1 w-48 glass-popover p-1 text-xs text-white">
                   <button
                     type="button"
                     onClick={() => {
                       setIsAddMenuOpen(false);
                       onOpenModsTab?.();
                     }}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-1.5 text-left hover:bg-white/10"
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-white/10"
                   >
                     <Download className="h-3.5 w-3.5" />
                     <span>
@@ -5925,7 +6036,7 @@ export function ModpackTab({
                       setIsAddMenuOpen(false);
                       void handleAddFilesFromPc();
                     }}
-                    className="mt-0.5 flex w-full items-center gap-2 rounded-xl px-3 py-1.5 text-left hover:bg-white/10"
+                    className="mt-0.5 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-white/10"
                   >
                     <FolderIcon className="h-3.5 w-3.5" />
                     <span>
@@ -5938,159 +6049,155 @@ export function ModpackTab({
             </div>
           </div>
 
-          <div className="mb-2 flex flex-wrap items-center gap-1.5">
-            {(
-              [
-                ["all", "modpacks.editor.filterAll"],
-                ["enabled", "modpacks.editor.filterEnabled"],
-                ["disabled", "modpacks.editor.filterDisabled"],
-                ["updates", "modpacks.editor.filterUpdates"],
-              ] as const
-            ).map(([id, key]) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setContentFilter(id)}
-                className={`${CONTENT_CHIP_CLASS} ${
-                  contentFilter === id
-                    ? "bg-white text-black"
-                    : "bg-white/10 text-white/70 hover:bg-white/20"
-                }`}
-              >
-                <span>{tt(key)}</span>
-                {id === "updates" && contentUpdatesAvailableFilenames.size > 0 ? (
-                  <span
-                    className={`inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[10px] font-bold leading-none ${
+          <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <div className="seg-track inline-flex h-9 max-w-full items-center gap-0.5 overflow-x-auto p-0.5">
+                {(["mods", "resourcepacks", "shaderpacks"] as ContentTab[]).map(
+                  (tab) => {
+                    const active = tab === contentTab;
+                    return (
+                      <button
+                        key={tab}
+                        type="button"
+                        onClick={() => setContentTab(tab)}
+                        className={`${CONTENT_SEG_BTN_CLASS} ${
+                          active ? "seg-on" : "text-white/60 hover:bg-white/[0.06] hover:text-white"
+                        }`}
+                      >
+                        {manageTabLabels[tab]}
+                      </button>
+                    );
+                  },
+                )}
+              </div>
+              {contentTab === "resourcepacks" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsResourcePackReorderMode((active) => {
+                      if (active) {
+                        setResourcePackDragIndex(null);
+                        setResourcePackDragOverIndex(null);
+                        resourcePackDragOverIndexRef.current = null;
+                        resourcePackPointerDragRef.current = null;
+                        cleanupResourcePackReorderListeners();
+                      }
+                      return !active;
+                    });
+                  }}
+                  disabled={itemsLoading || items.filter((item) => item.enabled).length < 2}
+                  className={`btn px-3 text-xs disabled:cursor-not-allowed ${
+                    isResourcePackReorderMode ? "btn-tint" : "btn-soft"
+                  }`}
+                  title={
+                    isResourcePackReorderMode
+                      ? tt("modpacks.manage.reorderResourcePacksDone")
+                      : tt("modpacks.manage.reorderResourcePacks")
+                  }
+                >
+                  {isResourcePackReorderMode
+                    ? tt("modpacks.manage.reorderResourcePacksDone")
+                    : tt("modpacks.manage.reorderResourcePacks")}
+                </button>
+              )}
+            </div>
+
+            <div className="flex min-w-0 items-center gap-1.5">
+              <div className="seg-track inline-flex h-9 max-w-full items-center gap-0.5 overflow-x-auto p-0.5">
+                {(
+                  [
+                    ["all", "modpacks.editor.filterAll"],
+                    ["enabled", "modpacks.editor.filterEnabled"],
+                    ["disabled", "modpacks.editor.filterDisabled"],
+                    ["updates", "modpacks.editor.filterUpdates"],
+                  ] as const
+                ).map(([id, key]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setContentFilter(id)}
+                    aria-pressed={contentFilter === id}
+                    className={`${CONTENT_SEG_BTN_CLASS} ${
                       contentFilter === id
-                        ? "bg-black/15 text-black"
-                        : "bg-emerald-500/30 text-emerald-100"
+                        ? "seg-on"
+                        : "text-white/60 hover:bg-white/[0.06] hover:text-white"
                     }`}
                   >
-                    {contentUpdatesAvailableFilenames.size}
-                  </span>
-                ) : null}
-              </button>
-            ))}
-            {profileConflicts.length > 0 ? (
-              <button
-                type="button"
-                onClick={() => setEditorSection("conflicts")}
-                className={`${CONTENT_CHIP_CLASS} bg-white/10 text-white/75 hover:bg-white/20`}
-                title={tt("modpacks.conflicts.openFromContent")}
-              >
-                <span>{tt("modpacks.editor.nav.conflicts")}</span>
-                <span className="inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-amber-500/35 px-1 text-[10px] font-bold leading-none text-amber-100">
-                  {profileConflicts.length}
-                </span>
-              </button>
-            ) : null}
+                    <span>{tt(key)}</span>
+                    {id === "updates" && contentUpdatesAvailableFilenames.size > 0 ? (
+                      <span className="rounded-md bg-accent-from/30 px-1.5 py-0.5 text-[0.6875rem] font-bold leading-none tabular-nums text-accent-hi">
+                        {contentUpdatesAvailableFilenames.size}
+                      </span>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+              {profileConflicts.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setEditorSection("conflicts")}
+                  className="btn gap-1.5 border-amber-400/25 bg-amber-500/10 px-2.5 text-xs text-amber-100 hover:bg-amber-500/20"
+                  title={tt("modpacks.conflicts.openFromContent")}
+                  aria-label={`${tt("modpacks.editor.nav.conflicts")}: ${profileConflicts.length}`}
+                >
+                  <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M12 9v4m0 4h.01M10.3 3.9 2.4 17.6A2 2 0 0 0 4.1 20.6h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
+                  </svg>
+                  <span className="tabular-nums">{profileConflicts.length}</span>
+                </button>
+              ) : null}
+            </div>
           </div>
           {selectedContentNames.size > 0 && (
-            <div className="mb-2 flex flex-wrap items-center gap-1.5 rounded-2xl bg-black/35 px-3 py-2 text-xs">
-              <span className="text-white/70">
+            <div className="mb-2.5 flex flex-wrap items-center gap-1.5 rounded-xl border border-white/10 bg-ink-2 py-1 pl-3 pr-1 text-xs">
+              <span className="mr-auto text-white/70">
                 {tt("modpacks.editor.selectedCount", { count: selectedContentNames.size })}
               </span>
               <button
                 type="button"
+                onClick={() =>
+                  setSelectedContentNames(new Set(visibleItems.map((i) => i.name)))
+                }
+                className="btn btn-sm btn-ghost"
+              >
+                {tt("modpacks.editor.selectAll")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedContentNames(new Set())}
+                className="btn btn-sm btn-ghost"
+              >
+                {tt("modpacks.editor.clearSelection")}
+              </button>
+              <button
+                type="button"
                 onClick={() => void handleBulkSetEnabled(true)}
-                className={`${CONTENT_CHIP_CLASS} bg-white/10 text-white hover:bg-white/20`}
+                className="btn btn-sm btn-soft"
               >
                 {tt("modpacks.editor.bulkEnable")}
               </button>
               <button
                 type="button"
                 onClick={() => void handleBulkSetEnabled(false)}
-                className={`${CONTENT_CHIP_CLASS} bg-white/10 text-white hover:bg-white/20`}
+                className="btn btn-sm btn-soft"
               >
                 {tt("modpacks.editor.bulkDisable")}
               </button>
               <button
                 type="button"
                 onClick={() => void handleBulkDelete()}
-                className={`${CONTENT_CHIP_CLASS} bg-red-600/80 text-white hover:bg-red-600`}
+                className="btn btn-sm btn-danger"
               >
                 {tt("modpacks.editor.bulkDelete")}
               </button>
-              <button
-                type="button"
-                onClick={() => setSelectedContentNames(new Set())}
-                className={`${CONTENT_CHIP_CLASS} text-white/60 hover:bg-white/10 hover:text-white`}
-              >
-                {tt("modpacks.editor.clearSelection")}
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  setSelectedContentNames(new Set(visibleItems.map((i) => i.name)))
-                }
-                className={`${CONTENT_CHIP_CLASS} text-white/60 hover:bg-white/10 hover:text-white`}
-              >
-                {tt("modpacks.editor.selectAll")}
-              </button>
             </div>
           )}
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div className="inline-flex h-9 max-w-full items-center gap-0.5 overflow-x-auto rounded-full bg-white/10 p-0.5">
-              {(["mods", "resourcepacks", "shaderpacks"] as ContentTab[]).map(
-                (tab) => {
-                  const active = tab === contentTab;
-                  return (
-                    <button
-                      key={tab}
-                      type="button"
-                      onClick={() => setContentTab(tab)}
-                      className={`interactive-press inline-flex h-full shrink-0 items-center rounded-full px-3 text-xs font-semibold leading-none ${
-                        active
-                          ? "bg-white text-black"
-                          : "text-white/70 hover:bg-white/10 hover:text-white"
-                      }`}
-                    >
-                      {manageTabLabels[tab]}
-                    </button>
-                  );
-                },
-              )}
-            </div>
-            {contentTab === "resourcepacks" && (
-              <button
-                type="button"
-                onClick={() => {
-                  setIsResourcePackReorderMode((active) => {
-                    if (active) {
-                      setResourcePackDragIndex(null);
-                      setResourcePackDragOverIndex(null);
-                      resourcePackDragOverIndexRef.current = null;
-                      resourcePackPointerDragRef.current = null;
-                      cleanupResourcePackReorderListeners();
-                    }
-                    return !active;
-                  });
-                }}
-                disabled={itemsLoading || items.filter((item) => item.enabled).length < 2}
-                className={`${CONTENT_CHIP_CLASS} shrink-0 disabled:cursor-not-allowed disabled:opacity-50 ${
-                  isResourcePackReorderMode
-                    ? "accent-bg text-white"
-                    : "bg-white/10 text-white hover:bg-white/20"
-                }`}
-                title={
-                  isResourcePackReorderMode
-                    ? tt("modpacks.manage.reorderResourcePacksDone")
-                    : tt("modpacks.manage.reorderResourcePacks")
-                }
-              >
-                {isResourcePackReorderMode
-                  ? tt("modpacks.manage.reorderResourcePacksDone")
-                  : tt("modpacks.manage.reorderResourcePacks")}
-              </button>
-            )}
-          </div>
-
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <div
               ref={manageDropZoneRef}
               className={`custom-scrollbar min-h-0 flex-1 overflow-y-auto rounded-2xl bg-black/35 p-2.5 shadow-inner transition-colors ${
                 isManageDropTarget
-                  ? "bg-emerald-500/15 ring-2 ring-emerald-400/70 ring-inset"
+                  ? "bg-accent-from/15 ring-2 ring-accent-to/70 ring-inset"
                   : ""
               }`}
             >
@@ -6142,7 +6249,7 @@ export function ModpackTab({
                       className={`flex items-center justify-between gap-2.5 rounded-2xl bg-black/45 px-3 py-3 text-xs transition-opacity ${
                         item.enabled ? "text-white/85" : "text-white/45 opacity-75"
                       } ${isDragging ? "opacity-50" : ""} ${
-                        isDropTarget ? "ring-2 ring-emerald-400/70 ring-inset" : ""
+                        isDropTarget ? "ring-2 ring-accent-to/70 ring-inset" : ""
                       }`}
                     >
                       <div className="flex min-w-0 items-center gap-2.5">
@@ -6183,7 +6290,7 @@ export function ModpackTab({
                           itemName={item.name}
                           metadata={itemMetadataByFilename[item.name]}
                           titleClassName="block max-w-[200px] truncate md:max-w-[320px]"
-                          subtitleClassName="max-w-[200px] truncate text-[10px] text-white/45 md:max-w-[320px]"
+                          subtitleClassName="max-w-[200px] truncate text-[0.75rem] text-white/45 md:max-w-[320px]"
                           tt={tt}
                         />
                       </div>
@@ -6194,7 +6301,7 @@ export function ModpackTab({
                           aria-checked={item.enabled}
                           onClick={() => void handleToggleItemEnabled(item)}
                           className={`interactive-press relative h-7 w-12 rounded-full transition-colors ${
-                            item.enabled ? "bg-emerald-500/90" : "bg-white/20"
+                            item.enabled ? "accent-bg" : "bg-white/15"
                           }`}
                           title={
                             item.enabled
@@ -6215,7 +6322,7 @@ export function ModpackTab({
                         <button
                           type="button"
                           onClick={() => void handleDeleteItem(item)}
-                          className="interactive-press rounded-full bg-white/10 p-2 text-white/80 hover:bg-red-600 hover:text-white"
+                          className="interactive-press rounded-lg bg-white/10 p-2 text-white/80 hover:bg-red-600 hover:text-white"
                           title={tt("common.delete")}
                         >
                           <DeleteIcon className="h-4 w-4" />
@@ -6228,18 +6335,18 @@ export function ModpackTab({
                 return (
                   <div className="flex flex-col gap-2.5">
                     {isShaders && visibleItems.length > 0 && (
-                      <p className="px-1 text-[11px] text-white/45">
+                      <p className="px-1 text-[0.8125rem] text-white/45">
                         {tt("modpacks.manage.shaderPackActiveHint")}
                       </p>
                     )}
                     {canReorder && enabledItems.length > 0 && (
-                      <p className="px-1 text-[11px] text-white/45">
+                      <p className="px-1 text-[0.8125rem] text-white/45">
                         {tt("modpacks.manage.resourcePackOrderHint")}
                       </p>
                     )}
                     {enabledItems.map((item, index) => renderPackRow(item, index, !isShaders))}
                     {disabledItems.length > 0 && enabledItems.length > 0 && (
-                      <div className="px-1 pt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/40">
+                      <div className="px-1 pt-1 text-[0.8125rem] font-semibold text-white/40">
                         {isShaders
                           ? tt("modpacks.manage.inactiveShaders")
                           : tt("modpacks.manage.disabledResourcePacks")}
@@ -6252,7 +6359,7 @@ export function ModpackTab({
                 );
               })()
             ) : (
-              <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(17rem,1fr))] gap-2.5">
                 {visibleItems.map((item) => {
                   const hasConflict =
                     contentTab === "mods" && conflictFilenames.has(item.name);
@@ -6286,7 +6393,7 @@ export function ModpackTab({
                         itemName={item.name}
                         metadata={itemMetadataByFilename[item.name]}
                         titleClassName="block max-w-[200px] truncate md:max-w-[280px]"
-                        subtitleClassName="max-w-[200px] truncate text-[10px] text-white/45 md:max-w-[280px]"
+                        subtitleClassName="max-w-[200px] truncate text-[0.75rem] text-white/45 md:max-w-[280px]"
                         tt={tt}
                       />
                     </div>
@@ -6295,7 +6402,7 @@ export function ModpackTab({
                         <button
                           type="button"
                           onClick={() => setEditorSection("conflicts")}
-                          className="interactive-press rounded-full bg-amber-500/25 px-2.5 py-1.5 text-xs font-bold text-amber-100 hover:bg-amber-500/40"
+                          className="interactive-press rounded-xl bg-amber-500/25 px-3 py-1.5 text-xs font-bold text-amber-100 hover:bg-amber-500/40"
                           title={tt("modpacks.conflicts.openFromContent")}
                         >
                           !
@@ -6307,7 +6414,7 @@ export function ModpackTab({
                         aria-checked={item.enabled}
                         onClick={() => void handleToggleItemEnabled(item)}
                         className={`interactive-press relative h-7 w-12 rounded-full transition-colors ${
-                          item.enabled ? "bg-emerald-500/90" : "bg-white/20"
+                          item.enabled ? "accent-bg" : "bg-white/15"
                         }`}
                         title={
                           item.enabled
@@ -6332,7 +6439,7 @@ export function ModpackTab({
                             contentUpdatesChecking ||
                             contentUpdatesSingleApplyingFilename === item.name
                           }
-                          className="interactive-press rounded-full bg-white/10 p-2 text-white/80 hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
+                          className="interactive-press rounded-lg bg-white/10 p-2 text-white/80 hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
                           title={tt("modpacks.manage.update")}
                         >
                           <img
@@ -6346,7 +6453,7 @@ export function ModpackTab({
                       <button
                         type="button"
                         onClick={() => void handleDeleteItem(item)}
-                        className="interactive-press rounded-full bg-white/10 p-2 text-white/80 hover:bg-red-600 hover:text-white"
+                        className="interactive-press rounded-lg bg-white/10 p-2 text-white/80 hover:bg-red-600 hover:text-white"
                         title={tt("common.delete")}
                       >
                         <DeleteIcon className="h-4 w-4" />
@@ -6361,6 +6468,7 @@ export function ModpackTab({
           </div>
         </div>
 
+        {manageConsoleExpanded ? (
         <div
           ref={manageSplitHandleRef}
           role="separator"
@@ -6377,84 +6485,135 @@ export function ModpackTab({
         >
           <span className="pointer-events-none h-24 w-1 rounded-full bg-white/35 shadow-sm" />
         </div>
+        ) : (
+          <div className="hidden lg:block lg:w-3 lg:shrink-0" aria-hidden="true" />
+        )}
 
-        <div className="glass-panel relative z-10 flex min-h-0 w-full min-w-0 flex-1 flex-col px-3 py-3 max-h-[min(42rem,calc(100vh-6rem))] lg:sticky lg:top-2 lg:mt-0 lg:min-w-[11rem] lg:flex-1 lg:self-stretch">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-              <span
-                className={`h-2 w-2 shrink-0 rounded-full ${manageConsoleStatusDotClass}`}
+        <div
+          className={`glass-panel relative z-10 flex min-h-0 min-w-0 flex-col py-3 max-h-[min(42rem,calc(100vh-6rem))] lg:sticky lg:top-2 lg:mt-0 lg:self-stretch ${
+            manageConsoleExpanded
+              ? "w-full flex-1 px-3 lg:min-w-[11rem] lg:flex-1"
+              : "w-full px-3 lg:w-11 lg:flex-none lg:shrink-0 lg:items-center lg:px-0"
+          }`}
+        >
+          <div
+            className={`flex items-center gap-1 ${
+              manageConsoleExpanded ? "mb-2" : "lg:flex-col lg:gap-2"
+            }`}
+          >
+            {!manageConsoleExpanded && (
+              <button
+                type="button"
+                onClick={() => setManageConsoleExpanded(true)}
+                className="icon-btn order-first hidden h-7 w-7 lg:flex"
+                title={tt("play.console.show")}
+                aria-label={tt("play.console.show")}
+                aria-expanded={false}
+              >
+                <ChevronDown className="h-3.5 w-3.5 rotate-90" />
+              </button>
+            )}
+            <span
+              className={`ml-0.5 h-2 w-2 shrink-0 rounded-full ${manageConsoleStatusDotClass} ${
+                manageConsoleExpanded ? "" : "lg:ml-0"
+              }`}
+              aria-hidden="true"
+            />
+            <span
+              className={`ml-1.5 min-w-[3rem] flex-1 truncate text-[0.8125rem] font-semibold text-white/85 ${
+                manageConsoleExpanded
+                  ? ""
+                  : "lg:ml-0 lg:min-w-0 lg:flex-none lg:[text-orientation:mixed] lg:[writing-mode:vertical-rl]"
+              }`}
+            >
+              {tt("play.console.title")}
+            </span>
+            {manageConsoleExpanded && (
+            <>
+            <button
+              type="button"
+              onClick={() => void handleCopyManageConsole()}
+              disabled={isCopyingConsole}
+              className="icon-btn h-7 w-7 disabled:opacity-50"
+              title={
+                isConsoleCopied ? tt("app.toast.copied") : tt("app.toast.copy")
+              }
+              aria-label={tt("app.toast.copy")}
+            >
+              <img
+                src="/launcher-assets/copy.png"
+                alt=""
+                className="h-3.5 w-3.5 object-contain opacity-80"
               />
-              <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/70">
-                {tt("play.console.title")}
-              </span>
-              <select
-                value={selectedLogSessionId}
-                onChange={(e) => setSelectedLogSessionId(e.target.value)}
-                className="max-w-[min(100%,15rem)] rounded-2xl border border-white/15 bg-black/50 px-2 py-1 text-[11px] text-white/85 focus:outline-none focus:ring-1 focus:ring-white/30"
-              >
-                <option value="live">
-                  {tt("modpacks.manage.currentOutput")}
-                </option>
-                {consoleHistorySessions.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {formatLogSessionOptionLabel(s)}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  if (selectedLogSessionId === "live") onClearConsole?.();
-                }}
-                disabled={selectedLogSessionId !== "live"}
-                className="interactive-press rounded-full bg-white/10 px-3 py-1 text-[11px] font-medium text-white/80 hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40"
-                title={
-                  selectedLogSessionId !== "live"
-                    ? tt("modpacks.manage.clearOnlyLive")
-                    : undefined
-                }
-              >
-                {tt("play.console.clear")}
-              </button>
-              <button
-                type="button"
-                onClick={() => setManageConsoleExpanded((v) => !v)}
-                className="interactive-press rounded-full bg-white/10 px-3 py-1 text-[11px] font-medium text-white/80 hover:bg-white/20"
-              >
-                {manageConsoleExpanded
-                  ? tt("play.console.hide")
-                  : tt("play.console.show")}
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleCopyManageConsole()}
-                disabled={isCopyingConsole}
-                className="interactive-press inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-white/80 hover:bg-white/20 disabled:opacity-50"
-                title={
-                  isConsoleCopied ? tt("app.toast.copied") : tt("app.toast.copy")
-                }
-                aria-label={tt("app.toast.copy")}
-              >
-                <img
-                  src="/launcher-assets/copy.png"
-                  alt=""
-                  className="h-4 w-4 object-contain"
-                />
-              </button>
-            </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (selectedLogSessionId === "live") onClearConsole?.();
+              }}
+              disabled={selectedLogSessionId !== "live"}
+              className="icon-btn h-7 w-7 disabled:cursor-not-allowed disabled:opacity-40"
+              title={
+                selectedLogSessionId !== "live"
+                  ? tt("modpacks.manage.clearOnlyLive")
+                  : tt("play.console.clear")
+              }
+              aria-label={tt("play.console.clear")}
+            >
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />
+              </svg>
+            </button>
+            </>
+            )}
+            <button
+              type="button"
+              onClick={() => setManageConsoleExpanded((v) => !v)}
+              className={`icon-btn h-7 w-7 ${manageConsoleExpanded ? "" : "lg:hidden"}`}
+              title={manageConsoleExpanded ? tt("play.console.hide") : tt("play.console.show")}
+              aria-label={manageConsoleExpanded ? tt("play.console.hide") : tt("play.console.show")}
+              aria-expanded={manageConsoleExpanded}
+            >
+              <ChevronDown
+                className={`h-3.5 w-3.5 transition-transform ${manageConsoleExpanded ? "rotate-180 lg:-rotate-90" : ""}`}
+              />
+            </button>
           </div>
+          <select
+            value={selectedLogSessionId}
+            onChange={(e) => setSelectedLogSessionId(e.target.value)}
+            className={`launcher-select glass-control mb-2 w-full shrink-0 truncate pl-3 text-[0.8125rem] focus:outline-none ${
+              manageConsoleExpanded ? "" : "lg:hidden"
+            }`}
+            aria-label={tt("modpacks.manage.currentOutput")}
+          >
+            <option value="live">
+              {tt("modpacks.manage.currentOutput")}
+            </option>
+            {consoleHistorySessions.map((s) => (
+              <option key={s.id} value={s.id}>
+                {formatLogSessionOptionLabel(s)}
+              </option>
+            ))}
+          </select>
 
           {manageConsoleExpanded && (
-            <div className="mt-1 flex min-h-0 flex-1 flex-col">
+            <div className="flex min-h-0 flex-1 flex-col">
+              <LogAnalyzerPanel
+                lines={displayedConsoleLines.map((e) => e.line)}
+                language={language}
+                profileId={selectedProfile?.id ?? selectedProfileId}
+                gameStatus={gameStatus}
+                compact
+                className="mb-2"
+              />
               {displayedConsoleLines.length > 0 ? (
-                <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto rounded-xl bg-black/80 px-3 py-2 text-[11px] font-mono text-white/80 sm:min-h-[12rem]">
+                <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto rounded-xl border border-white/[0.06] bg-[var(--ink-0)] px-3 py-2 font-mono text-[0.75rem] leading-[1.55] text-white/75 sm:min-h-[10rem]">
                   {displayedConsoleLines.map((entry, idx) => (
                     <div
                       key={`${selectedLogSessionId}-${idx}`}
                       className={`whitespace-pre break-all ${
-                        entry.source === "stderr" ? "text-red-300" : "text-emerald-200"
+                        entry.source === "stderr" ? "text-red-300/90" : ""
                       }`}
                     >
                       {entry.line}
@@ -6462,11 +6621,11 @@ export function ModpackTab({
                   ))}
                 </div>
               ) : (
-                <div className="flex h-24 w-full shrink-0 items-center justify-center rounded-xl bg-black/70 px-3 py-2 text-[11px] text-white/60 lg:flex-1">
+                <div className="flex h-24 w-full shrink-0 items-center justify-center rounded-xl border border-dashed border-white/10 px-3 py-2 text-[0.8125rem] text-white/45 lg:flex-1">
                   {tt("play.console.empty")}
                 </div>
               )}
-              <p className="mt-2 shrink-0 text-[10px] text-white/40">
+              <p className="mt-2 shrink-0 text-[0.75rem] text-white/40">
                 {tt("modpacks.manage.consoleResizeHint")}
               </p>
             </div>
@@ -6487,10 +6646,21 @@ export function ModpackTab({
           ? "h-full max-w-none self-stretch px-0 sm:px-1"
           : "max-w-none self-stretch"
       }`}
+      style={
+        activeView === "manage" && uiScale > 1
+          ? ({
+              zoom: uiScale,
+              width: `${100 / uiScale}%`,
+              height: `${100 / uiScale}%`,
+            } as CSSProperties)
+          : undefined
+      }
     >
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-white">{headerTitle}</h1>
-      </div>
+      {(activeView === "create" || activeView === "import") && (
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-semibold text-white">{headerTitle}</h1>
+        </div>
+      )}
 
       {activeView === "list"
         ? renderListView()
@@ -6579,6 +6749,19 @@ export function ModpackTab({
             <button
               type="button"
               onClick={() => {
+                const profile = profiles.find((p) => p.id === contextMenu.profileId);
+                setContextMenu(null);
+                if (!profile) return;
+                void handleSaveBuildPresetFromProfile(profile);
+              }}
+              className="mt-0.5 flex w-full items-center gap-2 rounded-xl px-3 py-1.5 text-left hover:bg-white/10"
+            >
+              <PlusIcon className="h-3.5 w-3.5" />
+              <span>{tt("modpacks.presets.saveFromProfile")}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
                 const profileId = contextMenu.profileId;
                 setContextMenu(null);
                 void handleCreateBackup(profileId);
@@ -6605,6 +6788,66 @@ export function ModpackTab({
               <BackupIcon className="h-3.5 w-3.5" />
               <span>{tt("modpacks.contextMenu.manageBackups")}</span>
             </button>
+            {(() => {
+              const ids = profileIdsForAction(contextMenu.profileId);
+              const currentGroupId = profileGroups.find((g) =>
+                g.profileIds.includes(contextMenu.profileId),
+              )?.id;
+              return (
+                <>
+                  <div className="mx-2 my-1 h-px bg-white/[0.06]" />
+                  <div className="px-3 pb-0.5 pt-1 text-[0.75rem] text-white/45">
+                    {tt("modpacks.contextMenu.moveToGroup")}
+                  </div>
+                  {profileGroups.map((group) => {
+                    const isCurrent = group.id === currentGroupId;
+                    return (
+                      <button
+                        key={group.id}
+                        type="button"
+                        disabled={isCurrent && ids.length === 1}
+                        onClick={() => {
+                          setContextMenu(null);
+                          moveProfilesToGroup(group.id, ids);
+                        }}
+                        className="mt-0.5 flex w-full items-center gap-2 rounded-xl px-3 py-1.5 text-left hover:bg-white/10 disabled:cursor-default disabled:hover:bg-transparent"
+                      >
+                        <span
+                          className={`h-2 w-2 shrink-0 rounded-full ${PROFILE_GROUP_COLOR_STYLES[group.color].dot}`}
+                        />
+                        <span className="min-w-0 flex-1 truncate">{group.name}</span>
+                        {isCurrent && <Check className="h-3.5 w-3.5 shrink-0 text-white/60" />}
+                      </button>
+                    );
+                  })}
+                  {currentGroupId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setContextMenu(null);
+                        moveProfilesToGroup("ungrouped", ids);
+                      }}
+                      className="mt-0.5 flex w-full items-center gap-2 rounded-xl px-3 py-1.5 text-left hover:bg-white/10"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      <span>{tt("modpacks.contextMenu.removeFromGroup")}</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setContextMenu(null);
+                      openCreateGroupModal(ids);
+                    }}
+                    className="mt-0.5 flex w-full items-center gap-2 rounded-xl px-3 py-1.5 text-left hover:bg-white/10"
+                  >
+                    <FolderPlus className="h-3.5 w-3.5" />
+                    <span>{tt("modpacks.list.newGroup")}</span>
+                  </button>
+                  <div className="mx-2 my-1 h-px bg-white/[0.06]" />
+                </>
+              );
+            })()}
             <button
               type="button"
               onClick={() => {
@@ -6750,7 +6993,7 @@ export function ModpackTab({
                 type="button"
                 onClick={() => setBackupsModalProfileId(null)}
                 disabled={Boolean(backupCreating || backupRestoringId)}
-                className="interactive-press rounded-xl bg-white/10 px-2.5 py-1.5 text-xs text-white/80 hover:bg-white/20 disabled:opacity-50"
+                className="interactive-press rounded-xl bg-white/10 px-3 py-1.5 text-xs text-white/80 hover:bg-white/20 disabled:opacity-50"
               >
                 {tt("common.close")}
               </button>
@@ -6805,7 +7048,7 @@ export function ModpackTab({
                         <div className="truncate text-xs font-medium text-white">
                           {b.id}
                         </div>
-                        <div className="mt-0.5 text-[11px] text-white/55">
+                        <div className="mt-0.5 text-[0.8125rem] text-white/55">
                           {formatByteSize(language, b.size_bytes)}
                           {" · "}
                           {new Date(b.created_at * 1000).toLocaleString(localeTag(language))}
@@ -6818,7 +7061,7 @@ export function ModpackTab({
                             void handleRestoreBackup(backupsModalProfileId, b.id)
                           }
                           disabled={backupCreating || Boolean(backupRestoringId)}
-                          className="interactive-press rounded-lg bg-emerald-500/20 px-2 py-1 text-[11px] font-semibold text-emerald-200 hover:bg-emerald-500/30 disabled:opacity-50"
+                          className="interactive-press rounded-lg bg-accent-from/20 px-2 py-1 text-[0.8125rem] font-semibold text-accent-hi hover:bg-accent-from/30 disabled:opacity-50"
                         >
                           {backupRestoringId === b.id
                             ? tt("modpacks.backups.restoring")
@@ -6830,7 +7073,7 @@ export function ModpackTab({
                             void handleDeleteBackup(backupsModalProfileId, b.id)
                           }
                           disabled={backupCreating || Boolean(backupRestoringId)}
-                          className="interactive-press rounded-lg bg-red-600/20 px-2 py-1 text-[11px] font-semibold text-red-200 hover:bg-red-600/30 disabled:opacity-50"
+                          className="interactive-press rounded-lg bg-red-600/20 px-2 py-1 text-[0.8125rem] font-semibold text-red-200 hover:bg-red-600/30 disabled:opacity-50"
                         >
                           {tt("modpacks.backups.delete")}
                         </button>
@@ -6870,7 +7113,7 @@ export function ModpackTab({
                   value={groupFormName}
                   onChange={(e) => setGroupFormName(e.target.value)}
                   placeholder={tt("modpacks.groups.namePlaceholder")}
-                  className={`w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-sm text-white placeholder:text-white/35 focus:outline-none focus:ring-1 focus:ring-white/30 ${
+                  className={`glass-control w-full rounded-xl border px-3 py-2 text-sm text-white placeholder:text-white/35 focus:outline-none ${
                     groupFormName ? "pr-9" : ""
                   }`}
                   autoFocus
@@ -6918,7 +7161,7 @@ export function ModpackTab({
               <button
                 type="button"
                 onClick={() => setIsGroupProfilesDropdownOpen((v) => !v)}
-                className="interactive-press flex w-full items-center justify-between gap-2 rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-left text-sm text-white/85 hover:bg-black/55"
+                className="interactive-press flex w-full items-center justify-between gap-2 rounded-xl border border-white/15 bg-black/40 px-4 py-2 text-left text-sm text-white/85 hover:bg-black/55"
               >
                 <span className="truncate">
                   {groupFormProfileIds.size > 0
@@ -6956,7 +7199,7 @@ export function ModpackTab({
                                 return next;
                               });
                             }}
-                            className="rounded border-white/30 bg-black/40"
+                            className="rounded border-white/20 bg-black/40"
                           />
                           <ProfileInstanceIcon profile={p} className="h-6 w-6 shrink-0 rounded-lg" />
                           <span className="min-w-0 truncate">{p.name}</span>
@@ -6975,14 +7218,14 @@ export function ModpackTab({
                   setEditingGroupId(null);
                   setIsGroupModalOpen(false);
                 }}
-                className="interactive-press rounded-xl bg-white/10 px-4 py-2 text-xs font-semibold text-white/80 hover:bg-white/20"
+                className="interactive-press rounded-xl bg-white/10 px-3.5 py-2 text-xs font-semibold text-white/80 hover:bg-white/20"
               >
                 {tt("modpacks.groups.cancel")}
               </button>
               <button
                 type="button"
                 onClick={handleSaveGroup}
-                className="interactive-press rounded-xl accent-bg px-4 py-2 text-xs font-semibold text-white hover:opacity-90"
+                className="interactive-press rounded-xl accent-bg px-3.5 py-2 text-xs font-semibold text-white hover:opacity-90"
               >
                 {editingGroupId ? tt("modpacks.groups.save") : tt("modpacks.groups.create")}
               </button>
@@ -7019,7 +7262,7 @@ export function ModpackTab({
               <button
                 type="button"
                 onClick={() => setPendingDeleteProfileId(null)}
-                className="interactive-press rounded-full bg-white/10 px-4 py-1.5 font-semibold text-white hover:bg-white/20"
+                className="interactive-press rounded-xl bg-white/10 px-4 py-1.5 font-semibold text-white hover:bg-white/20"
               >
                 {tt("common.cancel")}
               </button>
@@ -7036,7 +7279,7 @@ export function ModpackTab({
                   setPendingDeleteProfileId(null);
                   void handleDeleteProfile(profile);
                 }}
-                className="interactive-press rounded-full bg-red-600 px-4 py-1.5 font-semibold text-white hover:bg-red-500"
+                className="interactive-press rounded-xl bg-red-600 px-4 py-1.5 font-semibold text-white hover:bg-red-500"
               >
                 {tt("common.delete")}
               </button>
@@ -7061,7 +7304,7 @@ export function ModpackTab({
               <button
                 type="button"
                 onClick={() => setIsPresetsModalOpen(false)}
-                className="interactive-press rounded-full bg-white/10 px-4 py-1.5 text-xs font-semibold text-white/85 hover:bg-white/20"
+                className="interactive-press rounded-xl bg-white/10 px-3.5 py-1.5 text-xs font-semibold text-white/85 hover:bg-white/20"
               >
                 {tt("modpacks.common.backToList")}
               </button>
@@ -7095,7 +7338,7 @@ export function ModpackTab({
                           className="h-full w-full object-contain"
                         />
                       ) : (
-                        <span className="text-[10px] uppercase text-white/40">
+                        <span className="text-[0.75rem] text-white/40">
                           {preset.loader.slice(0, 2)}
                         </span>
                       )}
@@ -7104,7 +7347,7 @@ export function ModpackTab({
                       <div className="truncate text-sm font-semibold text-white">
                         {preset.name}
                       </div>
-                      <div className="truncate text-[11px] text-white/55">
+                      <div className="truncate text-[0.8125rem] text-white/55">
                         {tt("modpacks.presets.loaderInfo", {
                           loader: loaderLabels[preset.loader as LoaderId] ?? preset.loader,
                           version: loaderVersionLabel,
@@ -7121,14 +7364,14 @@ export function ModpackTab({
                           setIsPresetsModalOpen(false);
                           showNotification("info", tt("modpacks.presets.applied"));
                         }}
-                        className="interactive-press rounded-xl accent-bg px-2.5 py-1 text-[11px] font-semibold text-white hover:opacity-90"
+                        className="interactive-press rounded-xl accent-bg px-3 py-1 text-[0.8125rem] font-semibold text-white hover:opacity-90"
                       >
                         {tt("modpacks.presets.apply")}
                       </button>
                       <button
                         type="button"
                         onClick={() => void handleDeleteBuildPreset(preset)}
-                        className="interactive-press rounded-xl bg-red-600/80 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-red-500"
+                        className="interactive-press rounded-xl bg-red-600/80 px-3 py-1 text-[0.8125rem] font-semibold text-white hover:bg-red-500"
                       >
                         {tt("modpacks.presets.delete")}
                       </button>
@@ -7142,7 +7385,7 @@ export function ModpackTab({
               <button
                 type="button"
                 onClick={() => void handleSaveBuildPresetFromForm()}
-                className="interactive-press mt-4 w-full rounded-2xl border border-white/20 bg-white/10 py-2 text-sm font-semibold text-white hover:bg-white/20"
+                className="interactive-press mt-4 w-full rounded-2xl border border-white/15 bg-white/10 py-2 text-sm font-semibold text-white hover:bg-white/20"
               >
                 {tt("modpacks.presets.saveFromForm")}
               </button>
@@ -7165,7 +7408,7 @@ export function ModpackTab({
           >
             <div className="mb-4 flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <div className="text-xs uppercase tracking-[0.16em] text-white/50">
+                <div className="text-xs text-white/50">
                   {tt("modpacks.contentUpdates.modalTitle")}
                 </div>
                 <div className="truncate text-lg font-semibold text-white">
@@ -7177,7 +7420,7 @@ export function ModpackTab({
               </div>
               <button
                 type="button"
-                className="interactive-press rounded-full bg-white/10 px-4 py-1.5 text-xs font-semibold text-white/85 hover:bg-white/20 disabled:opacity-60"
+                className="interactive-press rounded-xl bg-white/10 px-3.5 py-1.5 text-xs font-semibold text-white/85 hover:bg-white/20 disabled:opacity-60"
                 disabled={contentUpdatesApplying}
                 onClick={() => setIsContentUpdatesModalOpen(false)}
               >
@@ -7193,7 +7436,7 @@ export function ModpackTab({
                     key={update.filename}
                     className={`flex cursor-pointer select-none items-center gap-3 rounded-2xl border px-3 py-2 text-sm ${
                       checked
-                        ? "border-emerald-400/35 bg-emerald-500/10 text-white/95"
+                        ? "border-accent-to/40 bg-accent-from/15 text-white"
                         : "border-white/10 bg-black/35 text-white/90"
                     }`}
                     onClick={() => {
@@ -7238,7 +7481,7 @@ export function ModpackTab({
                 type="button"
                 onClick={() => void handleApplyContentUpdates(false)}
                 disabled={contentUpdatesApplying}
-                className="interactive-press rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
+                className="interactive-press rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {contentUpdatesApplying
                   ? tt("modpacks.contentUpdates.updating")
@@ -7248,7 +7491,7 @@ export function ModpackTab({
                 type="button"
                 onClick={() => void handleApplyContentUpdates(true)}
                 disabled={contentUpdatesApplying}
-                className="interactive-press rounded-2xl accent-bg px-4 py-2 text-sm font-semibold text-white shadow-soft hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                className="interactive-press rounded-xl accent-bg px-4 py-2 text-sm font-semibold text-white shadow-soft hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {contentUpdatesApplying
                   ? tt("modpacks.contentUpdates.updating")
@@ -7276,7 +7519,7 @@ export function ModpackTab({
           >
             <div className="mb-4 flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <div className="text-xs uppercase tracking-[0.16em] text-white/50">
+                <div className="text-xs text-white/50">
                   {tt("modpacks.profileSettingsModal.title")}
                 </div>
                 <div className="truncate text-lg font-semibold text-white">
@@ -7285,20 +7528,20 @@ export function ModpackTab({
               </div>
               <button
                 type="button"
-                className="interactive-press rounded-full bg-white/10 px-4 py-1.5 text-xs font-semibold text-white/85 hover:bg-white/20"
+                className="interactive-press rounded-xl bg-white/10 px-3.5 py-1.5 text-xs font-semibold text-white/85 hover:bg-white/20"
                 onClick={closeProfileSettingsModal}
               >
                 {tt("common.close")}
               </button>
             </div>
 
-            <div className="mb-4 flex items-center gap-2 rounded-full bg-white/10 p-1">
+            <div className="mb-4 flex items-center gap-1 seg-track p-1">
               <button
                 type="button"
                 onClick={() => setProfileSettingsTab("general")}
-                className={`interactive-press flex-1 rounded-full px-3 py-1.5 text-xs font-semibold ${
+                className={`interactive-press flex-1 rounded-xl px-3 py-1.5 text-xs font-semibold ${
                   profileSettingsTab === "general"
-                    ? "bg-white text-black shadow-soft"
+                    ? "seg-on"
                     : "text-white/70 hover:text-white"
                 }`}
               >
@@ -7307,9 +7550,9 @@ export function ModpackTab({
               <button
                 type="button"
                 onClick={() => setProfileSettingsTab("java")}
-                className={`interactive-press flex-1 rounded-full px-3 py-1.5 text-xs font-semibold ${
+                className={`interactive-press flex-1 rounded-xl px-3 py-1.5 text-xs font-semibold ${
                   profileSettingsTab === "java"
-                    ? "bg-white text-black shadow-soft"
+                    ? "seg-on"
                     : "text-white/70 hover:text-white"
                 }`}
               >
@@ -7319,7 +7562,7 @@ export function ModpackTab({
 
             {profileSettingsTab === "general" ? (
               <div className="max-h-[420px] overflow-y-auto pr-1">
-                <div className="rounded-2xl border border-white/12 bg-black/35 px-4 py-3">
+                <div className="rounded-2xl border border-white/10 bg-black/35 px-4 py-3">
                   <div className="mb-3 text-xs text-white/60">
                     {tt("modpacks.profileSettingsModal.hint")}
                   </div>
@@ -7353,7 +7596,7 @@ export function ModpackTab({
                   </div>
                 </div>
 
-                <div className="mt-4 rounded-2xl border border-white/12 bg-black/35 px-4 py-3">
+                <div className="mt-4 rounded-2xl border border-white/10 bg-black/35 px-4 py-3">
                   <div className="mb-2 text-xs font-medium text-white/70">
                     {tt("modpacks.changeVersion.currentVersion")}
                   </div>
@@ -7372,21 +7615,21 @@ export function ModpackTab({
                   <button
                     type="button"
                     onClick={openChangeVersionModal}
-                    className="interactive-press w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/20"
+                    className="interactive-press w-full rounded-xl border border-white/15 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/20"
                   >
                     {tt("modpacks.changeVersion.button")}
                   </button>
                 </div>
 
-                <div className="mt-4 rounded-2xl border border-white/12 bg-black/35 px-4 py-3">
+                <div className="mt-4 rounded-2xl border border-white/10 bg-black/35 px-4 py-3">
                   <div className="mb-2 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 text-xs font-medium text-white/70">
                       <span>{tt("modpacks.conflicts.title")}</span>
-                      <span className="rounded-full border border-amber-300/40 bg-amber-500/15 px-2 py-0.5 text-[9px] font-semibold tracking-[0.14em] text-amber-100">
+                      <span className="rounded-md border border-amber-300/40 bg-amber-500/15 px-2 py-0.5 text-[0.6875rem] font-semibold tracking-[0.14em] text-amber-100">
                         BETA
                       </span>
                     </div>
-                    <div className="shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-white/70">
+                    <div className="shrink-0 rounded-md bg-white/10 px-2 py-0.5 text-[0.75rem] font-semibold text-white/70">
                       {profileConflictsLoading
                         ? tt("modpacks.conflicts.loading")
                         : tt("modpacks.conflicts.count", { count: profileConflicts.length })}
@@ -7413,10 +7656,10 @@ export function ModpackTab({
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0 flex-1">
                               <div className="font-semibold text-white/90">{c.title}</div>
-                              <div className="mt-0.5 text-[11px] text-white/65">{c.reason}</div>
+                              <div className="mt-0.5 text-[0.8125rem] text-white/65">{c.reason}</div>
                             </div>
                             <div
-                              className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                              className={`shrink-0 rounded-md px-2 py-0.5 text-[0.75rem] font-semibold ${
                                 c.severity === "error"
                                   ? "bg-rose-500/30 text-rose-100"
                                   : "bg-amber-500/30 text-amber-100"
@@ -7430,12 +7673,12 @@ export function ModpackTab({
 
                           {c.affected.length > 0 ? (
                             <div className="mt-2 rounded-xl bg-black/25 px-2 py-1.5">
-                              <div className="text-[10px] uppercase tracking-[0.16em] text-white/45">
+                              <div className="text-[0.75rem] text-white/45">
                                 {tt("modpacks.conflicts.affected")}
                               </div>
                               <div className="mt-1 flex flex-col gap-0.5">
                                 {c.affected.map((f) => (
-                                  <div key={f} className="truncate text-[11px] text-white/75">
+                                  <div key={f} className="truncate text-[0.8125rem] text-white/75">
                                     {f}
                                   </div>
                                 ))}
@@ -7445,10 +7688,10 @@ export function ModpackTab({
 
                           {c.solutions.length > 0 ? (
                             <div className="mt-2">
-                              <div className="text-[10px] uppercase tracking-[0.16em] text-white/45">
+                              <div className="text-[0.75rem] text-white/45">
                                 {tt("modpacks.conflicts.solutions")}
                               </div>
-                              <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[11px] text-white/75">
+                              <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[0.8125rem] text-white/75">
                                 {c.solutions.map((s) => (
                                   <li key={s}>{s}</li>
                                 ))}
@@ -7462,7 +7705,7 @@ export function ModpackTab({
                                 <button
                                   key={a.id}
                                   type="button"
-                                  className="interactive-press rounded-xl border border-white/15 bg-white/10 px-3 py-1.5 text-[11px] font-semibold text-white/85 hover:bg-white/15"
+                                  className="interactive-press rounded-xl border border-white/15 bg-white/10 px-3 py-1.5 text-[0.8125rem] font-semibold text-white/85 hover:bg-white/15"
                                   onClick={() => {
                                     void applyConflictAction(c, {
                                       kind: a.kind,
@@ -7481,7 +7724,7 @@ export function ModpackTab({
                   ) : null}
                 </div>
 
-                <div className="mt-4 rounded-2xl border border-white/12 bg-black/35 px-4 py-3">
+                <div className="mt-4 rounded-2xl border border-white/10 bg-black/35 px-4 py-3">
                   <SettingsSlider
                     label={tt("modpacks.profileSettingsModal.memoryRam")}
                     min={1}
@@ -7535,7 +7778,7 @@ export function ModpackTab({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4">
-              <div className="text-xs uppercase tracking-[0.16em] text-white/50">
+              <div className="text-xs text-white/50">
                 {tt("modpacks.changeVersion.title")}
               </div>
               <div className="mt-1 text-sm text-white/70">
@@ -7548,7 +7791,7 @@ export function ModpackTab({
                 <label className="text-xs font-medium text-white/70">
                   {tt("modpacks.changeVersion.gameVersionLabel")}
                 </label>
-                <div className="relative inline-flex w-full items-center justify-between rounded-full border border-white/20 bg-black/60 px-3 py-1.5 text-xs text-white/90">
+                <div className="relative inline-flex w-full items-center justify-between rounded-xl border border-white/15 bg-black/60 px-3 py-1.5 text-xs text-white/90">
                   <button
                     type="button"
                     onClick={() => {
@@ -7583,12 +7826,12 @@ export function ModpackTab({
                             }}
                             className={`flex w-full items-center justify-between rounded-xl px-3 py-1.5 text-left transition-colors ${
                               migrateGameVersion === v.id
-                                ? "bg-white/90 text-black"
+                                ? "seg-on"
                                 : "text-white/80 hover:bg-white/10"
                             }`}
                           >
                             <span>{v.id}</span>
-                            <span className="ml-2 text-[10px] uppercase text-gray-400">
+                            <span className="ml-2 text-[0.75rem] text-gray-400">
                               {v.version_type}
                             </span>
                           </button>
@@ -7614,7 +7857,7 @@ export function ModpackTab({
                     {tt("modpacks.changeVersion.loaderVersionLabel")} (
                     {loaderLabels[selectedProfile.loader as LoaderId] ?? selectedProfile.loader})
                   </label>
-                  <div className="relative inline-flex w-full items-center justify-between rounded-full border border-white/20 bg-black/60 px-3 py-1.5 text-xs text-white/90">
+                  <div className="relative inline-flex w-full items-center justify-between rounded-xl border border-white/15 bg-black/60 px-3 py-1.5 text-xs text-white/90">
                     <button
                       type="button"
                       onClick={() => {
@@ -7651,13 +7894,13 @@ export function ModpackTab({
                             }}
                             className={`flex w-full items-center justify-between rounded-xl px-3 py-1.5 text-left transition-colors ${
                               migrateLoaderVersion === o.version
-                                ? "bg-white/90 text-black"
+                                ? "seg-on"
                                 : "text-white/80 hover:bg-white/10"
                             }`}
                           >
                             <span>{o.version}</span>
                             {o.channel && (
-                              <span className="ml-2 text-[10px] uppercase text-gray-400">
+                              <span className="ml-2 text-[0.75rem] text-gray-400">
                                 {loaderChannelLabel(o.channel)}
                               </span>
                             )}
@@ -7691,7 +7934,7 @@ export function ModpackTab({
                 type="button"
                 onClick={closeChangeVersionModal}
                 disabled={migrateBusy}
-                className="interactive-press rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
+                className="interactive-press rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {tt("common.cancel")}
               </button>
@@ -7699,7 +7942,7 @@ export function ModpackTab({
                 type="button"
                 onClick={() => void handleChangeProfileVersion()}
                 disabled={migrateBusy || !migrateGameVersion}
-                className="interactive-press rounded-2xl accent-bg px-4 py-2 text-sm font-semibold text-white shadow-soft hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                className="interactive-press rounded-xl accent-bg px-4 py-2 text-sm font-semibold text-white shadow-soft hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {migrateBusy
                   ? tt("modpacks.changeVersion.migrating")
@@ -7724,7 +7967,7 @@ export function ModpackTab({
           >
             <div className="mb-4 flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <div className="text-xs uppercase tracking-[0.16em] text-white/50">
+                <div className="text-xs text-white/50">
                   {tt("modpacks.exportModal.title")}
                 </div>
                 <div className="truncate text-lg font-semibold text-white">
@@ -7733,7 +7976,7 @@ export function ModpackTab({
               </div>
               <button
                 type="button"
-                className="interactive-press rounded-full bg-white/10 px-4 py-1.5 text-xs font-semibold text-white/85 hover:bg-white/20 disabled:opacity-60"
+                className="interactive-press rounded-xl bg-white/10 px-3.5 py-1.5 text-xs font-semibold text-white/85 hover:bg-white/20 disabled:opacity-60"
                 disabled={exportBusy}
                 onClick={() => setIsExportOpen(false)}
               >
@@ -7742,13 +7985,13 @@ export function ModpackTab({
             </div>
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-              <div className="rounded-2xl border border-white/12 bg-black/35 px-4 py-3">
+              <div className="rounded-2xl border border-white/10 bg-black/35 px-4 py-3">
                 <div className="mb-2 text-xs font-semibold text-white/80">
                   {tt("modpacks.exportModal.format")}
                 </div>
-                <div className="relative inline-flex gap-1 rounded-full bg-white/10 p-1 overflow-hidden">
+                <div className="relative inline-flex gap-1 seg-track p-1 overflow-hidden">
                   <div
-                    className="pointer-events-none absolute top-1 bottom-1 rounded-full bg-white/90 transition-all duration-200 ease-out"
+                    className="pointer-events-none absolute top-1 bottom-1 rounded-md seg-indicator transition-all duration-200 ease-out"
                     style={{
                       left: `${exportFormatIndicator.left}px`,
                       width: `${exportFormatIndicator.width}px`,
@@ -7761,9 +8004,9 @@ export function ModpackTab({
                       exportFormatTabRefs.current.mrpack = el;
                     }}
                     onClick={() => setExportFormat("mrpack")}
-                    className={`interactive-press relative z-10 rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+                    className={`interactive-press relative z-10 rounded-xl px-3 py-1 text-xs font-semibold transition-colors ${
                       exportFormat === "mrpack"
-                        ? "text-black"
+                        ? "text-white"
                         : "text-white/70 hover:text-white"
                     }`}
                   >
@@ -7776,16 +8019,16 @@ export function ModpackTab({
                       exportFormatTabRefs.current.zip = el;
                     }}
                     onClick={() => setExportFormat("zip")}
-                    className={`interactive-press relative z-10 rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+                    className={`interactive-press relative z-10 rounded-xl px-3 py-1 text-xs font-semibold transition-colors ${
                       exportFormat === "zip"
-                        ? "text-black"
+                        ? "text-white"
                         : "text-white/70 hover:text-white"
                     }`}
                   >
                     ZIP
                   </button>
                 </div>
-                <div className="mt-3 text-[11px] leading-relaxed text-white/60">
+                <div className="mt-3 text-[0.8125rem] leading-relaxed text-white/60">
                   {exportFormat === "mrpack"
                     ? tt("modpacks.exportModal.mrpackHint")
                     : tt("modpacks.exportModal.zipHint")}
@@ -7799,7 +8042,7 @@ export function ModpackTab({
                     type="button"
                     disabled={exportBusy || !exportTree}
                     onClick={() => applyExportPreset("recommended")}
-                    className="interactive-press rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold text-white/80 hover:bg-white/20 disabled:opacity-60"
+                    className="interactive-press rounded-xl bg-white/10 px-3 py-1 text-[0.8125rem] font-semibold text-white/80 hover:bg-white/20 disabled:opacity-60"
                   >
                     {tt("modpacks.exportModal.presetRecommended")}
                   </button>
@@ -7807,7 +8050,7 @@ export function ModpackTab({
                     type="button"
                     disabled={exportBusy || !exportTree}
                     onClick={() => applyExportPreset("minimal")}
-                    className="interactive-press rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold text-white/80 hover:bg-white/20 disabled:opacity-60"
+                    className="interactive-press rounded-xl bg-white/10 px-3 py-1 text-[0.8125rem] font-semibold text-white/80 hover:bg-white/20 disabled:opacity-60"
                   >
                     {tt("modpacks.exportModal.presetMinimal")}
                   </button>
@@ -7815,7 +8058,7 @@ export function ModpackTab({
                     type="button"
                     disabled={exportBusy || !exportTree}
                     onClick={() => applyExportPreset("full")}
-                    className="interactive-press rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold text-white/80 hover:bg-white/20 disabled:opacity-60"
+                    className="interactive-press rounded-xl bg-white/10 px-3 py-1 text-[0.8125rem] font-semibold text-white/80 hover:bg-white/20 disabled:opacity-60"
                   >
                     {tt("modpacks.exportModal.presetFull")}
                   </button>
@@ -7839,9 +8082,9 @@ export function ModpackTab({
                             type="button"
                             disabled={exportBusy}
                             onClick={() => setExportNodeChecked(node, !active)}
-                            className={`interactive-press rounded-full px-3 py-1 text-[11px] font-semibold transition-colors disabled:opacity-60 ${
+                            className={`interactive-press rounded-xl px-3 py-1 text-[0.8125rem] font-semibold transition-colors disabled:opacity-60 ${
                               active
-                                ? "text-black"
+                                ? "text-white"
                                 : partial
                                   ? "text-white"
                                   : "bg-white/10 text-white/75 hover:bg-white/20 hover:text-white"
@@ -7878,7 +8121,7 @@ export function ModpackTab({
                     disabled={exportBusy}
                     onChange={(e) => setIgnorePatternsText(e.target.value)}
                     placeholder={"*.log\ncache/\nsaves/"}
-                    className={`custom-scrollbar h-28 w-full resize-none rounded-2xl border border-white/15 bg-black/40 px-3 py-2 text-xs text-white/85 placeholder:text-white/35 focus:border-white/35 focus:outline-none ${
+                    className={`glass-control custom-scrollbar h-28 w-full resize-none rounded-2xl border px-3 py-2 text-xs text-white/85 placeholder:text-white/35 focus:outline-none ${
                       ignorePatternsText ? "pr-9" : ""
                     }`}
                   />
@@ -7890,18 +8133,18 @@ export function ModpackTab({
                     aria-label={tt("common.clear")}
                   />
                 </div>
-                <div className="mt-2 text-[11px] text-white/55">
+                <div className="mt-2 text-[0.8125rem] text-white/55">
                   {tt("modpacks.exportModal.ignoreHint")}
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-white/12 bg-black/35 px-4 py-3 lg:col-span-2">
+              <div className="rounded-2xl border border-white/10 bg-black/35 px-4 py-3 lg:col-span-2">
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <div className="text-xs font-semibold text-white/80">
                       {tt("modpacks.exportModal.buildFiles")}
                     </div>
-                    <div className="mt-0.5 text-[11px] text-white/55">
+                    <div className="mt-0.5 text-[0.8125rem] text-white/55">
                       {tt("modpacks.exportModal.selectedSummary", {
                         count: String(exportSelectionStats.count),
                         size: formatByteSize(language, exportSelectionStats.bytes),
@@ -7915,7 +8158,7 @@ export function ModpackTab({
                       onClick={() =>
                         selectedProfile && void loadExportTree(selectedProfile.id, true)
                       }
-                      className="interactive-press rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold text-white/80 hover:bg-white/20 disabled:opacity-60"
+                      className="interactive-press rounded-xl bg-white/10 px-3 py-1 text-[0.8125rem] font-semibold text-white/80 hover:bg-white/20 disabled:opacity-60"
                     >
                       {tt("modpacks.exportModal.refresh")}
                     </button>
@@ -7923,7 +8166,7 @@ export function ModpackTab({
                       type="button"
                       disabled={exportBusy || exportTreeLoading || !exportTree}
                       onClick={() => applyExportPreset("full")}
-                      className="interactive-press rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold text-white/80 hover:bg-white/20 disabled:opacity-60"
+                      className="interactive-press rounded-xl bg-white/10 px-3 py-1 text-[0.8125rem] font-semibold text-white/80 hover:bg-white/20 disabled:opacity-60"
                     >
                       {tt("modpacks.exportModal.selectAll")}
                     </button>
@@ -7931,14 +8174,14 @@ export function ModpackTab({
                       type="button"
                       disabled={exportBusy}
                       onClick={() => setSelectedExportPaths(new Set())}
-                      className="interactive-press rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold text-white/80 hover:bg-white/20 disabled:opacity-60"
+                      className="interactive-press rounded-xl bg-white/10 px-3 py-1 text-[0.8125rem] font-semibold text-white/80 hover:bg-white/20 disabled:opacity-60"
                     >
                       {tt("modpacks.exportModal.clearAll")}
                     </button>
                   </div>
                 </div>
 
-                <div className="mb-2 flex items-center gap-2 rounded-2xl border border-white/12 bg-black/40 px-3 py-2">
+                <div className="mb-2 flex items-center gap-2 rounded-2xl border border-white/10 bg-black/40 px-3 py-2">
                   <SearchIcon className="h-3.5 w-3.5 shrink-0 opacity-60" />
                   <input
                     type="search"
@@ -8022,7 +8265,7 @@ export function ModpackTab({
                                         return next;
                                       });
                                     }}
-                                    className="interactive-press mr-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white/5 text-white/70 hover:bg-white/15"
+                                    className="interactive-press mr-0.5 flex h-4 w-4 items-center justify-center rounded-lg bg-white/5 text-white/70 hover:bg-white/15"
                                   >
                                     <ChevronDown
                                       className={`h-3 w-3 transition-transform ${
@@ -8067,7 +8310,7 @@ export function ModpackTab({
                                 </span>
                               </span>
                               <span
-                                className={`shrink-0 text-[11px] ${
+                                className={`shrink-0 text-[0.8125rem] ${
                                   rowHighlighted ? "text-white/70" : "text-white/55"
                                 }`}
                               >
@@ -8092,7 +8335,7 @@ export function ModpackTab({
                     type="button"
                     disabled={exportBusy || previewLoading}
                     onClick={() => void handlePreviewExport()}
-                    className="interactive-press inline-flex items-center gap-2 rounded-2xl bg-white/15 px-4 py-2 text-xs font-semibold text-white hover:bg-white/25 disabled:opacity-60"
+                    className="interactive-press inline-flex items-center gap-2 rounded-xl bg-white/15 px-3.5 py-2 text-xs font-semibold text-white hover:bg-white/25 disabled:opacity-60"
                   >
                     {previewLoading
                       ? tt("modpacks.exportModal.previewing")
@@ -8102,15 +8345,15 @@ export function ModpackTab({
                     type="button"
                     disabled={exportBusy}
                     onClick={() => void handleStartExport()}
-                    className="interactive-press inline-flex items-center gap-2 rounded-2xl accent-bg px-4 py-2 text-xs font-semibold text-white shadow-soft hover:opacity-90 disabled:opacity-60"
+                    className="interactive-press inline-flex items-center gap-2 rounded-xl accent-bg px-3.5 py-2 text-xs font-semibold text-white shadow-soft hover:opacity-90 disabled:opacity-60"
                   >
                     <ExportIcon className="h-4 w-4" />
                     <span>{tt("modpacks.exportModal.export")}</span>
                   </button>
 
                   {exportBusy && exportProgress && (
-                    <div className="ml-auto flex min-w-[260px] flex-1 flex-col gap-1 rounded-2xl border border-white/12 bg-black/40 px-3 py-2">
-                      <div className="flex items-center justify-between gap-3 text-[11px] text-white/70">
+                    <div className="ml-auto flex min-w-[260px] flex-1 flex-col gap-1 rounded-2xl border border-white/10 bg-black/40 px-3 py-2">
+                      <div className="flex items-center justify-between gap-3 text-[0.8125rem] text-white/70">
                         <span className="truncate">
                           {exportProgress.current_file || tt("modpacks.exportModal.exporting")}
                         </span>
@@ -8120,7 +8363,7 @@ export function ModpackTab({
                       </div>
                       <div className="h-2 w-full overflow-hidden rounded-full bg-white/15">
                         <div
-                          className="h-full rounded-full bg-emerald-500 transition-all duration-200"
+                          className="progress-fill h-full rounded-full transition-all duration-200"
                           style={{
                             width:
                               exportProgress.total_bytes > 0
@@ -8134,7 +8377,7 @@ export function ModpackTab({
                           }}
                         />
                       </div>
-                      <div className="flex items-center justify-between text-[11px] text-white/55">
+                      <div className="flex items-center justify-between text-[0.8125rem] text-white/55">
                         <span>
                           {formatByteSize(language, exportProgress.bytes_written)} /{" "}
                           {formatByteSize(language, exportProgress.total_bytes)}
@@ -8152,7 +8395,7 @@ export function ModpackTab({
                 </div>
 
                 {previewResult && (
-                  <div className="mt-3 rounded-2xl border border-white/12 bg-black/35 px-4 py-3">
+                  <div className="mt-3 rounded-2xl border border-white/10 bg-black/35 px-4 py-3">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="text-xs font-semibold text-white/80">
                         {tt("modpacks.exportModal.finalContents")}
@@ -8188,7 +8431,7 @@ export function ModpackTab({
                         )}
                       </div>
                     </div>
-                    <div className="custom-scrollbar mt-2 max-h-40 overflow-y-auto rounded-2xl border border-white/10 bg-black/40 p-2 text-[11px] text-white/75">
+                    <div className="custom-scrollbar mt-2 max-h-40 overflow-y-auto rounded-2xl border border-white/10 bg-black/40 p-2 text-[0.8125rem] text-white/75">
                       {previewResult.files.length === 0 ? (
                         <div className="py-6 text-center text-white/55">
                           {tt("modpacks.exportModal.nothingIncluded")}
@@ -8199,7 +8442,7 @@ export function ModpackTab({
                             <div key={`${f.source ?? "x"}:${f.path}`} className="flex items-center justify-between gap-3 px-2 py-0.5">
                               <span className="min-w-0 truncate">
                                 {f.source === "modrinth" ? (
-                                  <span className="mr-2 rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">
+                                  <span className="mr-2 rounded bg-emerald-500/20 px-1.5 py-0.5 text-[0.75rem] font-semibold text-emerald-200">
                                     CDN
                                   </span>
                                 ) : null}
@@ -8245,14 +8488,14 @@ export function ModpackTab({
                       <button
                         type="button"
                         onClick={() => void revealItemInDir(exportResultPath)}
-                        className="interactive-press rounded-full accent-bg px-4 py-1.5 text-xs font-semibold text-white hover:opacity-90"
+                        className="interactive-press rounded-xl accent-bg px-3.5 py-1.5 text-xs font-semibold text-white hover:opacity-90"
                       >
                         {tt("modpacks.exportModal.openFolder")}
                       </button>
                     </div>
-                    <div className="break-all text-[11px] text-emerald-100/90">{exportResultPath}</div>
+                    <div className="break-all text-[0.8125rem] text-emerald-100/90">{exportResultPath}</div>
                     {exportSkippedFiles.length > 0 && (
-                      <div className="rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-[11px] text-white/70">
+                      <div className="rounded-2xl border border-white/10 bg-black/30 px-3 py-2 text-[0.8125rem] text-white/70">
                         <div className="mb-1 font-semibold text-white/80">
                           ({exportSkippedFiles.length})
                         </div>

@@ -155,11 +155,6 @@ export function applyTabDrop(
     focusedTab: focused === "primary" ? primary : secondary,
   };
 }
-
-export function focusedTabFromLayout(layout: TabSplitLayout): SplittableTabId {
-  return layout.focused === "primary" ? layout.primary : layout.secondary;
-}
-
 export function tabPaneRole(
   tab: SplittableTabId,
   layout: TabSplitLayout,

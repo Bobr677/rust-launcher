@@ -86,11 +86,7 @@ pub(crate) async fn download_text_with_retries(client: &Client, url: &str, retri
                 if status.is_success() {
                     return r.text().await.map_err(|e| format!("Ошибка чтения ответа: {e}"));
                 }
-                let should_retry = status.as_u16() == 404
-                    || status.as_u16() == 408
-                    || status.as_u16() == 429
-                    || status.is_server_error();
-                if !should_retry || attempt + 1 >= retries {
+                if !is_retryable_status(status.as_u16(), attempt) || attempt + 1 >= retries {
                     let body = r.text().await.unwrap_or_else(|_| "<тело ответа недоступно>".to_string());
                     return Err(format!("HTTP {} для {}: {}", status, url, body));
                 }
@@ -101,10 +97,28 @@ pub(crate) async fn download_text_with_retries(client: &Client, url: &str, retri
                 }
             }
         }
-        let delay_ms = (1000u64).saturating_mul(2u64.saturating_pow(attempt.min(6) as u32));
-        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+        tokio::time::sleep(retry_delay(attempt)).await;
         attempt += 1;
     }
+}
+
+/// 404 почти всегда окончателен (зеркала редко «догоняют» дольше одной паузы), поэтому
+/// повторяем его один раз; 408/429/5xx — пока не кончатся попытки.
+pub(crate) fn is_retryable_status(status: u16, attempt: usize) -> bool {
+    match status {
+        404 => attempt == 0,
+        408 | 425 | 429 => true,
+        s => (500..600).contains(&s),
+    }
+}
+
+/// Экспоненциальная пауза 1с, 2с, 4с… (потолок 16с) с небольшим джиттером, чтобы
+/// параллельные загрузки не ретраились синхронной волной.
+pub(crate) fn retry_delay(attempt: usize) -> Duration {
+    use rand::Rng;
+    let base = 1000u64.saturating_mul(1u64 << attempt.min(4));
+    let jitter = rand::thread_rng().gen_range(0..=base / 4);
+    Duration::from_millis(base + jitter)
 }
 
 pub(crate) fn sha1_hex_of_bytes(bytes: &[u8]) -> String {
@@ -114,16 +128,64 @@ pub(crate) fn sha1_hex_of_bytes(bytes: &[u8]) -> String {
     format!("{:x}", out)
 }
 
+/// Потоковый SHA1: не загружает файл целиком в память и не блокирует async-рантайм.
 pub(crate) async fn sha1_hex_of_file(path: &Path) -> Result<String, String> {
-    let data = tokio::fs::read(path)
-        .await
-        .map_err(|e| {
+    let path_buf = path.to_path_buf();
+    tokio::task::spawn_blocking(move || -> Result<String, String> {
+        use std::io::Read;
+        let mut file = std::fs::File::open(&path_buf).map_err(|e| {
             format!(
                 "Не удалось прочитать файл '{}' для SHA1: {e}",
-                path.display()
+                path_buf.display()
             )
         })?;
-    Ok(sha1_hex_of_bytes(&data))
+        let mut hasher = Sha1::new();
+        let mut buf = vec![0u8; 64 * 1024];
+        loop {
+            let n = file.read(&mut buf).map_err(|e| {
+                format!(
+                    "Не удалось прочитать файл '{}' для SHA1: {e}",
+                    path_buf.display()
+                )
+            })?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+        }
+        Ok(format!("{:x}", hasher.finalize()))
+    })
+    .await
+    .map_err(|e| format!("Ошибка расчёта SHA1: {e}"))?
+}
+
+/// Дешёвая проверка «файл на месте и не обрезан»: без хеширования. `expected_size == 0`
+/// означает «размер неизвестен» — тогда достаточно, чтобы файл был непустым.
+pub(crate) fn file_len_matches(path: &Path, expected_size: u64) -> bool {
+    match std::fs::metadata(path) {
+        Ok(m) if m.is_file() && m.len() > 0 => expected_size == 0 || m.len() == expected_size,
+        _ => false,
+    }
+}
+
+/// Отбрасывает компоненты пути, которые могут выйти за пределы `base` (`..`, абсолютные
+/// пути, диск). Возвращает `None` для небезопасных путей — защита от zip-slip.
+pub(crate) fn safe_join(base: &Path, rel: &str) -> Option<std::path::PathBuf> {
+    use std::path::Component;
+    let rel = rel.replace('\\', "/");
+    let mut out = base.to_path_buf();
+    let mut any = false;
+    for comp in Path::new(&rel).components() {
+        match comp {
+            Component::Normal(part) => {
+                out.push(part);
+                any = true;
+            }
+            Component::CurDir => {}
+            _ => return None,
+        }
+    }
+    any.then_some(out)
 }
 
 pub(crate) async fn try_fetch_remote_sha1(client: &Client, url: &str) -> Option<String> {
@@ -256,3 +318,54 @@ pub(crate) fn resolve_native_artifact<'a>(lib: &'a Library, os_name: &str) -> Op
     None
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn safe_join_rejects_escaping_paths() {
+        let base = Path::new("base");
+        assert!(safe_join(base, "../evil.dll").is_none());
+        assert!(safe_join(base, "a/../../evil").is_none());
+        assert!(safe_join(base, "/etc/passwd").is_none());
+        assert!(safe_join(base, "").is_none());
+        assert_eq!(
+            safe_join(base, r"mods\a.jar").unwrap(),
+            Path::new("base").join("mods").join("a.jar")
+        );
+        assert_eq!(
+            safe_join(base, "./config/x.toml").unwrap(),
+            Path::new("base").join("config").join("x.toml")
+        );
+    }
+
+    #[test]
+    fn retryable_statuses() {
+        assert!(is_retryable_status(503, 5));
+        assert!(is_retryable_status(429, 5));
+        assert!(!is_retryable_status(403, 0));
+        assert!(is_retryable_status(404, 0));
+        assert!(!is_retryable_status(404, 1));
+    }
+
+    #[test]
+    fn retry_delay_is_bounded() {
+        for attempt in 0..20 {
+            assert!(retry_delay(attempt) <= Duration::from_millis(20_000));
+        }
+    }
+
+    #[test]
+    fn file_len_matches_checks_size() {
+        let dir = std::env::temp_dir().join(format!("mc16-len-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("a.bin");
+        std::fs::write(&f, b"12345").unwrap();
+        assert!(file_len_matches(&f, 5));
+        assert!(file_len_matches(&f, 0));
+        assert!(!file_len_matches(&f, 6));
+        assert!(!file_len_matches(&dir.join("missing"), 0));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

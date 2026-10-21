@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   API_AUTH_CHANGED_EVENT,
   API_NICKNAME_KEY,
+  changePassword,
   deleteAccount,
   ensureValidAccessToken,
   fetchEmailVerificationStatus,
@@ -14,13 +15,17 @@ import {
   logoutAccount,
   mapAuthErrorMessage,
   registerAndPersist,
+  requestPasswordReset,
+  resetPasswordAndPersist,
   sendEmailVerificationCode,
   fetchDiscordAuthStatus,
   updateNickname,
   type PlatformUser,
 } from "../api/auth";
 import { ApiError, getStoredAccessToken } from "../api/client";
+import { fetchUserProfile } from "../api/users";
 import { InputClearButton } from "../components/ui";
+import { ElyByIcon, MicrosoftIcon } from "../features/account/icons";
 import { NicknameWithSponsor } from "../components/SponsorBadge";
 import { useT, type Language } from "../i18n";
 import { PRIVACY_POLICY_URL } from "../lib/legal";
@@ -54,7 +59,8 @@ type PlatformAccountPanelProps = {
   onMicrosoftLogin?: () => void | Promise<void>;
   onElyLogin?: () => void | Promise<void>;
   providerLoginBusy?: boolean;
-  compact?: boolean;
+  /** Called after the platform nickname changes, so other widgets can refresh. */
+  onProfileChanged?: () => void;
 };
 
 const REFRESH_AHEAD_MS = 60_000;
@@ -87,7 +93,7 @@ function PrivacyPolicyLink({ language }: { language: Language }) {
   return (
     <button
       type="button"
-      className="text-emerald-200/90 underline decoration-emerald-400/40 underline-offset-2 hover:text-emerald-100 hover:decoration-emerald-300/70"
+      className="text-accent-hi underline decoration-accent-to/40 underline-offset-2 hover:text-white hover:decoration-accent-to/70"
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -124,7 +130,7 @@ export function PlatformAccountPanel({
   onMicrosoftLogin,
   onElyLogin,
   providerLoginBusy = false,
-  compact = false,
+  onProfileChanged,
 }: PlatformAccountPanelProps) {
   const tt = useT(language);
 
@@ -148,13 +154,29 @@ export function PlatformAccountPanel({
   const [discordBusy, setDiscordBusy] = useState(false);
   const [linking, setLinking] = useState<null | "ely" | "minecraft">(null);
   const [linkedProviders, setLinkedProviders] = useState({ ely: false, minecraft: false });
+  const [linkedIdentity, setLinkedIdentity] = useState<{ ely: string | null; minecraft: boolean }>({
+    ely: null,
+    minecraft: false,
+  });
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deletePassword, setDeletePassword] = useState("");
   const [showDeletePassword, setShowDeletePassword] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [privacyHighlight, setPrivacyHighlight] = useState(false);
+  const [resetStep, setResetStep] = useState<null | "request" | "confirm">(null);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetCode, setResetCode] = useState("");
+  const [resetNewPassword, setResetNewPassword] = useState("");
+  const [showResetPassword, setShowResetPassword] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [showChangePasswords, setShowChangePasswords] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
   const [modeTabIndicator, setModeTabIndicator] = useState({ left: 0, width: 0 });
   const codeInputRef = useRef<HTMLInputElement>(null);
+  const resetCodeInputRef = useRef<HTMLInputElement>(null);
   const privacyCheckboxRef = useRef<HTMLInputElement>(null);
   const modeTabsRef = useRef<HTMLDivElement>(null);
   const modeTabButtonRefs = useRef<Partial<Record<"login" | "signup", HTMLButtonElement | null>>>({});
@@ -180,6 +202,15 @@ export function PlatformAccountPanel({
         window.localStorage.setItem(API_NICKNAME_KEY, me.nickname);
         const fresh = getStoredAccessToken() ?? token;
         if (fresh !== token) setAccessToken(fresh);
+        // The public profile of yourself carries the linked Ely.by / Minecraft identities.
+        void fetchUserProfile(me.id)
+          .then((pub) =>
+            setLinkedIdentity({
+              ely: pub.ely_username?.trim() || null,
+              minecraft: Boolean(pub.mc_uuid?.trim()),
+            }),
+          )
+          .catch(() => {});
       })
       .catch(() => {
         if (!getStoredAccessToken()) {
@@ -222,6 +253,12 @@ export function PlatformAccountPanel({
     const id = window.setTimeout(() => codeInputRef.current?.focus(), 50);
     return () => window.clearTimeout(id);
   }, [signupStep]);
+
+  useEffect(() => {
+    if (resetStep !== "confirm") return;
+    const id = window.setTimeout(() => resetCodeInputRef.current?.focus(), 50);
+    return () => window.clearTimeout(id);
+  }, [resetStep]);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -274,7 +311,7 @@ export function PlatformAccountPanel({
       window.removeEventListener("resize", scheduleUpdate);
       resizeObserver?.disconnect();
     };
-  }, [mode, accessToken, signupStep]);
+  }, [mode, accessToken, signupStep, resetStep]);
 
   const highlightPrivacyConsent = () => {
     setPrivacyHighlight(true);
@@ -432,8 +469,117 @@ export function PlatformAccountPanel({
       setPlatformUser(null);
       setDeleteOpen(false);
       setDeletePassword("");
+      closeChangePassword();
       setLoading(false);
       showNotification("info", tt("platform.toast.loggedOut"));
+    }
+  };
+
+  /** 404 here means the API on the server predates the password endpoints. */
+  const passwordErrorMessage = (e: unknown): string => {
+    if (e instanceof ApiError && e.status === 404) return tt("platform.errors.serverOutdated");
+    const rawMessage = e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e);
+    return mapAuthErrorMessage(rawMessage, "login", tt);
+  };
+
+  const openPasswordReset = () => {
+    setResetEmail(authIdentifier.includes("@") ? authIdentifier.trim() : "");
+    setResetCode("");
+    setResetNewPassword("");
+    setShowResetPassword(false);
+    setResetStep("request");
+  };
+
+  const closePasswordReset = () => {
+    setResetStep(null);
+    setResetCode("");
+    setResetNewPassword("");
+  };
+
+  const handleRequestPasswordReset = async () => {
+    const email = resetEmail.trim();
+    if (!email || !email.includes("@")) {
+      showNotification("warning", tt("platform.toast.enterEmailReset"));
+      return;
+    }
+    setResetBusy(true);
+    try {
+      await requestPasswordReset(email);
+      setResetStep("confirm");
+      showNotification("success", tt("platform.toast.resetCodeSent"));
+    } catch (e) {
+      showNotification("error", passwordErrorMessage(e));
+    } finally {
+      setResetBusy(false);
+    }
+  };
+
+  const handleConfirmPasswordReset = async () => {
+    if (resetCode.trim().length !== 6) {
+      showNotification("warning", tt("platform.toast.enterVerificationCode"));
+      return;
+    }
+    if (resetNewPassword.length < 8) {
+      showNotification("warning", tt("platform.toast.passwordTooShort"));
+      return;
+    }
+    setResetBusy(true);
+    try {
+      const me = await resetPasswordAndPersist({
+        email: resetEmail.trim(),
+        code: resetCode.trim(),
+        new_password: resetNewPassword,
+      });
+      setPlatformUser(me);
+      setAccessToken(getStoredAccessToken() ?? "");
+      setAuthPassword("");
+      closePasswordReset();
+      showNotification("success", tt("platform.toast.passwordReset"));
+    } catch (e) {
+      showNotification("error", passwordErrorMessage(e));
+    } finally {
+      setResetBusy(false);
+    }
+  };
+
+  const closeChangePassword = () => {
+    setChangePasswordOpen(false);
+    setCurrentPassword("");
+    setNewPassword("");
+    setShowChangePasswords(false);
+  };
+
+  const handleChangePassword = async () => {
+    if (!currentPassword) {
+      showNotification("warning", tt("platform.toast.enterCurrentPassword"));
+      return;
+    }
+    if (newPassword.length < 8) {
+      showNotification("warning", tt("platform.toast.passwordTooShort"));
+      return;
+    }
+    if (newPassword === currentPassword) {
+      showNotification("warning", tt("platform.errors.samePassword"));
+      return;
+    }
+    setChangingPassword(true);
+    try {
+      await changePassword(
+        { current_password: currentPassword, new_password: newPassword },
+        accessToken || undefined,
+      );
+      setAccessToken(getStoredAccessToken() ?? "");
+      closeChangePassword();
+      showNotification("success", tt("platform.toast.passwordChanged"));
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) {
+        await handleLogout();
+        showNotification("warning", tt("platform.toast.sessionExpired"));
+        return;
+      }
+      showNotification("error", passwordErrorMessage(e));
+    } finally {
+      setChangingPassword(false);
     }
   };
 
@@ -455,12 +601,13 @@ export function PlatformAccountPanel({
       setDeletePassword("");
       showNotification("success", tt("platform.toast.accountDeleted"));
     } catch (e) {
-      const rawMessage = e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e);
+      // Wrong password comes back as 400 "invalid password"; 401 means the session itself is gone.
       if (e instanceof ApiError && e.status === 401) {
-        showNotification("error", tt("platform.errors.invalidPassword"));
-      } else {
-        showNotification("error", mapAuthErrorMessage(rawMessage, "login", tt));
+        await handleLogout();
+        showNotification("warning", tt("platform.toast.sessionExpired"));
+        return;
       }
+      showNotification("error", passwordErrorMessage(e));
     } finally {
       setDeletingAccount(false);
     }
@@ -491,6 +638,7 @@ export function PlatformAccountPanel({
       setPlatformUser(me);
       setNicknameDraft(me.nickname);
       window.localStorage.setItem(API_NICKNAME_KEY, me.nickname);
+      onProfileChanged?.();
       showNotification("success", tt("platform.toast.nicknameUpdated"));
     } catch (e) {
       const rawMessage = e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e);
@@ -581,148 +729,8 @@ export function PlatformAccountPanel({
     }
   };
 
-  const renderProviderButtons = (compactMode: boolean) => (
-    <div className={`flex flex-wrap items-center justify-center gap-3 ${compactMode ? "mt-1" : ""}`}>
-      <button
-        type="button"
-        disabled={loading || linking !== null || providerLoginBusy || !accessToken || linkedProviders.minecraft}
-        onClick={() => void handleLink("minecraft")}
-        className={`interactive-press flex items-center gap-2 rounded-xl border border-white/20 bg-[#0078d4]/90 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-[#106ebe] disabled:opacity-60 ${
-          compactMode ? "min-w-[170px] justify-center shadow-lg" : ""
-        }`}
-        title={!launcherProfile.mc_uuid ? tt("platform.linkMicrosoftTitle") : undefined}
-      >
-        <span>Microsoft</span>
-        <span className="text-white/80">·</span>
-        <span>
-          {linkedProviders.minecraft
-            ? tt("platform.linked")
-            : linking === "minecraft"
-              ? tt("platform.linking")
-              : tt("platform.link")}
-        </span>
-      </button>
-      <button
-        type="button"
-        disabled={loading || linking !== null || providerLoginBusy || !accessToken || linkedProviders.ely}
-        onClick={() => void handleLink("ely")}
-        className={`interactive-press flex items-center gap-2 rounded-xl bg-[#2d7d46] px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:bg-[#248338] disabled:opacity-60 ${
-          compactMode ? "min-w-[170px] justify-center" : ""
-        }`}
-        title={!launcherProfile.ely_uuid ? tt("platform.linkElyTitle") : undefined}
-      >
-        <span>Ely.by</span>
-        <span className="text-white/80">·</span>
-        <span>
-          {linkedProviders.ely
-            ? tt("platform.linked")
-            : linking === "ely"
-              ? tt("platform.linking")
-              : tt("platform.link")}
-        </span>
-      </button>
-    </div>
-  );
-
-  if (compact && accessToken) {
-    return (
-      <div className="flex w-full flex-col items-center gap-3">
-        <div className="w-full rounded-xl border border-white/10 bg-black/30 p-3">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-white/45">
-            {tt("platform.accountManagement")}
-          </p>
-          <div className="relative mt-2">
-            <input
-              type="text"
-              value={nicknameDraft}
-              onChange={(e) => setNicknameDraft(e.target.value)}
-              onFocus={() => {
-                nicknameDraftFocusedRef.current = true;
-              }}
-              onBlur={() => {
-                nicknameDraftFocusedRef.current = false;
-              }}
-              className={`h-10 w-full rounded-xl border border-white/10 bg-black/35 px-3 text-sm text-white outline-none focus:border-emerald-400/30 ${
-                nicknameDraft ? "pr-9" : ""
-              }`}
-              placeholder={tt("platform.newNicknamePlaceholder")}
-            />
-            <InputClearButton
-              value={nicknameDraft}
-              onClear={() => setNicknameDraft("")}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2"
-              aria-label={tt("common.clear")}
-            />
-          </div>
-          <div className="mt-2 flex gap-2">
-            <button
-              type="button"
-              disabled={loading || linking !== null || providerLoginBusy}
-              onClick={() => void handleChangeNickname()}
-              className="interactive-press flex-1 rounded-xl border border-emerald-500/35 bg-emerald-600/20 px-3 py-2 text-xs font-semibold text-emerald-100 hover:bg-emerald-600/30 disabled:opacity-60"
-            >
-              {tt("platform.changeNickname")}
-            </button>
-              <button
-                type="button"
-                disabled={loading || linking !== null || providerLoginBusy}
-                onClick={() => void handleLogout()}
-                className="interactive-press rounded-xl border border-white/15 bg-black/30 px-3 py-2 text-xs font-semibold text-white/75 hover:bg-black/50 disabled:opacity-60"
-              >
-                {tt("platform.logout")}
-              </button>
-            </div>
-            <button
-              type="button"
-              disabled={loading || deletingAccount || linking !== null || providerLoginBusy}
-              onClick={() => {
-                setDeleteOpen((prev) => !prev);
-                setDeletePassword("");
-              }}
-              className="interactive-press mt-2 w-full rounded-xl border border-rose-500/30 bg-rose-600/10 px-3 py-2 text-xs font-semibold text-rose-100 hover:bg-rose-600/20 disabled:opacity-60"
-            >
-              {tt("platform.deleteAccount")}
-            </button>
-            {deleteOpen ? (
-              <div className="mt-2 space-y-2 rounded-xl border border-rose-500/20 bg-rose-950/30 p-2">
-                <p className="text-[11px] leading-relaxed text-rose-100/80">
-                  {tt("platform.deleteAccountHint")}
-                </p>
-                <div className="relative">
-                  <input
-                    type={showDeletePassword ? "text" : "password"}
-                    value={deletePassword}
-                    onChange={(e) => setDeletePassword(e.target.value)}
-                    className={`h-9 w-full rounded-lg border border-white/10 bg-black/40 px-3 text-sm text-white outline-none focus:border-rose-400/40 ${
-                      deletePassword ? "pr-9" : ""
-                    }`}
-                    placeholder={tt("platform.passwordPlaceholder")}
-                  />
-                  <InputClearButton
-                    value={deletePassword}
-                    onClear={() => setDeletePassword("")}
-                    className="absolute right-1 top-1/2 -translate-y-1/2"
-                    aria-label={tt("common.clear")}
-                  />
-                </div>
-                <button
-                  type="button"
-                  disabled={deletingAccount || loading}
-                  onClick={() => void handleDeleteAccount()}
-                  className="interactive-press w-full rounded-lg bg-rose-600/80 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-600 disabled:opacity-60"
-                >
-                  {deletingAccount ? tt("common.loading") : tt("platform.deleteAccountConfirm")}
-                </button>
-              </div>
-            ) : null}
-          </div>
-        {renderProviderButtons(true)}
-      </div>
-    );
-  }
-
   const inputClassName =
-    "h-12 w-full rounded-2xl border border-white/10 bg-black/35 px-4 text-[15px] text-white outline-none transition placeholder:text-white/30 focus:border-emerald-400/40 focus:bg-black/45";
+    "glass-control h-12 w-full rounded-2xl border px-4 text-[1rem] text-white outline-none transition placeholder:text-white/30";
 
   if (!accessToken) {
     return (
@@ -735,14 +743,122 @@ export function PlatformAccountPanel({
             {tt("platform.accountTitle")}
           </h2>
           <p className="mt-1.5 text-sm leading-relaxed text-white/50">
-            {mode === "signup" ? tt("platform.authHintSignup") : tt("platform.authHintLogin")}
+            {resetStep
+              ? tt("platform.reset.authHint")
+              : mode === "signup"
+                ? tt("platform.authHintSignup")
+                : tt("platform.authHintLogin")}
           </p>
         </div>
 
-        {mode === "signup" && signupStep === "verify" ? (
+        {resetStep ? (
+          <form
+            className="flex flex-col gap-5"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void (resetStep === "request" ? handleRequestPasswordReset() : handleConfirmPasswordReset());
+            }}
+          >
+            <div className="rounded-2xl border border-accent-to/25 bg-accent-from/10 px-5 py-6 shadow-inner">
+              <h3 className="text-center text-lg font-semibold text-white">{tt("platform.reset.title")}</h3>
+              <p className="mt-2 text-center text-sm leading-relaxed text-white/65">
+                {resetStep === "request"
+                  ? tt("platform.reset.requestHint")
+                  : tt("platform.reset.confirmHint", { email: resetEmail.trim() })}
+              </p>
+              {resetStep === "confirm" ? (
+                <p className="mt-1 text-center text-xs text-white/45">{tt("platform.emailSpamHint")}</p>
+              ) : null}
+
+              {resetStep === "request" ? (
+                <label className="mt-5 flex flex-col gap-2 text-[0.8125rem] font-semibold text-white/45">
+                  {tt("platform.emailLabel")}
+                  <div className="relative">
+                    <input
+                      type="email"
+                      autoFocus
+                      autoComplete="email"
+                      value={resetEmail}
+                      onChange={(e) => setResetEmail(e.target.value)}
+                      className={`${inputClassName} ${resetEmail ? "pr-10" : ""}`}
+                      placeholder={tt("platform.enterEmail")}
+                    />
+                    <InputClearButton
+                      value={resetEmail}
+                      onClear={() => setResetEmail("")}
+                      className="absolute right-2 top-1/2 -translate-y-1/2"
+                      aria-label={tt("common.clear")}
+                    />
+                  </div>
+                </label>
+              ) : (
+                <div className="mt-5 flex flex-col gap-4">
+                  <label className="flex flex-col gap-2 text-[0.8125rem] font-semibold text-white/45">
+                    {tt("platform.verificationCodeLabel")}
+                    <input
+                      ref={resetCodeInputRef}
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      value={resetCode}
+                      onChange={(e) => setResetCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      className="h-14 w-full rounded-2xl border border-accent-to/30 bg-ink-950/70 px-3 text-center text-2xl font-semibold tracking-[0.55em] text-white outline-none transition focus:bg-black/55"
+                      placeholder="••••••"
+                      maxLength={6}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-2 text-[0.8125rem] font-semibold text-white/45">
+                    {tt("platform.reset.newPasswordLabel")}
+                    <PasswordInput
+                      value={resetNewPassword}
+                      onChange={setResetNewPassword}
+                      visible={showResetPassword}
+                      onToggleVisible={() => setShowResetPassword((prev) => !prev)}
+                      placeholder={tt("platform.reset.newPasswordPlaceholder")}
+                      autoComplete="new-password"
+                      showLabel={tt("platform.showPassword")}
+                      hideLabel={tt("platform.hidePassword")}
+                      clearLabel={tt("common.clear")}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    disabled={resetBusy}
+                    onClick={() => void handleRequestPasswordReset()}
+                    className="interactive-press self-center text-sm font-semibold text-accent-hi/90 underline-offset-2 hover:text-white hover:underline disabled:opacity-60"
+                  >
+                    {tt("platform.resendVerificationCode")}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                disabled={resetBusy}
+                onClick={() => (resetStep === "confirm" ? setResetStep("request") : closePasswordReset())}
+                className="btn btn-soft btn-lg h-12 flex-1 rounded-2xl"
+              >
+                {tt("platform.back")}
+              </button>
+              <button
+                type="submit"
+                disabled={resetBusy || (resetStep === "confirm" && resetCode.length !== 6)}
+                className="btn btn-accent btn-lg h-12 flex-[1.5] rounded-2xl"
+              >
+                {resetBusy
+                  ? tt("common.loading")
+                  : resetStep === "request"
+                    ? tt("platform.sendVerificationCode")
+                    : tt("platform.reset.submit")}
+              </button>
+            </div>
+          </form>
+        ) : mode === "signup" && signupStep === "verify" ? (
           <div className="flex flex-col gap-5">
-            <div className="rounded-2xl border border-emerald-400/20 bg-gradient-to-b from-emerald-500/10 to-black/20 px-5 py-7 text-center shadow-inner">
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-200/70">
+            <div className="rounded-2xl border border-accent-to/25 bg-accent-from/10 px-5 py-7 text-center shadow-inner">
+              <p className="text-[0.75rem] font-bold text-accent-hi/70">
                 {tt("platform.verificationStepLabel")}
               </p>
               <h3 className="mt-2 text-lg font-semibold text-white">
@@ -773,7 +889,7 @@ export function PlatformAccountPanel({
                         void handleAuth();
                       }
                     }}
-                    className={`h-14 w-full rounded-2xl border border-emerald-400/25 bg-black/45 px-3 text-center text-2xl font-semibold tracking-[0.55em] text-white outline-none transition focus:border-emerald-400/50 focus:bg-black/55 ${
+                    className={`h-14 w-full rounded-2xl border border-accent-to/30 bg-ink-950/70 px-3 text-center text-2xl font-semibold tracking-[0.55em] text-white outline-none transition focus:bg-black/55 ${
                       verificationCode ? "pr-10" : ""
                     }`}
                     placeholder="••••••"
@@ -802,7 +918,7 @@ export function PlatformAccountPanel({
                 type="button"
                 disabled={loading || sendingCode}
                 onClick={() => void handleSendVerificationCode()}
-                className="interactive-press mt-5 text-sm font-semibold text-emerald-200/80 underline-offset-2 hover:text-emerald-100 hover:underline disabled:opacity-60"
+                className="interactive-press mt-5 text-sm font-semibold text-accent-hi/90 underline-offset-2 hover:text-white hover:underline disabled:opacity-60"
               >
                 {sendingCode
                   ? tt("common.loading")
@@ -840,10 +956,10 @@ export function PlatformAccountPanel({
               ref={modeTabsRef}
               role="tablist"
               aria-label={tt("platform.accountTitle")}
-              className="glass-toolbar relative grid h-11 grid-cols-2 items-center overflow-hidden p-1"
+              className="seg-track relative grid h-11 grid-cols-2 items-center overflow-hidden p-1"
             >
               <div
-                className="pointer-events-none absolute top-1 bottom-1 rounded-lg bg-white/90 transition-all duration-200 ease-out"
+                className="pointer-events-none absolute top-1 bottom-1 rounded-md seg-indicator transition-all duration-200 ease-out"
                 style={{
                   left: `${modeTabIndicator.left}px`,
                   width: `${modeTabIndicator.width}px`,
@@ -863,7 +979,7 @@ export function PlatformAccountPanel({
                   setSignupStep("form");
                 }}
                 className={`interactive-press relative z-10 h-full rounded-xl text-sm font-semibold transition-colors ${
-                  mode === "login" ? "text-black" : "text-white/70 hover:text-white"
+                  mode === "login" ? "text-white" : "text-white/70 hover:text-white"
                 }`}
               >
                 {tt("platform.signIn")}
@@ -881,7 +997,7 @@ export function PlatformAccountPanel({
                   setSignupStep("form");
                 }}
                 className={`interactive-press relative z-10 h-full rounded-xl text-sm font-semibold transition-colors ${
-                  mode === "signup" ? "text-black" : "text-white/70 hover:text-white"
+                  mode === "signup" ? "text-white" : "text-white/70 hover:text-white"
                 }`}
               >
                 {tt("platform.signUp")}
@@ -889,7 +1005,7 @@ export function PlatformAccountPanel({
             </div>
 
             <div className="flex flex-col">
-              <label className="flex flex-col gap-2 text-[11px] font-semibold uppercase tracking-wider text-white/45">
+              <label className="flex flex-col gap-2 text-[0.8125rem] font-semibold text-white/45">
                 {mode === "signup" ? tt("platform.emailLabel") : tt("platform.emailOrNicknameLabel")}
                 <div className="relative">
                   <input
@@ -909,7 +1025,7 @@ export function PlatformAccountPanel({
                   />
                 </div>
                 <span
-                  className={`text-[11px] font-normal normal-case tracking-normal text-white/45 transition-opacity duration-200 ${
+                  className={`text-[0.8125rem] font-normal normal-case tracking-normal text-white/45 transition-opacity duration-200 ${
                     mode === "signup" && emailVerificationRequired
                       ? "opacity-100"
                       : "pointer-events-none h-0 overflow-hidden opacity-0"
@@ -927,7 +1043,7 @@ export function PlatformAccountPanel({
               >
                 <div className="min-h-0 overflow-hidden">
                   <label
-                    className={`mt-5 flex flex-col gap-2 text-[11px] font-semibold uppercase tracking-wider text-white/45 transition-opacity duration-200 ${
+                    className={`mt-5 flex flex-col gap-2 text-[0.8125rem] font-semibold text-white/45 transition-opacity duration-200 ${
                       mode === "signup" ? "opacity-100" : "opacity-0"
                     }`}
                   >
@@ -953,7 +1069,7 @@ export function PlatformAccountPanel({
               </div>
             </div>
 
-            <label className="flex flex-col gap-2 text-[11px] font-semibold uppercase tracking-wider text-white/45">
+            <label className="flex flex-col gap-2 text-[0.8125rem] font-semibold text-white/45">
               {tt("platform.passwordLabel")}
               <div className="relative flex items-center">
                 <input
@@ -988,6 +1104,16 @@ export function PlatformAccountPanel({
                 </button>
               </div>
             </label>
+            {mode === "login" && emailVerificationRequired ? (
+              <button
+                type="button"
+                disabled={loading}
+                onClick={openPasswordReset}
+                className="interactive-press -mt-3 self-end text-[0.8125rem] font-semibold text-accent-hi/85 underline-offset-2 hover:text-white hover:underline disabled:opacity-60"
+              >
+                {tt("platform.reset.forgotLink")}
+              </button>
+            ) : null}
 
             <div className="relative min-h-[3.25rem]">
               <label
@@ -1049,7 +1175,7 @@ export function PlatformAccountPanel({
                   void handleAuth();
                 }
               }}
-              className="interactive-press mt-1 h-12 w-full rounded-2xl bg-[#2d7d46] px-4 text-[15px] font-semibold text-white shadow-lg transition hover:bg-[#248338] disabled:opacity-60"
+              className="interactive-press mt-1 h-12 w-full rounded-2xl bg-[#2d7d46] px-4 text-[1rem] font-semibold text-white shadow-lg transition hover:bg-[#248338] disabled:opacity-60"
             >
               {loading || sendingCode
                 ? tt("common.loading")
@@ -1073,7 +1199,7 @@ export function PlatformAccountPanel({
                   type="button"
                   disabled={loading || sendingCode || discordBusy}
                   onClick={() => void handleDiscordAuth()}
-                  className="interactive-press flex h-12 w-full items-center justify-center gap-3 rounded-2xl border border-[#5865F2]/40 bg-[#5865F2]/18 px-4 text-[15px] font-semibold text-[#d7dbff] transition hover:bg-[#5865F2]/28 disabled:opacity-60"
+                  className="interactive-press flex h-12 w-full items-center justify-center gap-3 rounded-2xl border border-[#5865F2]/40 bg-[#5865F2]/18 px-4 text-[1rem] font-semibold text-[#d7dbff] transition hover:bg-[#5865F2]/28 disabled:opacity-60"
                 >
                   <img
                     src="/launcher-assets/ds.png"
@@ -1091,42 +1217,42 @@ export function PlatformAccountPanel({
     );
   }
 
+  const nicknameUnchanged = nicknameDraft.trim() === (platformUser?.nickname ?? "").trim();
+  const busy = loading || linking !== null || providerLoginBusy;
+  const isMinecraftLinked = linkedProviders.minecraft || linkedIdentity.minecraft;
+  const isElyLinked = linkedProviders.ely || Boolean(linkedIdentity.ely);
+  const elyLinkedName = linkedIdentity.ely || (linkedProviders.ely ? launcherProfile.ely_username : null);
+
   return (
-    <div
-      data-tour-id="tour-platform-register"
-      className="w-full rounded-2xl border border-white/10 bg-black/20 px-6 py-6"
-    >
-      <div className="mb-4">
-        <h2 className="text-sm font-semibold text-white/90">{tt("platform.accountTitle")}</h2>
-      </div>
-
-      <div className="flex flex-col gap-4">
-          <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/30 px-4 py-3">
-            <div className="min-w-0 flex-1">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-white/45">
-                {tt("platform.launcherNickname")}
-              </p>
-              <NicknameWithSponsor
-                nickname={launcherNickname || "—"}
-                isSponsor={platformUser?.is_sponsor}
-                sponsorTitle={tt("common.sponsor")}
-                className="mt-0.5 truncate text-sm font-semibold text-emerald-100/95"
-              />
-              <p className="mt-2 text-[10px] font-bold uppercase tracking-wider text-white/45">
-                {tt("platform.inGameNickname")}
-              </p>
-              <p className="mt-0.5 truncate text-sm font-semibold text-white/90">{gameNickname || "—"}</p>
-            </div>
-            <span className="rounded-md bg-emerald-500/15 px-2 py-1 text-[10px] font-semibold text-emerald-100">
-              Online
-            </span>
+    <div data-tour-id="tour-platform-register" className="mx-auto grid w-full max-w-4xl gap-4 lg:grid-cols-2">
+      <section className="glass-panel px-5 py-5 lg:col-span-2">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-bold text-white/45">{tt("platform.accountTitle")}</p>
+            <NicknameWithSponsor
+              nickname={launcherNickname || "—"}
+              isSponsor={platformUser?.is_sponsor}
+              sponsorTitle={tt("common.sponsor")}
+              className="mt-1 truncate text-lg font-semibold text-white"
+              as="p"
+            />
+            <p className="mt-0.5 truncate text-sm text-white/45">{platformUser?.email?.trim() || "—"}</p>
           </div>
+          <span className="rounded-md bg-emerald-500/15 px-2 py-1 text-[0.75rem] font-semibold text-emerald-100">
+            {tt("platform.settings.online")}
+          </span>
+        </div>
 
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <div className="rounded-xl border border-white/10 bg-black/30 px-4 py-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-white/45">
-              {tt("platform.accountManagement")}
-            </p>
-            <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+            <p className="text-[0.75rem] font-bold text-white/45">{tt("platform.launcherNickname")}</p>
+            <form
+              className="mt-2 flex gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void handleChangeNickname();
+              }}
+            >
               <div className="relative min-w-0 flex-1">
                 <input
                   type="text"
@@ -1138,7 +1264,7 @@ export function PlatformAccountPanel({
                   onBlur={() => {
                     nicknameDraftFocusedRef.current = false;
                   }}
-                  className={`h-10 w-full rounded-xl border border-white/10 bg-black/35 px-3 text-sm text-white outline-none focus:border-emerald-400/30 ${
+                  className={`h-10 w-full glass-control rounded-xl px-3 text-sm text-white outline-none ${
                     nicknameDraft ? "pr-9" : ""
                   }`}
                   placeholder={tt("platform.newNicknamePlaceholder")}
@@ -1151,101 +1277,321 @@ export function PlatformAccountPanel({
                 />
               </div>
               <button
-                type="button"
-                disabled={loading || linking !== null || providerLoginBusy}
-                onClick={() => void handleChangeNickname()}
-                className="interactive-press rounded-xl border border-emerald-500/35 bg-emerald-600/20 px-4 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-600/30 disabled:opacity-60"
+                type="submit"
+                disabled={busy || nicknameUnchanged}
+                className="interactive-press rounded-xl border border-accent-to/40 bg-accent-from/20 px-4 py-2 text-sm font-semibold text-accent-hi hover:bg-accent-from/30 disabled:opacity-50"
               >
-                {tt("platform.changeNickname")}
+                {tt("common.save")}
               </button>
-              <button
-                type="button"
-                disabled={loading || linking !== null || providerLoginBusy}
-                onClick={() => void handleLogout()}
-                className="interactive-press rounded-xl border border-white/15 bg-black/30 px-4 py-2 text-sm font-semibold text-white/75 hover:bg-black/50 disabled:opacity-60"
-              >
-                {tt("platform.logout")}
-              </button>
-            </div>
-            <div className="mt-3 rounded-xl border border-rose-500/25 bg-rose-950/25 px-3 py-3">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-rose-200/70">
-                {tt("platform.dangerZone")}
-              </p>
-              <p className="mt-1 text-xs leading-relaxed text-white/55">
-                {tt("platform.deleteAccountHint")}
-              </p>
-              {!deleteOpen ? (
-                <button
-                  type="button"
-                  disabled={loading || deletingAccount || linking !== null || providerLoginBusy}
-                  onClick={() => setDeleteOpen(true)}
-                  className="interactive-press mt-3 rounded-xl border border-rose-500/35 bg-rose-600/15 px-4 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-600/25 disabled:opacity-60"
-                >
-                  {tt("platform.deleteAccount")}
-                </button>
-              ) : (
-                <div className="mt-3 space-y-2">
-                  <div className="relative flex items-center">
-                    <input
-                      type={showDeletePassword ? "text" : "password"}
-                      value={deletePassword}
-                      onChange={(e) => setDeletePassword(e.target.value)}
-                      className={`h-10 w-full rounded-xl border border-white/10 bg-black/35 px-3 text-sm text-white outline-none focus:border-rose-400/40 ${
-                        deletePassword ? "pr-[4.5rem]" : "pr-11"
-                      }`}
-                      placeholder={tt("platform.passwordPlaceholder")}
-                      autoComplete="current-password"
-                    />
-                    <InputClearButton
-                      value={deletePassword}
-                      onClear={() => setDeletePassword("")}
-                      className="absolute right-10 top-1/2 -translate-y-1/2"
-                      aria-label={tt("common.clear")}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowDeletePassword((prev) => !prev)}
-                      className="interactive-press absolute inset-y-0 right-2 my-auto flex h-7 w-7 items-center justify-center rounded-md hover:bg-white/10"
-                      aria-label={
-                        showDeletePassword ? tt("platform.hidePassword") : tt("platform.showPassword")
-                      }
-                    >
-                      <img
-                        src={showDeletePassword ? "/launcher-assets/hide.png" : "/launcher-assets/show.png"}
-                        alt=""
-                        className="h-4 w-4 object-contain opacity-80"
-                      />
-                    </button>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      disabled={deletingAccount || loading}
-                      onClick={() => void handleDeleteAccount()}
-                      className="interactive-press rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500 disabled:opacity-60"
-                    >
-                      {deletingAccount ? tt("common.loading") : tt("platform.deleteAccountConfirm")}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={deletingAccount}
-                      onClick={() => {
-                        setDeleteOpen(false);
-                        setDeletePassword("");
-                      }}
-                      className="interactive-press rounded-xl border border-white/15 bg-black/30 px-4 py-2 text-sm font-semibold text-white/70 hover:bg-black/50 disabled:opacity-60"
-                    >
-                      {tt("platform.back")}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
+            </form>
+            <p className="mt-2 text-[0.75rem] text-white/40">{tt("platform.settings.nicknameHint")}</p>
           </div>
 
-          <div className="h-px w-full bg-white/10" />
-          {renderProviderButtons(false)}
+          <div className="rounded-xl border border-white/10 bg-black/30 px-4 py-3">
+            <p className="text-[0.75rem] font-bold text-white/45">{tt("platform.inGameNickname")}</p>
+            <p className="mt-2 flex h-10 items-center truncate text-sm font-semibold text-white/90">
+              {gameNickname || "—"}
+            </p>
+            <p className="mt-2 text-[0.75rem] text-white/40">{tt("platform.settings.gameNicknameHint")}</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="glass-panel flex flex-col gap-3 px-5 py-5">
+        <div>
+          <p className="text-xs font-bold text-white/45">{tt("platform.settings.linkedTitle")}</p>
+          <p className="mt-1 text-[0.8125rem] text-white/40">{tt("platform.settings.linkedHint")}</p>
+        </div>
+        <ProviderRow
+          icon={<MicrosoftIcon className="h-5 w-5" />}
+          name="Microsoft"
+          status={isMinecraftLinked ? tt("platform.linked") : tt("platform.settings.notLinked")}
+          linked={isMinecraftLinked}
+          linking={linking === "minecraft"}
+          disabled={busy}
+          linkLabel={tt("platform.link")}
+          linkingLabel={tt("platform.linking")}
+          title={!launcherProfile.mc_uuid ? tt("platform.linkMicrosoftTitle") : undefined}
+          onLink={() => void handleLink("minecraft")}
+        />
+        <ProviderRow
+          icon={<ElyByIcon className="h-5 w-5 text-[0.8125rem]" />}
+          name="Ely.by"
+          status={
+            isElyLinked
+              ? elyLinkedName
+                ? tt("platform.settings.linkedAs", { name: elyLinkedName })
+                : tt("platform.linked")
+              : tt("platform.settings.notLinked")
+          }
+          linked={isElyLinked}
+          linking={linking === "ely"}
+          disabled={busy}
+          linkLabel={tt("platform.link")}
+          linkingLabel={tt("platform.linking")}
+          title={!launcherProfile.ely_uuid ? tt("platform.linkElyTitle") : undefined}
+          onLink={() => void handleLink("ely")}
+        />
+      </section>
+
+      <section className="glass-panel flex flex-col gap-3 px-5 py-5">
+        <div>
+          <p className="text-xs font-bold text-white/45">{tt("platform.settings.sessionTitle")}</p>
+          <p className="mt-1 text-[0.8125rem] text-white/40">{tt("platform.settings.sessionHint")}</p>
+        </div>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void handleLogout()}
+          className="interactive-press self-start rounded-xl border border-white/15 bg-black/30 px-4 py-2 text-sm font-semibold text-white/75 hover:bg-black/50 disabled:opacity-60"
+        >
+          {tt("platform.logout")}
+        </button>
+
+        <div className="rounded-xl border border-white/10 bg-black/30 px-3 py-3">
+          <p className="text-[0.75rem] font-bold text-white/45">{tt("platform.changePassword.title")}</p>
+          <p className="mt-1 text-xs leading-relaxed text-white/55">{tt("platform.changePassword.hint")}</p>
+          {!changePasswordOpen ? (
+            <button
+              type="button"
+              disabled={busy || changingPassword}
+              onClick={() => setChangePasswordOpen(true)}
+              className="btn btn-tint btn-sm mt-3"
+            >
+              {tt("platform.changePassword.open")}
+            </button>
+          ) : (
+            <form
+              className="mt-3 space-y-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void handleChangePassword();
+              }}
+            >
+              <PasswordInput
+                size="sm"
+                autoFocus
+                value={currentPassword}
+                onChange={setCurrentPassword}
+                visible={showChangePasswords}
+                onToggleVisible={() => setShowChangePasswords((prev) => !prev)}
+                placeholder={tt("platform.changePassword.currentPlaceholder")}
+                autoComplete="current-password"
+                showLabel={tt("platform.showPassword")}
+                hideLabel={tt("platform.hidePassword")}
+                clearLabel={tt("common.clear")}
+              />
+              <PasswordInput
+                size="sm"
+                value={newPassword}
+                onChange={setNewPassword}
+                visible={showChangePasswords}
+                onToggleVisible={() => setShowChangePasswords((prev) => !prev)}
+                placeholder={tt("platform.reset.newPasswordPlaceholder")}
+                autoComplete="new-password"
+                showLabel={tt("platform.showPassword")}
+                hideLabel={tt("platform.hidePassword")}
+                clearLabel={tt("common.clear")}
+              />
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button type="submit" disabled={changingPassword || loading} className="btn btn-accent btn-sm">
+                  {changingPassword ? tt("common.loading") : tt("common.save")}
+                </button>
+                <button
+                  type="button"
+                  disabled={changingPassword}
+                  onClick={closeChangePassword}
+                  className="btn btn-ghost btn-sm"
+                >
+                  {tt("platform.back")}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+
+        <div className="mt-auto rounded-xl border border-rose-500/25 bg-rose-950/25 px-3 py-3">
+          <p className="text-[0.75rem] font-bold text-rose-200/70">{tt("platform.dangerZone")}</p>
+          <p className="mt-1 text-xs leading-relaxed text-white/55">{tt("platform.deleteAccountHint")}</p>
+          {!deleteOpen ? (
+            <button
+              type="button"
+              disabled={busy || deletingAccount}
+              onClick={() => setDeleteOpen(true)}
+              className="interactive-press mt-3 rounded-xl border border-rose-500/35 bg-rose-600/15 px-4 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-600/25 disabled:opacity-60"
+            >
+              {tt("platform.deleteAccount")}
+            </button>
+          ) : (
+            <form
+              className="mt-3 space-y-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void handleDeleteAccount();
+              }}
+            >
+              <div className="relative flex items-center">
+                <input
+                  type={showDeletePassword ? "text" : "password"}
+                  autoFocus
+                  value={deletePassword}
+                  onChange={(e) => setDeletePassword(e.target.value)}
+                  className={`h-10 w-full rounded-xl border border-white/10 bg-black/35 px-3 text-sm text-white outline-none focus:border-rose-400/40 ${
+                    deletePassword ? "pr-[4.5rem]" : "pr-11"
+                  }`}
+                  placeholder={tt("platform.passwordPlaceholder")}
+                  autoComplete="current-password"
+                />
+                <InputClearButton
+                  value={deletePassword}
+                  onClear={() => setDeletePassword("")}
+                  className="absolute right-10 top-1/2 -translate-y-1/2"
+                  aria-label={tt("common.clear")}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowDeletePassword((prev) => !prev)}
+                  className="interactive-press absolute inset-y-0 right-2 my-auto flex h-7 w-7 items-center justify-center rounded-md hover:bg-white/10"
+                  aria-label={showDeletePassword ? tt("platform.hidePassword") : tt("platform.showPassword")}
+                >
+                  <img
+                    src={showDeletePassword ? "/launcher-assets/hide.png" : "/launcher-assets/show.png"}
+                    alt=""
+                    className="h-4 w-4 object-contain opacity-80"
+                  />
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="submit"
+                  disabled={deletingAccount || loading}
+                  className="interactive-press rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500 disabled:opacity-60"
+                >
+                  {deletingAccount ? tt("common.loading") : tt("platform.deleteAccountConfirm")}
+                </button>
+                <button
+                  type="button"
+                  disabled={deletingAccount}
+                  onClick={() => {
+                    setDeleteOpen(false);
+                    setDeletePassword("");
+                  }}
+                  className="interactive-press rounded-xl border border-white/15 bg-black/30 px-4 py-2 text-sm font-semibold text-white/70 hover:bg-black/50 disabled:opacity-60"
+                >
+                  {tt("platform.back")}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function PasswordInput({
+  value,
+  onChange,
+  visible,
+  onToggleVisible,
+  placeholder,
+  autoComplete,
+  autoFocus,
+  showLabel,
+  hideLabel,
+  clearLabel,
+  size = "lg",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  visible: boolean;
+  onToggleVisible: () => void;
+  placeholder: string;
+  autoComplete: "current-password" | "new-password";
+  autoFocus?: boolean;
+  showLabel: string;
+  hideLabel: string;
+  clearLabel: string;
+  size?: "sm" | "lg";
+}) {
+  const sizeClassName =
+    size === "lg" ? "h-12 rounded-2xl px-4 text-[1rem]" : "h-10 rounded-xl px-3 text-sm";
+  return (
+    <div className="relative flex items-center">
+      <input
+        type={visible ? "text" : "password"}
+        autoFocus={autoFocus}
+        autoComplete={autoComplete}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={`glass-control w-full border text-white outline-none transition placeholder:text-white/30 ${sizeClassName} ${
+          value ? "pr-[4.75rem]" : "pr-12"
+        }`}
+        placeholder={placeholder}
+      />
+      <InputClearButton
+        value={value}
+        onClear={() => onChange("")}
+        className="absolute right-11 top-1/2 -translate-y-1/2"
+        aria-label={clearLabel}
+      />
+      <button
+        type="button"
+        onClick={onToggleVisible}
+        className="interactive-press absolute inset-y-0 right-2 my-auto flex h-8 w-8 items-center justify-center rounded-lg hover:bg-white/10"
+        aria-label={visible ? hideLabel : showLabel}
+      >
+        <img
+          src={visible ? "/launcher-assets/hide.png" : "/launcher-assets/show.png"}
+          alt=""
+          className="h-4 w-4 object-contain opacity-80"
+        />
+      </button>
+    </div>
+  );
+}
+
+function ProviderRow({
+  icon,
+  name,
+  status,
+  linked,
+  linking,
+  disabled,
+  linkLabel,
+  linkingLabel,
+  title,
+  onLink,
+}: {
+  icon: ReactNode;
+  name: string;
+  status: string;
+  linked: boolean;
+  linking: boolean;
+  disabled: boolean;
+  linkLabel: string;
+  linkingLabel: string;
+  title?: string;
+  onLink: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/30 px-3 py-2.5">
+      {icon}
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold text-white/90">{name}</p>
+        <p className={`truncate text-[0.75rem] ${linked ? "text-emerald-300/85" : "text-white/45"}`}>{status}</p>
       </div>
+      {linked ? null : (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={onLink}
+          title={title}
+          className="interactive-press shrink-0 rounded-lg border border-white/15 bg-black/30 px-3 py-1.5 text-xs font-semibold text-white/75 hover:bg-black/50 disabled:opacity-60"
+        >
+          {linking ? linkingLabel : linkLabel}
+        </button>
+      )}
     </div>
   );
 }

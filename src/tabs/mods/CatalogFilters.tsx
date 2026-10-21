@@ -54,7 +54,7 @@ function SideChipRow({
 }) {
   return (
     <div className="space-y-1">
-      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/40">
+      <div className="text-[0.75rem] font-semibold text-white/40">
         {label}
       </div>
       <div className="flex flex-wrap gap-1">
@@ -65,9 +65,9 @@ function SideChipRow({
               key={opt.id}
               type="button"
               onClick={() => onChange(opt.id)}
-              className={`interactive-press rounded-lg px-2 py-0.5 text-[10px] font-semibold ${
+              className={`interactive-press rounded-lg px-2 py-0.5 text-[0.75rem] font-semibold ${
                 active
-                  ? "bg-white/90 text-black"
+                  ? "seg-on"
                   : "bg-white/10 text-white/65 hover:bg-white/15"
               }`}
             >
@@ -112,17 +112,17 @@ function SortDropdown({
 
   return (
     <div className="space-y-1">
-      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/40">
+      <div className="text-[0.75rem] font-semibold text-white/40">
         {tt("mods.filters.sort")}
       </div>
       <div ref={rootRef} className="relative">
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="interactive-press flex w-full items-center justify-between gap-2 rounded-xl border border-white/15 bg-black/60 px-2.5 py-1.5 text-left text-xs font-semibold text-white shadow-soft hover:border-white/40"
+          className="interactive-press flex w-full items-center justify-between gap-2 rounded-xl border border-white/15 bg-black/60 px-3 py-1.5 text-left text-xs font-semibold text-white shadow-soft hover:border-white/20"
         >
           <span className="truncate">{tt(current.key)}</span>
-          <span className="text-[10px] text-white/45">{open ? "▴" : "▾"}</span>
+          <span className="text-[0.75rem] text-white/45">{open ? "▴" : "▾"}</span>
         </button>
         {open && (
           <div className="absolute left-0 right-0 top-full z-[120] mt-1 overflow-hidden glass-popover p-1 text-xs">
@@ -138,7 +138,7 @@ function SortDropdown({
                   }}
                   className={`interactive-press flex w-full items-center rounded-xl px-3 py-1.5 text-left transition-colors ${
                     active
-                      ? "bg-white/90 font-semibold text-black"
+                      ? "seg-on font-semibold"
                       : "text-white/80 hover:bg-white/10"
                   }`}
                 >
@@ -180,14 +180,14 @@ export function CatalogFilters({
   return (
     <aside className="glass-panel relative z-[40] flex w-[200px] shrink-0 flex-col gap-3 p-3">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/45">
+        <span className="text-[0.75rem] font-semibold text-white/45">
           {tt("mods.filters.title")}
         </span>
         {hasActiveFilters && (
           <button
             type="button"
             onClick={onReset}
-            className="interactive-press rounded-lg bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-white/70 hover:bg-white/20"
+            className="interactive-press rounded-lg bg-white/10 px-2 py-0.5 text-[0.75rem] font-semibold text-white/70 hover:bg-white/20"
           >
             {tt("mods.filters.reset")}
           </button>
@@ -217,9 +217,9 @@ export function CatalogFilters({
         <button
           type="button"
           onClick={() => onInstalledOnlyChange(!installedOnly)}
-          className={`interactive-press w-full rounded-xl px-2.5 py-1.5 text-left text-[11px] font-semibold ${
+          className={`interactive-press w-full rounded-xl px-3 py-1.5 text-left text-[0.8125rem] font-semibold ${
             installedOnly
-              ? "bg-emerald-500/90 text-white"
+              ? "bg-accent-from/20 text-white"
               : "bg-white/10 text-white/70 hover:bg-white/20"
           }`}
         >
@@ -229,7 +229,7 @@ export function CatalogFilters({
 
       {categories.length > 0 && (
         <div className="flex min-h-0 flex-1 flex-col gap-1.5">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/40">
+          <div className="text-[0.75rem] font-semibold text-white/40">
             {tt("mods.filters.categories")}
             {selectedCategories.length > 0
               ? ` · ${selectedCategories.length}`
@@ -243,9 +243,9 @@ export function CatalogFilters({
                   key={cat.id}
                   type="button"
                   onClick={() => onToggleCategory(cat.id)}
-                  className={`interactive-press rounded-lg px-2 py-1 text-left text-[11px] capitalize leading-snug ${
+                  className={`interactive-press rounded-lg px-2 py-1 text-left text-[0.8125rem] capitalize leading-snug ${
                     selected
-                      ? "bg-white/90 font-semibold text-black"
+                      ? "seg-on font-semibold"
                       : "text-white/70 hover:bg-white/10"
                   }`}
                 >

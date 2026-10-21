@@ -492,13 +492,6 @@ pub fn import_custom_version(json_path: String, jar_path: Option<String>) -> Res
     Ok(version_id.to_string())
 }
 
-#[tauri::command]
-pub async fn fetch_vanilla_releases() -> Result<Vec<VersionSummary>, String> {
-    let mut versions = load_all_versions().await?;
-    versions.retain(|v| v.version_type == "release");
-    Ok(versions)
-}
-
 
 #[tauri::command]
 pub async fn fetch_forge_versions() -> Result<Vec<ForgeVersionSummary>, String> {
