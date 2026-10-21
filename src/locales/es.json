@@ -1182,10 +1182,10 @@
     "incomingTitle": "Solicitudes",
     "incomingCount": "Solicitudes · {{count}}",
     "signInFirst": "Inicia sesión primero en la pestaña Cuentas.",
-    "authGateTitle": "Se necesita una cuenta 16Launcher",
+    "authGateTitle": "Se necesita una cuenta Nexus Launcher",
     "authGateBody": "Amigos, estado en línea y salas están disponibles tras iniciar sesión en la cuenta de plataforma.",
     "emptyTitle": "Aún no hay amigos",
-    "emptyBody": "Escribe un apodo arriba y envía una solicitud - o invita a tus amigos a crear una cuenta 16Launcher.",
+    "emptyBody": "Escribe un apodo arriba y envía una solicitud - o invita a tus amigos a crear una cuenta Nexus Launcher.",
     "emptyFocusAdd": "Añadir amigo",
     "noIncoming": "No hay solicitudes nuevas.",
     "accept": "Aceptar",
@@ -1213,7 +1213,7 @@
     "lastSeenNever": "no ha estado en línea recientemente",
     "openRooms": "Ir a salas",
     "howToTitle": "Cómo funciona",
-    "howToStep1": "Escribe un apodo de 16Launcher y envía una solicitud.",
+    "howToStep1": "Escribe un apodo de Nexus Launcher y envía una solicitud.",
     "howToStep2": "Cuando la acepten, aparecerán en tu lista.",
     "howToStep3": "Mira quién está en línea y cuándo abrió el launcher.",
     "howToStep4": "Únete a la sala de un amigo desde esta pestaña.",
@@ -1255,7 +1255,7 @@
     "statYours": "Tus salas",
     "statFriends": "Salas de amigos",
     "signInFirst": "Inicia sesión primero en la pestaña Cuentas.",
-    "authGateTitle": "Se necesita una cuenta 16Launcher",
+    "authGateTitle": "Se necesita una cuenta Nexus Launcher",
     "authGateBody": "Crear salas y jugar con amigos está disponible tras iniciar sesión en la cuenta de plataforma.",
     "emptyTitle": "Aún no hay salas",
     "emptyBody": "Crea una sala o únete por nombre - tus amigos podrán unirse.",
@@ -1397,7 +1397,7 @@
     "items": {
       "welcome": {
         "title": "Bienvenido a bordo",
-        "description": "Crea tu cuenta de 16Launcher."
+        "description": "Crea tu cuenta de Nexus Launcher."
       },
       "identity_linked": {
         "title": "Identidad confirmada",
@@ -1409,7 +1409,7 @@
       },
       "first_launch": {
         "title": "Al mundo",
-        "description": "Inicia Minecraft desde 16Launcher por primera vez."
+        "description": "Inicia Minecraft desde Nexus Launcher por primera vez."
       },
       "ten_launches": {
         "title": "Habitual",
@@ -1459,7 +1459,7 @@
     }
   },
   "platform": {
-    "accountTitle": "Cuenta 16Launcher",
+    "accountTitle": "Cuenta Nexus Launcher",
     "accountManagement": "Gestión de cuentas",
     "signIn": "Iniciar sesión",
     "signUp": "Registrarse",
@@ -1488,7 +1488,7 @@
     "dangerZone": "Zona de peligro",
     "deleteAccount": "Eliminar cuenta",
     "deleteAccountConfirm": "Eliminar permanentemente",
-    "deleteAccountHint": "Tu cuenta de 16Launcher y los datos relacionados en el servidor se eliminarán de forma permanente. Se requiere tu contraseña actual.",
+    "deleteAccountHint": "Tu cuenta de Nexus Launcher y los datos relacionados en el servidor se eliminarán de forma permanente. Se requiere tu contraseña actual.",
     "linked": "Vinculado",
     "linking": "Vinculando…",
     "link": "Vincular",
@@ -1503,12 +1503,12 @@
     "linkElyTitle": "Inicie sesión con Ely.by y luego haga clic en Vincular nuevamente",
     "orDivider": "o",
     "continueWithDiscord": "Continuar con Discord",
-    "authHintLogin": "Inicia sesión en tu cuenta 16Launcher para sincronizar progreso y amigos.",
-    "authHintSignup": "Crea una cuenta 16Launcher: solo te llevará un par de minutos.",
+    "authHintLogin": "Inicia sesión en tu cuenta Nexus Launcher para sincronizar progreso y amigos.",
+    "authHintSignup": "Crea una cuenta Nexus Launcher: solo te llevará un par de minutos.",
     "reset": {
       "forgotLink": "¿Olvidaste tu contraseña?",
       "title": "Restablecer contraseña",
-      "authHint": "Recupera el acceso a tu cuenta 16Launcher.",
+      "authHint": "Recupera el acceso a tu cuenta Nexus Launcher.",
       "requestHint": "Introduce el email de tu cuenta y te enviaremos un código para restablecer la contraseña.",
       "confirmHint": "Si {{email}} está registrado, te hemos enviado un código. Introdúcelo y elige una nueva contraseña.",
       "newPasswordLabel": "Nueva contraseña",
@@ -1530,7 +1530,7 @@
       "nicknameTooShort": "El apodo debe tener al menos 3 caracteres.",
       "nicknameAlreadySet": "Este apodo ya está configurado.",
       "nicknameUpdated": "Apodo actualizado.",
-      "sessionExpired": "La sesión de 16Launcher expiró. Inicia sesión nuevamente.",
+      "sessionExpired": "La sesión de Nexus Launcher expiró. Inicia sesión nuevamente.",
       "signInMicrosoftThenLink": "Inicie sesión con Microsoft y luego haga clic en Vincular nuevamente.",
       "signInElyThenLink": "Inicie sesión con Ely.by y luego haga clic en Vincular nuevamente.",
       "minecraftLinked": "Minecraft vinculado a la cuenta",
@@ -1550,7 +1550,7 @@
       "passwordChanged": "Contraseña cambiada. Se cerró la sesión en los demás dispositivos."
     },
     "errors": {
-      "connectionFailed": "No se puede conectar al servidor 16Launcher. Verifique internet y disponibilidad del API.",
+      "connectionFailed": "No se puede conectar al servidor Nexus Launcher. Verifique internet y disponibilidad del API.",
       "invalidCredentials": "Inicio de sesión o contraseña no válidos.",
       "invalidPassword": "Contraseña no válida.",
       "passwordTooShort": "La contraseña es demasiado corta. Mínimo 8 caracteres.",
@@ -1562,13 +1562,13 @@
       "rateLimited": "Demasiadas solicitudes. Espera un momento.",
       "emailSendFailed": "No se pudo enviar el correo de verificación.",
       "deleteNotAvailable": "La eliminación de cuenta aún no está disponible en el servidor. Hace falta desplegar la API.",
-      "identityAlreadyLinked": "{{provider}} ya está vinculado a otra cuenta de 16Launcher.",
+      "identityAlreadyLinked": "{{provider}} ya está vinculado a otra cuenta de Nexus Launcher.",
       "discordNotConfigured": "El inicio de sesión con Discord aún no está configurado en el servidor.",
       "discordFailed": "No se pudo iniciar sesión con Discord. Inténtalo de nuevo.",
       "invalidCurrentPassword": "La contraseña actual es incorrecta.",
       "passwordNotSet": "Esta cuenta aún no tiene contraseña. Cierra sesión y créala con «¿Olvidaste tu contraseña?» en la pantalla de inicio.",
       "samePassword": "La nueva contraseña debe ser distinta de la actual.",
-      "serverOutdated": "El servidor de 16Launcher aún no admite esta función. Inténtalo más tarde."
+      "serverOutdated": "El servidor de Nexus Launcher aún no admite esta función. Inténtalo más tarde."
     },
     "settings": {
       "online": "En línea",
@@ -1579,7 +1579,7 @@
       "notLinked": "Sin vincular",
       "linkedAs": "Vinculada · {{name}}",
       "sessionTitle": "Sesión",
-      "sessionHint": "Cierra la sesión de 16Launcher en este dispositivo. Tus cuentas de Minecraft siguen en el launcher."
+      "sessionHint": "Cierra la sesión de Nexus Launcher en este dispositivo. Tus cuentas de Minecraft siguen en el launcher."
     }
   },
   "app": {
@@ -1649,7 +1649,7 @@
       "providerSignIn": "Inicio de sesión en Minecraft",
       "editNickname": "Editar apodo",
       "nicknamePlaceholder": "Jugador",
-      "systemNicknameSignedOut": "No has iniciado sesión en 16Launcher",
+      "systemNicknameSignedOut": "No has iniciado sesión en Nexus Launcher",
       "signedInAsPrefix": "Iniciado sesión como:",
       "hint": "Configure su perfil y apariencia después de iniciar sesión.",
       "linkedShort": "Vinculada",
@@ -1746,8 +1746,8 @@
         "noRecent": "Aún no has obtenido nada.",
         "nextAchievements": "Próximos objetivos",
         "allNotifications": "Todas",
-        "signedOutTitle": "Inicia sesión en 16Launcher",
-        "signedOutBody": "Una cuenta de 16Launcher activa las funciones sociales del launcher."
+        "signedOutTitle": "Inicia sesión en Nexus Launcher",
+        "signedOutBody": "Una cuenta de Nexus Launcher activa las funciones sociales del launcher."
       },
       "wardrobe": {
         "title": "Vestuario",
@@ -1793,9 +1793,9 @@
     },
     "help": {
       "title": "Acerca del lanzador",
-      "mainInfo": "16Launcher es un lanzador gratuito de Minecraft compatible con Fabric, Forge, Quilt y NeoForge.",
+      "mainInfo": "Nexus Launcher es un lanzador gratuito de Minecraft compatible con Fabric, Forge, Quilt y NeoForge.",
       "icons": "Iconos de",
-      "mojangDisclaimer": "NO ES UN PRODUCTO OFICIAL DE MINECRAFT. NO APROBADO NI ASOCIADO CON MOJANG O MICROSOFT.\n\n16Launcher no está afiliado de ninguna manera con Mojang Studios, ni debe considerarse un proyecto respaldado por Mojang Studios.",
+      "mojangDisclaimer": "NO ES UN PRODUCTO OFICIAL DE MINECRAFT. NO APROBADO NI ASOCIADO CON MOJANG O MICROSOFT.\n\nNexus Launcher no está afiliado de ninguna manera con Mojang Studios, ni debe considerarse un proyecto respaldado por Mojang Studios.",
       "apis": "Usamos las API Modrinth, CurseForge y Ely.by",
       "reportBug": "¿Encontraste un error?",
       "close": "Cerca"
@@ -1865,7 +1865,7 @@
       "next": "Próximo"
     },
     "welcome": {
-      "title": "¡Bienvenido a 16Launcher!",
+      "title": "¡Bienvenido a Nexus Launcher!",
       "subtitle": "Selecciona la configuración básica",
       "cta": "¡Vamos!"
     },

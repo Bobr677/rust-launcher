@@ -1244,7 +1244,7 @@
     "authGateTitle": "Sign in",
     "authGateBody": "Friends and online status need a sign-in from the Accounts tab.",
     "emptyTitle": "No friends yet",
-    "emptyBody": "Enter a nickname above and send a request - or invite friends to create a 16Launcher account.",
+    "emptyBody": "Enter a nickname above and send a request - or invite friends to create a Nexus Launcher account.",
     "emptyFocusAdd": "Add a friend",
     "noIncoming": "No new requests.",
     "accept": "Accept",
@@ -1272,7 +1272,7 @@
     "lastSeenNever": "hasn't been online recently",
     "openRooms": "Go to rooms",
     "howToTitle": "Friends",
-    "howToStep1": "16Launcher nickname → send a request.",
+    "howToStep1": "Nexus Launcher nickname → send a request.",
     "howToStep2": "After they accept, they show up in the list.",
     "howToStep3": "See who's online and when they last opened the launcher.",
     "howToStep4": "Join a friend's room from this tab.",
@@ -1489,7 +1489,7 @@
     "items": {
       "welcome": {
         "title": "Welcome aboard",
-        "description": "Create your 16Launcher platform account."
+        "description": "Create your Nexus Launcher platform account."
       },
       "identity_linked": {
         "title": "Identity confirmed",
@@ -1497,11 +1497,11 @@
       },
       "first_friend": {
         "title": "Making friends",
-        "description": "Add your first friend on 16Launcher."
+        "description": "Add your first friend on Nexus Launcher."
       },
       "first_launch": {
         "title": "Into the world",
-        "description": "Launch Minecraft from 16Launcher for the first time."
+        "description": "Launch Minecraft from Nexus Launcher for the first time."
       },
       "ten_launches": {
         "title": "Regular",
@@ -1551,7 +1551,7 @@
     }
   },
   "platform": {
-    "accountTitle": "16Launcher account",
+    "accountTitle": "Nexus Launcher account",
     "accountManagement": "Account management",
     "signIn": "Sign in",
     "signUp": "Sign up",
@@ -1580,7 +1580,7 @@
     "dangerZone": "Danger zone",
     "deleteAccount": "Delete account",
     "deleteAccountConfirm": "Delete permanently",
-    "deleteAccountHint": "Your 16Launcher account and related server data will be permanently deleted. Your current password is required.",
+    "deleteAccountHint": "Your Nexus Launcher account and related server data will be permanently deleted. Your current password is required.",
     "linked": "Linked",
     "linking": "Linking…",
     "link": "Link",
@@ -1595,12 +1595,12 @@
     "linkElyTitle": "Sign in with Ely.by, then click Link again",
     "orDivider": "or",
     "continueWithDiscord": "Continue with Discord",
-    "authHintLogin": "16Launcher sign-in - for friends and rooms.",
-    "authHintSignup": "Create a 16Launcher account.",
+    "authHintLogin": "Nexus Launcher sign-in - for friends and rooms.",
+    "authHintSignup": "Create a Nexus Launcher account.",
     "reset": {
       "forgotLink": "Forgot password?",
       "title": "Reset password",
-      "authHint": "Recover access to your 16Launcher account.",
+      "authHint": "Recover access to your Nexus Launcher account.",
       "requestHint": "Enter your account email and we'll send you a password reset code.",
       "confirmHint": "If {{email}} is registered, a code has been sent to it. Enter it and choose a new password.",
       "newPasswordLabel": "New password",
@@ -1622,7 +1622,7 @@
       "nicknameTooShort": "Nickname must be at least 3 characters.",
       "nicknameAlreadySet": "This nickname is already set.",
       "nicknameUpdated": "Nickname updated.",
-      "sessionExpired": "16Launcher session expired. Sign in again.",
+      "sessionExpired": "Nexus Launcher session expired. Sign in again.",
       "signInMicrosoftThenLink": "Sign in with Microsoft, then click Link again.",
       "signInElyThenLink": "Sign in with Ely.by, then click Link again.",
       "minecraftLinked": "Minecraft linked to account",
@@ -1642,7 +1642,7 @@
       "passwordChanged": "Password changed. Other devices have been signed out."
     },
     "errors": {
-      "connectionFailed": "Cannot connect to the 16Launcher server. Check your internet connection and API availability.",
+      "connectionFailed": "Cannot connect to the Nexus Launcher server. Check your internet connection and API availability.",
       "invalidCredentials": "Invalid login or password.",
       "invalidPassword": "Invalid password.",
       "passwordTooShort": "Password is too short. Minimum 8 characters.",
@@ -1654,13 +1654,13 @@
       "rateLimited": "Too many requests. Please wait a moment.",
       "emailSendFailed": "Failed to send the verification email.",
       "deleteNotAvailable": "Account deletion is not available on the server yet. API deploy is required.",
-      "identityAlreadyLinked": "{{provider}} is already linked to another 16Launcher account.",
+      "identityAlreadyLinked": "{{provider}} is already linked to another Nexus Launcher account.",
       "discordNotConfigured": "Discord sign-in is not configured on the server yet.",
       "discordFailed": "Discord sign-in failed. Please try again.",
       "invalidCurrentPassword": "Current password is incorrect.",
       "passwordNotSet": "This account has no password yet. Sign out and set one via \"Forgot password?\" on the sign-in screen.",
       "samePassword": "The new password must differ from the current one.",
-      "serverOutdated": "The 16Launcher server doesn't support this yet. Please try again later."
+      "serverOutdated": "The Nexus Launcher server doesn't support this yet. Please try again later."
     },
     "settings": {
       "online": "Online",
@@ -1671,7 +1671,7 @@
       "notLinked": "Not linked",
       "linkedAs": "Linked · {{name}}",
       "sessionTitle": "Session",
-      "sessionHint": "Sign out of 16Launcher on this device. Your Minecraft accounts stay in the launcher."
+      "sessionHint": "Sign out of Nexus Launcher on this device. Your Minecraft accounts stay in the launcher."
     }
   },
   "app": {
@@ -1741,7 +1741,7 @@
       "providerSignIn": "Minecraft sign-in",
       "editNickname": "Edit nickname",
       "nicknamePlaceholder": "Player",
-      "systemNicknameSignedOut": "Not signed in to 16Launcher",
+      "systemNicknameSignedOut": "Not signed in to Nexus Launcher",
       "signedInAsPrefix": "Signed in as: ",
       "hint": "Configure your profile and appearance after you sign in.",
       "linkedShort": "Linked",
@@ -1838,8 +1838,8 @@
         "noRecent": "Nothing unlocked yet.",
         "nextAchievements": "Next goals",
         "allNotifications": "All",
-        "signedOutTitle": "Sign in to 16Launcher",
-        "signedOutBody": "A 16Launcher account unlocks the launcher's social features."
+        "signedOutTitle": "Sign in to Nexus Launcher",
+        "signedOutBody": "A Nexus Launcher account unlocks the launcher's social features."
       },
       "wardrobe": {
         "title": "Wardrobe",
@@ -1886,9 +1886,9 @@
     },
     "help": {
       "title": "About Launcher",
-      "mainInfo": "16Launcher is a free Minecraft launcher with support for Fabric, Forge, Quilt, NeoForge.",
+      "mainInfo": "Nexus Launcher is a free Minecraft launcher with support for Fabric, Forge, Quilt, NeoForge.",
       "icons": "Icons from",
-      "mojangDisclaimer": "NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.\n\n16Launcher is in no way affiliated with Mojang Studios, nor should it be considered a project endorsed by Mojang Studios.",
+      "mojangDisclaimer": "NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.\n\nNexus Launcher is in no way affiliated with Mojang Studios, nor should it be considered a project endorsed by Mojang Studios.",
       "apis": "We use Modrinth, CurseForge and Ely.by APIs",
       "reportBug": "Found an error?",
       "close": "Close"
@@ -1958,7 +1958,7 @@
       "next": "Next"
     },
     "welcome": {
-      "title": "16Launcher",
+      "title": "Nexus Launcher",
       "subtitle": "Select basic settings",
       "cta": "Start"
     },
@@ -2070,7 +2070,7 @@
         "body": "Ely.by or Microsoft - for game login, skins, and multiplayer. Add accounts in the Profile tab."
       },
       "platform": {
-        "title": "16Launcher account",
+        "title": "Nexus Launcher account",
         "body": "Needed for friends, rooms, and notifications. Sign up or sign in from the Accounts tab."
       },
       "finish": {

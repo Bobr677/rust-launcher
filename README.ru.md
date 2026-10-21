@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://16-launcher.ru"><img src="public/launcher-assets/readme.png" alt="16Launcher"></a>
-  <h1 align="center">16Launcher</h1>
+  <h1 align="center">Nexus Launcher</h1>
 <p align="center">
   <em>Надежный кроссплатформенный лаунчер для Minecraft. Встроенная установка модов, продвинутая оптимизация и продуманный интерфейс. Легкий, стабильный, с гибкими настройками для полного контроля над игрой.</em>
 </p>
@@ -24,13 +24,13 @@
 
 ---
     
-**16Launcher** - Надежный кроссплатформенный лаунчер для Minecraft. Встроенная установка модов, продвинутая оптимизация и продуманный интерфейс. Легкий, стабильный, с гибкими настройками для полного контроля над игрой.
+**Nexus Launcher** - Надежный кроссплатформенный лаунчер для Minecraft. Встроенная установка модов, продвинутая оптимизация и продуманный интерфейс. Легкий, стабильный, с гибкими настройками для полного контроля над игрой.
 
 ## Установка
 
 1. Download the latest installer from [Official website](https://16-launcher.ru)
 2. Run the installer and follow the setup instructions
-3. Launch 16Launcher and start playing!
+3. Launch Nexus Launcher and start playing!
 
 ## Особенности
 

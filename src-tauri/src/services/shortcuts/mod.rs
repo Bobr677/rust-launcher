@@ -12,7 +12,7 @@ use crate::infra::window_icon::launcher_icon_file_path;
 #[cfg(windows)]
 use crate::infra::window_icon::windows_shortcut_icon_location;
 
-const SHORTCUT_SUFFIX: &str = " - 16Launcher";
+const SHORTCUT_SUFFIX: &str = " - Nexus Launcher";
 
 fn sanitize_shortcut_base_name(name: &str) -> String {
     const INVALID: &[char] = &['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
@@ -138,7 +138,7 @@ fn create_linux_shortcut(
          Type=Application\n\
          Version=1.0\n\
          Name={name}\n\
-         Comment=Launch Minecraft profile via 16Launcher\n\
+         Comment=Launch Minecraft profile via Nexus Launcher\n\
          Exec={exec} {arg} {profile_id}\n\
          {icon_line}\
          Terminal=false\n\

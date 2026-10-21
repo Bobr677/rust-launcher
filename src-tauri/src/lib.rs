@@ -109,7 +109,7 @@ pub fn run() {
         builder = builder
             .plugin(
                 tauri_plugin_autostart::Builder::new()
-                    .app_name("16Launcher")
+                    .app_name("Nexus Launcher")
                     .build(),
             )
             .plugin(

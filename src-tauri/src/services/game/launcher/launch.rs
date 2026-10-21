@@ -930,7 +930,7 @@ pub async fn launch_game(
             .replace("${user_type}", &user_type)
             .replace("${version_type}", "release")
             .replace("${is_demo_user}", "false")
-            .replace("${launcher_name}", "16Launcher")
+            .replace("${launcher_name}", "Nexus Launcher")
             .replace("${launcher_version}", "2.0.0")
             .replace(
                 "${quickPlayPath}",

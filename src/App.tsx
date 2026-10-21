@@ -4999,7 +4999,7 @@ function App() {
       >
         <div className="flex min-w-0 items-center gap-2 pl-1 select-none">
           <span className="text-[0.8125rem] font-semibold tracking-[-0.01em] text-white/60">
-            16Launcher
+            Nexus Launcher
           </span>
           {launcherVersion ? (
             <span

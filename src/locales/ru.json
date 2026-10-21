@@ -1244,7 +1244,7 @@
     "authGateTitle": "Войдите в аккаунт",
     "authGateBody": "Друзья и онлайн-статус доступны после входа во вкладке «Аккаунты».",
     "emptyTitle": "Пока нет друзей",
-    "emptyBody": "Введите никнейм выше и отправьте заявку - или позовите друзей завести аккаунт 16Launcher.",
+    "emptyBody": "Введите никнейм выше и отправьте заявку - или позовите друзей завести аккаунт Nexus Launcher.",
     "emptyFocusAdd": "Добавить друга",
     "noIncoming": "Новых заявок нет.",
     "accept": "Принять",
@@ -1272,7 +1272,7 @@
     "lastSeenNever": "давно не был в сети",
     "openRooms": "К комнатам",
     "howToTitle": "Друзья",
-    "howToStep1": "Ник 16Launcher → заявка.",
+    "howToStep1": "Ник Nexus Launcher → заявка.",
     "howToStep2": "После принятия друг появится в списке.",
     "howToStep3": "Видно, кто онлайн и когда был в лаунчере.",
     "howToStep4": "В комнату друга можно зайти отсюда же.",
@@ -1489,7 +1489,7 @@
     "items": {
       "welcome": {
         "title": "Добро пожаловать!",
-        "description": "Создайте аккаунт 16Launcher."
+        "description": "Создайте аккаунт Nexus Launcher."
       },
       "identity_linked": {
         "title": "Подтверждение личности",
@@ -1501,7 +1501,7 @@
       },
       "first_launch": {
         "title": "В игру",
-        "description": "Запустите Minecraft из 16Launcher."
+        "description": "Запустите Minecraft из Nexus Launcher."
       },
       "ten_launches": {
         "title": "По привычке",
@@ -1551,7 +1551,7 @@
     }
   },
   "platform": {
-    "accountTitle": "16Launcher аккаунт",
+    "accountTitle": "Nexus Launcher аккаунт",
     "accountManagement": "Управление аккаунтом",
     "signIn": "Войти",
     "signUp": "Регистрация",
@@ -1580,7 +1580,7 @@
     "dangerZone": "Опасная зона",
     "deleteAccount": "Удалить аккаунт",
     "deleteAccountConfirm": "Удалить навсегда",
-    "deleteAccountHint": "Аккаунт 16Launcher и связанные данные на сервере будут удалены безвозвратно. Нужен текущий пароль.",
+    "deleteAccountHint": "Аккаунт Nexus Launcher и связанные данные на сервере будут удалены безвозвратно. Нужен текущий пароль.",
     "linked": "Привязан",
     "linking": "Привязка…",
     "link": "Привязать",
@@ -1595,12 +1595,12 @@
     "linkElyTitle": "Нажмите для входа через Ely.by и повторите привязку",
     "orDivider": "или",
     "continueWithDiscord": "Продолжить с Discord",
-    "authHintLogin": "Вход в аккаунт 16Launcher - для друзей и комнат.",
-    "authHintSignup": "Регистрация аккаунта 16Launcher.",
+    "authHintLogin": "Вход в аккаунт Nexus Launcher - для друзей и комнат.",
+    "authHintSignup": "Регистрация аккаунта Nexus Launcher.",
     "reset": {
       "forgotLink": "Забыли пароль?",
       "title": "Сброс пароля",
-      "authHint": "Восстановление доступа к аккаунту 16Launcher.",
+      "authHint": "Восстановление доступа к аккаунту Nexus Launcher.",
       "requestHint": "Укажите email аккаунта — мы отправим на него код для сброса пароля.",
       "confirmHint": "Если {{email}} зарегистрирован, на него пришёл код. Введите его и придумайте новый пароль.",
       "newPasswordLabel": "Новый пароль",
@@ -1622,7 +1622,7 @@
       "nicknameTooShort": "Никнейм должен быть не короче 3 символов.",
       "nicknameAlreadySet": "Этот никнейм уже установлен.",
       "nicknameUpdated": "Никнейм обновлен.",
-      "sessionExpired": "Сессия 16Launcher истекла. Войдите в аккаунт снова.",
+      "sessionExpired": "Сессия Nexus Launcher истекла. Войдите в аккаунт снова.",
       "signInMicrosoftThenLink": "Выполните вход Microsoft, затем снова нажмите «Привязать».",
       "signInElyThenLink": "Выполните вход Ely.by, затем снова нажмите «Привязать».",
       "minecraftLinked": "Minecraft привязан к аккаунту",
@@ -1642,7 +1642,7 @@
       "passwordChanged": "Пароль изменён. Остальные устройства вышли из аккаунта."
     },
     "errors": {
-      "connectionFailed": "Не удается подключиться к серверу 16Launcher. Проверьте интернет и доступность API.",
+      "connectionFailed": "Не удается подключиться к серверу Nexus Launcher. Проверьте интернет и доступность API.",
       "invalidCredentials": "Неверный логин или пароль.",
       "invalidPassword": "Неверный пароль.",
       "passwordTooShort": "Пароль слишком короткий. Минимум 8 символов.",
@@ -1654,13 +1654,13 @@
       "rateLimited": "Слишком много запросов. Подождите немного.",
       "emailSendFailed": "Не удалось отправить письмо с кодом.",
       "deleteNotAvailable": "Удаление аккаунта на сервере ещё недоступно. Нужен деплой API.",
-      "identityAlreadyLinked": "{{provider}} уже привязан к другому аккаунту 16Launcher.",
+      "identityAlreadyLinked": "{{provider}} уже привязан к другому аккаунту Nexus Launcher.",
       "discordNotConfigured": "Вход через Discord пока не настроен на сервере.",
       "discordFailed": "Не удалось войти через Discord. Попробуйте ещё раз.",
       "invalidCurrentPassword": "Текущий пароль указан неверно.",
       "passwordNotSet": "У аккаунта ещё нет пароля. Выйдите и задайте его через «Забыли пароль?» на экране входа.",
       "samePassword": "Новый пароль должен отличаться от текущего.",
-      "serverOutdated": "Сервер 16Launcher пока не поддерживает эту функцию. Попробуйте позже."
+      "serverOutdated": "Сервер Nexus Launcher пока не поддерживает эту функцию. Попробуйте позже."
     },
     "settings": {
       "online": "В сети",
@@ -1671,7 +1671,7 @@
       "notLinked": "Не привязан",
       "linkedAs": "Привязан · {{name}}",
       "sessionTitle": "Сессия",
-      "sessionHint": "Выход из аккаунта 16Launcher на этом устройстве. Аккаунты Minecraft останутся в лаунчере."
+      "sessionHint": "Выход из аккаунта Nexus Launcher на этом устройстве. Аккаунты Minecraft останутся в лаунчере."
     }
   },
   "app": {
@@ -1741,7 +1741,7 @@
       "providerSignIn": "Вход в Minecraft",
       "editNickname": "Редактировать никнейм",
       "nicknamePlaceholder": "Игрок",
-      "systemNicknameSignedOut": "Не выполнен вход в 16Launcher",
+      "systemNicknameSignedOut": "Не выполнен вход в Nexus Launcher",
       "signedInAsPrefix": "Вход: ",
       "hint": "Войдите в систему.",
       "linkedShort": "Привязан",
@@ -1838,8 +1838,8 @@
         "noRecent": "Пока ничего не получено.",
         "nextAchievements": "Следующие цели",
         "allNotifications": "Все",
-        "signedOutTitle": "Войдите в 16Launcher",
-        "signedOutBody": "Аккаунт 16Launcher открывает социальные функции лаунчера."
+        "signedOutTitle": "Войдите в Nexus Launcher",
+        "signedOutBody": "Аккаунт Nexus Launcher открывает социальные функции лаунчера."
       },
       "wardrobe": {
         "title": "Гардероб",
@@ -1886,9 +1886,9 @@
     },
     "help": {
       "title": "О лаунчере",
-      "mainInfo": "16Launcher - бесплатный лаунчер для Minecraft с поддержкой Fabric, Forge, Quilt, NeoForge.",
+      "mainInfo": "Nexus Launcher - бесплатный лаунчер для Minecraft с поддержкой Fabric, Forge, Quilt, NeoForge.",
       "icons": "Иконки взяты с сайта",
-      "mojangDisclaimer": "NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.\n\n16Launcher is in no way affiliated with Mojang Studios, nor should it be considered a project endorsed by Mojang Studios.",
+      "mojangDisclaimer": "NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.\n\nNexus Launcher is in no way affiliated with Mojang Studios, nor should it be considered a project endorsed by Mojang Studios.",
       "apis": "Используем API Modrinth, CurseForge и Ely.by",
       "reportBug": "Нашли ошибку?",
       "close": "Закрыть"
@@ -1958,7 +1958,7 @@
       "next": "Далее"
     },
     "welcome": {
-      "title": "16Launcher",
+      "title": "Nexus Launcher",
       "subtitle": "Выберите базовые настройки",
       "cta": "Начать"
     },
@@ -2070,7 +2070,7 @@
         "body": "Ely.by или Microsoft - для входа в игру, скинов и онлайна. Добавление во вкладке «Профиль»."
       },
       "platform": {
-        "title": "Аккаунт 16Launcher",
+        "title": "Аккаунт Nexus Launcher",
         "body": "Нужен для друзей, комнат и уведомлений. Регистрация или вход - во вкладке «Аккаунты»."
       },
       "finish": {
