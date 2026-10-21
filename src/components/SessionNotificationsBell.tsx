@@ -144,7 +144,7 @@ export function SessionNotificationsBell({
       <button
         type="button"
         onClick={onToggle}
-        className="interactive-press relative flex h-8 w-8 items-center justify-center rounded-md bg-black/25 text-white/70 hover:bg-black/40 hover:text-white"
+        className={`icon-btn interactive-press relative h-8 w-8 ${open ? "bg-white/[0.07] text-white" : ""}`}
         title={tt("app.sessionNotifications.title")}
         aria-label={tt("app.sessionNotifications.title")}
         aria-expanded={open}
@@ -152,10 +152,10 @@ export function SessionNotificationsBell({
         <img
           src="/launcher-assets/notiflication.png"
           alt=""
-          className="h-5 w-5 object-contain opacity-90"
+          className="h-[1.125rem] w-[1.125rem] object-contain opacity-80"
         />
         {unreadCount > 0 ? (
-          <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-500 px-0.5 text-[8px] font-bold leading-none text-white">
+          <span className="absolute right-0.5 top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-md bg-red-500 px-0.5 text-[0.625rem] font-bold leading-none text-white ring-2 ring-[var(--ink-0)]">
             {unreadCount > 99 ? "99+" : unreadCount}
           </span>
         ) : null}
@@ -164,14 +164,14 @@ export function SessionNotificationsBell({
       {open ? (
         <div className="glass-popover absolute right-0 top-full z-[100] mt-1.5 w-[min(320px,calc(100vw-2rem))] overflow-hidden">
           <div className="flex items-center justify-between gap-2 px-3 py-2">
-            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/40">
+            <p className="text-[0.75rem] font-bold text-white/40">
               {tt("app.sessionNotifications.heading")}
             </p>
             {items.length > 0 ? (
               <button
                 type="button"
                 onClick={onClear}
-                className="interactive-press rounded-md px-1.5 py-0.5 text-[10px] font-medium text-white/45 hover:bg-white/10 hover:text-white/80"
+                className="interactive-press rounded-md px-1.5 py-0.5 text-[0.75rem] font-medium text-white/45 hover:bg-white/10 hover:text-white/80"
               >
                 {tt("app.sessionNotifications.clear")}
               </button>
@@ -201,18 +201,18 @@ export function SessionNotificationsBell({
                       />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <span className={`text-[10px] font-semibold uppercase tracking-wide ${kindAccentClass(n.kind)}`}>
+                          <span className={`text-[0.75rem] font-semibold ${kindAccentClass(n.kind)}`}>
                             {kindLabel(n.kind, language)}
                           </span>
-                          <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-[9px] font-bold text-white/75">
+                          <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-[0.6875rem] font-bold text-white/75">
                             {tt("app.sessionNotifications.groupBadge", { count: entry.count })}
                           </span>
-                          <span className="ml-auto shrink-0 text-[10px] text-white/35">
+                          <span className="ml-auto shrink-0 text-[0.75rem] text-white/35">
                             {formatTime(entry.latestAt, language)}
                           </span>
                         </div>
                         <p className="mt-0.5 break-words text-xs leading-snug text-white/88">{n.message}</p>
-                        <p className="mt-1 text-[10px] text-white/40">
+                        <p className="mt-1 text-[0.75rem] text-white/40">
                           {tt("app.sessionNotifications.groupHint", { count: entry.count })}
                         </p>
                       </div>
@@ -238,10 +238,10 @@ export function SessionNotificationsBell({
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className={`text-[10px] font-semibold uppercase tracking-wide ${kindAccentClass(n.kind)}`}>
+                        <span className={`text-[0.75rem] font-semibold ${kindAccentClass(n.kind)}`}>
                           {kindLabel(n.kind, language)}
                         </span>
-                        <span className="ml-auto shrink-0 text-[10px] text-white/35">
+                        <span className="ml-auto shrink-0 text-[0.75rem] text-white/35">
                           {formatTime(n.at, language)}
                         </span>
                       </div>

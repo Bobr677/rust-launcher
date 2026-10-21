@@ -8,8 +8,8 @@ mod session;
 
 pub use env::load_project_env_for_runtime;
 pub use lan_bridge::{
-    get_local_lan_ip, lan_bridge_guest_allow_forward, lan_bridge_guest_port, lan_bridge_start_guest,
-    lan_bridge_start_host, lan_bridge_stop, lan_bridge_write,
+    lan_bridge_attach, lan_bridge_detach, lan_bridge_guest_port, lan_bridge_probe_port, lan_bridge_set_flow,
+    lan_bridge_set_host_port, lan_bridge_start_guest, lan_bridge_stop, lan_bridge_write,
 };
 
 #[cfg(target_os = "linux")]

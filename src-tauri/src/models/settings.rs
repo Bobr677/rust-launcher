@@ -47,6 +47,9 @@ pub struct Settings {
     pub animations_disabled: bool,
 
     #[serde(default)]
+    pub background_animation_disabled: bool,
+
+    #[serde(default)]
     pub thematic_decorations_disabled: bool,
 
     #[serde(default = "default_show_launcher_banners")]
@@ -128,10 +131,11 @@ impl Default for Settings {
             minimize_to_tray_on_close: false,
             autostart_enabled: false,
             animations_disabled: false,
+            background_animation_disabled: false,
             thematic_decorations_disabled: false,
             show_launcher_banners: true,
             interface_language: "ru".to_string(),
-            background_accent_color: "#0b1530".to_string(),
+            background_accent_color: "#4a22a8".to_string(),
             background_image_url: None,
             background_blur_enabled: true,
             split_view_enabled: false,

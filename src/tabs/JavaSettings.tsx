@@ -561,14 +561,14 @@ export function JavaSettingsTab({
               <button
                 type="button"
                 onClick={() => setSelectedJavaMajors([...AVAILABLE_JAVA_MAJORS])}
-                className="interactive-press rounded-lg bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-white/20"
+                className="interactive-press rounded-lg bg-white/10 px-3 py-1 text-[0.8125rem] font-semibold text-white hover:bg-white/20"
               >
                 {tt("javaSettings.manageDialog.selectAll")}
               </button>
               <button
                 type="button"
                 onClick={() => setSelectedJavaMajors([])}
-                className="interactive-press rounded-lg bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-white/20"
+                className="interactive-press rounded-lg bg-white/10 px-3 py-1 text-[0.8125rem] font-semibold text-white hover:bg-white/20"
               >
                 {tt("javaSettings.manageDialog.selectNone")}
               </button>
@@ -577,7 +577,7 @@ export function JavaSettingsTab({
               <button
                 type="button"
                 onClick={() => setJavaManageMode(null)}
-                className="interactive-press rounded-xl bg-white/10 px-4 py-1.5 text-xs font-semibold text-white hover:bg-white/20"
+                className="interactive-press rounded-xl bg-white/10 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-white/20"
               >
                 {tt("common.cancel")}
               </button>
@@ -585,7 +585,7 @@ export function JavaSettingsTab({
                 type="button"
                 onClick={() => void handleConfirmJavaManage()}
                 disabled={selectedJavaMajors.length === 0}
-                className={`interactive-press rounded-xl px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50 ${
+                className={`interactive-press rounded-xl px-3.5 py-1.5 text-xs font-semibold text-white disabled:opacity-50 ${
                   javaManageMode === "verify"
                     ? "bg-white/20 hover:bg-white/30"
                     : "bg-amber-500 hover:bg-amber-400"
@@ -619,7 +619,7 @@ export function JavaSettingsTab({
               <span className="text-sm font-medium text-white/90">
                 {tt("javaSettings.runtime.title")}
               </span>
-              <span className="text-[11px] text-white/50">
+              <span className="text-[0.8125rem] text-white/50">
                 {tt("javaSettings.runtime.hint")}
               </span>
             </div>
@@ -652,7 +652,7 @@ export function JavaSettingsTab({
                     )
                   }
                   placeholder={tt("javaSettings.javaPath.placeholder")}
-                  className={`w-full rounded-xl border border-white/15 bg-black/40 px-3 py-1.5 text-xs text-white placeholder:text-white/35 focus:border-white/35 focus:outline-none ${
+                  className={`glass-control w-full rounded-xl border px-3 py-1.5 text-xs text-white placeholder:text-white/35 focus:outline-none ${
                     effectiveSettings.java_path ? "pr-9" : ""
                   }`}
                 />
@@ -667,7 +667,7 @@ export function JavaSettingsTab({
                 type="button"
                 onClick={handleDetectJava}
                 disabled={javaBusy}
-                className="interactive-press shrink-0 rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-soft hover:bg-emerald-500 disabled:opacity-60"
+                className="interactive-press shrink-0 rounded-xl accent-bg px-3 py-1.5 text-xs font-semibold text-white shadow-soft hover:brightness-110 disabled:opacity-60"
               >
                 {tt("javaSettings.actions.detect")}
               </button>
@@ -701,7 +701,7 @@ export function JavaSettingsTab({
                   ? tt("javaSettings.actions.reinstalling")
                   : tt("javaSettings.actions.reinstall")}
               </button>
-              <span className="text-[11px] text-white/45">
+              <span className="text-[0.8125rem] text-white/45">
                 {tt("javaSettings.runtime.manageHint")}
               </span>
             </div>
@@ -717,10 +717,10 @@ export function JavaSettingsTab({
                 onClick={() =>
                   updateField("use_custom_jvm_args", !effectiveSettings.use_custom_jvm_args)
                 }
-                className={`interactive-press relative inline-flex h-6 w-11 items-center rounded-full border px-0.5 transition ${
+                className={`interactive-press relative inline-flex h-6 w-11 items-center rounded-xl border px-0.5 transition ${
                   effectiveSettings.use_custom_jvm_args
-                    ? "border-emerald-400 bg-emerald-500/60"
-                    : "border-white/25 bg-white/10"
+                    ? "border-accent-to bg-accent-from/20"
+                    : "border-white/15 bg-white/10"
                 }`}
                 title={
                   tt("javaSettings.useCustomArgs.hint")
@@ -739,7 +739,7 @@ export function JavaSettingsTab({
             <label className="flex items-center justify-between gap-3 text-sm text-white/90">
               <span className="flex flex-col gap-0.5">
                 <span>{tt("javaSettings.preferIpv6.label")}</span>
-                <span className="text-[11px] text-white/50">
+                <span className="text-[0.8125rem] text-white/50">
                   {tt("javaSettings.preferIpv6.hint")}
                 </span>
               </span>
@@ -748,10 +748,10 @@ export function JavaSettingsTab({
                 onClick={() =>
                   updateField("prefer_ipv6_network", !effectiveSettings.prefer_ipv6_network)
                 }
-                className={`interactive-press relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border px-0.5 transition ${
+                className={`interactive-press relative inline-flex h-6 w-11 shrink-0 items-center rounded-xl border px-0.5 transition ${
                   effectiveSettings.prefer_ipv6_network
-                    ? "border-emerald-400 bg-emerald-500/60"
-                    : "border-white/25 bg-white/10"
+                    ? "border-accent-to bg-accent-from/20"
+                    : "border-white/15 bg-white/10"
                 }`}
                 title={tt("javaSettings.preferIpv6.hint")}
               >
@@ -772,11 +772,11 @@ export function JavaSettingsTab({
                   <span className="text-sm font-medium text-white/90">
                     {tt("javaSettings.memory.title")}
                   </span>
-                  <span className="text-[11px] text-white/60">{memoryHint}</span>
+                  <span className="text-[0.8125rem] text-white/60">{memoryHint}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="mb-1 block text-[11px] uppercase tracking-[0.12em] text-white/60">
+                    <label className="mb-1 block text-[0.8125rem] text-white/60">
                       MIN (Xms)
                     </label>
                     <div className="relative">
@@ -785,7 +785,7 @@ export function JavaSettingsTab({
                         value={effectiveSettings.xms ?? ""}
                         onChange={(e) => updateField("xms", e.target.value || null)}
                         placeholder={tt("javaSettings.memory.xmsPlaceholder")}
-                        className={`w-full rounded-xl border border-white/20 bg-black/40 px-3 py-1.5 text-xs text-white placeholder:text-white/35 focus:border-white/40 focus:outline-none ${
+                        className={`glass-control w-full rounded-xl border px-3 py-1.5 text-xs text-white placeholder:text-white/35 focus:outline-none ${
                           effectiveSettings.xms ? "pr-9" : ""
                         }`}
                       />
@@ -797,11 +797,11 @@ export function JavaSettingsTab({
                       />
                     </div>
                     {validation.xmsError && (
-                      <p className="mt-1 text-[11px] text-red-300">{validation.xmsError}</p>
+                      <p className="mt-1 text-[0.8125rem] text-red-300">{validation.xmsError}</p>
                     )}
                   </div>
                   <div>
-                    <label className="mb-1 block text-[11px] uppercase tracking-[0.12em] text-white/60">
+                    <label className="mb-1 block text-[0.8125rem] text-white/60">
                       MAX (Xmx)
                     </label>
                     <div className="relative">
@@ -810,7 +810,7 @@ export function JavaSettingsTab({
                         value={effectiveSettings.xmx ?? ""}
                         onChange={(e) => updateField("xmx", e.target.value || null)}
                         placeholder={tt("javaSettings.memory.xmxPlaceholder")}
-                        className={`w-full rounded-xl border border-white/20 bg-black/40 px-3 py-1.5 text-xs text-white placeholder:text-white/35 focus:border-white/40 focus:outline-none ${
+                        className={`glass-control w-full rounded-xl border px-3 py-1.5 text-xs text-white placeholder:text-white/35 focus:outline-none ${
                           effectiveSettings.xmx ? "pr-9" : ""
                         }`}
                       />
@@ -822,11 +822,11 @@ export function JavaSettingsTab({
                       />
                     </div>
                     {validation.xmxError && (
-                      <p className="mt-1 text-[11px] text-red-300">{validation.xmxError}</p>
+                      <p className="mt-1 text-[0.8125rem] text-red-300">{validation.xmxError}</p>
                     )}
                   </div>
                 </div>
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-white/70">
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-[0.8125rem] text-white/70">
                   <span className="mr-1">
                     {tt("javaSettings.memory.quickPresets")}
                   </span>
@@ -834,7 +834,7 @@ export function JavaSettingsTab({
                     <button
                       key={v}
                       type="button"
-                      className="interactive-press rounded-full bg-white/10 px-2.5 py-0.5 text-[11px] font-semibold text-white hover:bg-white/20"
+                      className="interactive-press rounded-xl bg-white/10 px-3 py-0.5 text-[0.8125rem] font-semibold text-white hover:bg-white/20"
                       onClick={() => {
                         updateField("xms", v);
                         updateField("xmx", v);
@@ -844,7 +844,7 @@ export function JavaSettingsTab({
                     </button>
                   ))}
                   {xmsMb != null && xmxMb != null && (
-                    <span className="ml-auto text-[11px] text-white/60">
+                    <span className="ml-auto text-[0.8125rem] text-white/60">
                       {tt("javaSettings.memory.currentPair", {
                         xms: formatMbToDisplay(xmsMb),
                         xmx: formatMbToDisplay(xmxMb),
@@ -853,7 +853,7 @@ export function JavaSettingsTab({
                   )}
                 </div>
                 {validation.generalError && (
-                  <p className="mt-1 text-[11px] text-amber-300">{validation.generalError}</p>
+                  <p className="mt-1 text-[0.8125rem] text-amber-300">{validation.generalError}</p>
                 )}
               </div>
             </div>
@@ -864,7 +864,7 @@ export function JavaSettingsTab({
                   <span className="text-sm font-medium text-white/90">
                     {tt("javaSettings.jvmArgs.title")}
                   </span>
-                  <span className="text-[11px] text-white/60">
+                  <span className="text-[0.8125rem] text-white/60">
                     {tt("javaSettings.jvmArgs.hint")}
                   </span>
                 </div>
@@ -873,7 +873,7 @@ export function JavaSettingsTab({
                     value={effectiveSettings.jvm_args ?? ""}
                     onChange={(e) => updateField("jvm_args", e.target.value || null)}
                     rows={7}
-                    className={`w-full rounded-2xl border border-white/15 bg-black/50 px-3 py-2 text-xs font-mono text-white placeholder:text-white/30 focus:border-white/35 focus:outline-none ${
+                    className={`glass-control w-full rounded-2xl border px-3 py-2 text-xs font-mono text-white placeholder:text-white/30 focus:outline-none ${
                       effectiveSettings.jvm_args ? "pr-9" : ""
                     }`}
                     placeholder={
@@ -887,38 +887,38 @@ export function JavaSettingsTab({
                     aria-label={tt("common.clear")}
                   />
                 </div>
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-white/65">
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-[0.8125rem] text-white/65">
                   <span className="text-white/80">
                     {tt("javaSettings.jvmArgs.placeholdersLabel")}
                   </span>
-                  <code className="rounded-full bg-white/10 px-2 py-0.5">${"{classpath}"}</code>
-                  <code className="rounded-full bg-white/10 px-2 py-0.5">${"{natives}"}</code>
-                  <code className="rounded-full bg-white/10 px-2 py-0.5">${"{gameDir}"}</code>
-                  <code className="rounded-full bg-white/10 px-2 py-0.5">${"{assetsDir}"}</code>
-                  <code className="rounded-full bg-white/10 px-2 py-0.5">${"{version}"}</code>
+                  <code className="rounded-md bg-white/10 px-2 py-0.5">${"{classpath}"}</code>
+                  <code className="rounded-md bg-white/10 px-2 py-0.5">${"{natives}"}</code>
+                  <code className="rounded-md bg-white/10 px-2 py-0.5">${"{gameDir}"}</code>
+                  <code className="rounded-md bg-white/10 px-2 py-0.5">${"{assetsDir}"}</code>
+                  <code className="rounded-md bg-white/10 px-2 py-0.5">${"{version}"}</code>
                 </div>
-                <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-white/75">
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-[0.8125rem] text-white/75">
                   <span className="mr-1">
                     {tt("javaSettings.jvmArgs.recommendedPresets")}
                   </span>
                   <button
                     type="button"
                     onClick={() => applyPreset("balanced")}
-                    className="interactive-press rounded-full bg-white/10 px-3 py-0.5 text-[11px] font-semibold text-white hover:bg-white/20"
+                    className="interactive-press rounded-xl bg-white/10 px-3 py-0.5 text-[0.8125rem] font-semibold text-white hover:bg-white/20"
                   >
                     {tt("javaSettings.presets.balanced")}
                   </button>
                   <button
                     type="button"
                     onClick={() => applyPreset("performance")}
-                    className="interactive-press rounded-full bg-white/10 px-3 py-0.5 text-[11px] font-semibold text-white hover:bg-white/20"
+                    className="interactive-press rounded-xl bg-white/10 px-3 py-0.5 text-[0.8125rem] font-semibold text-white hover:bg-white/20"
                   >
                     {tt("javaSettings.presets.performance")}
                   </button>
                   <button
                     type="button"
                     onClick={() => applyPreset("low_memory")}
-                    className="interactive-press rounded-full bg-white/10 px-3 py-0.5 text-[11px] font-semibold text-white hover:bg-white/20"
+                    className="interactive-press rounded-xl bg-white/10 px-3 py-0.5 text-[0.8125rem] font-semibold text-white hover:bg-white/20"
                   >
                     {tt("javaSettings.presets.lowMemory")}
                   </button>
@@ -930,14 +930,14 @@ export function JavaSettingsTab({
                   <button
                     type="button"
                     onClick={handleValidateArgs}
-                    className="interactive-press rounded-xl accent-bg px-4 py-1.5 text-xs font-semibold text-white shadow-soft hover:opacity-90"
+                    className="interactive-press rounded-xl accent-bg px-3.5 py-1.5 text-xs font-semibold text-white shadow-soft hover:opacity-90"
                   >
                     {tt("javaSettings.actions.validate")}
                   </button>
                 </div>
 
                 {validationOutput && (
-                  <div className="mt-2 max-h-40 overflow-y-auto glass-inset px-3 py-2 text-[11px] text-white/80">
+                  <div className="mt-2 max-h-40 overflow-y-auto glass-inset px-3 py-2 text-[0.8125rem] text-white/80">
                     {validationOutput.errors.length > 0 && (
                       <div className="mb-2">
                         <div className="mb-1 font-semibold text-red-300">
@@ -964,10 +964,10 @@ export function JavaSettingsTab({
                     )}
                     {validationOutput.output && (
                       <details className="mt-1">
-                        <summary className="cursor-pointer text-[11px] text-white/60">
+                        <summary className="cursor-pointer text-[0.8125rem] text-white/60">
                           {tt("javaSettings.validationOutput.showJavaVersion")}
                         </summary>
-                        <pre className="mt-1 whitespace-pre-wrap text-[11px] text-white/70">
+                        <pre className="mt-1 whitespace-pre-wrap text-[0.8125rem] text-white/70">
                           {validationOutput.output}
                         </pre>
                       </details>
@@ -985,21 +985,21 @@ export function JavaSettingsTab({
                 type="button"
                 onClick={handleSave}
                 disabled={saving}
-                className="interactive-press rounded-xl bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-white shadow-soft hover:bg-emerald-500 disabled:opacity-60"
+                className="interactive-press rounded-xl accent-bg px-3.5 py-1.5 text-xs font-semibold text-white shadow-soft hover:brightness-110 disabled:opacity-60"
               >
                 {tt("javaSettings.actions.save")}
               </button>
               <button
                 type="button"
                 onClick={handleCancel}
-                className="interactive-press rounded-xl bg-white/10 px-4 py-1.5 text-xs font-semibold text-white hover:bg-white/20"
+                className="interactive-press rounded-xl bg-white/10 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-white/20"
               >
                 {tt("javaSettings.actions.cancel")}
               </button>
               <button
                 type="button"
                 onClick={handleResetToRecommended}
-                className="interactive-press rounded-xl bg-white/10 px-4 py-1.5 text-xs font-semibold text-white hover:bg-white/20"
+                className="interactive-press rounded-xl bg-white/10 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-white/20"
               >
                 {tt("javaSettings.actions.resetRecommended")}
               </button>

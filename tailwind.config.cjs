@@ -1,31 +1,58 @@
 /** @type {import('tailwindcss').Config} */
+
+// Accent shades follow the user's accent setting (--accent-color), so they are CSS colour mixes
+// rather than fixed hex. `<alpha-value>` keeps opacity modifiers like `bg-accent/20` working.
+const mixed = (cssColor) =>
+  `color-mix(in srgb, ${cssColor} calc(<alpha-value> * 100%), transparent)`;
+
 module.exports = {
   content: ["./index.html", "./src/**/*.{ts,tsx,js,jsx}"],
   theme: {
     extend: {
       colors: {
-        background: "rgba(26,26,26,0.85)",
+        background: "rgba(20,17,27,0.92)",
         accentGreen: "#2ecc71",
         accentBlue: "#3498db",
+        accent: {
+          DEFAULT: mixed("var(--accent-color)"),
+          from: mixed("var(--accent-from)"),
+          to: mixed("var(--accent-to)"),
+          hi: mixed("var(--accent-hi)"),
+        },
+        ink: {
+          950: "#0b0910",
+          900: "#14111b",
+          850: "#1b1724",
+          800: "#241e2f",
+          700: "#2e2739",
+        },
       },
       fontFamily: {
-        sans: ["Inter", "system-ui", "sans-serif"],
+        sans: ["Onest Variable", "Onest", "Segoe UI", "system-ui", "sans-serif"],
       },
       fontSize: {
-        title: ["1.25rem", { lineHeight: "1.25", letterSpacing: "-0.02em" }],
+        title: ["1.25rem", { lineHeight: "1.25", letterSpacing: "-0.015em" }],
         subtitle: ["0.9375rem", { lineHeight: "1.45" }],
         body: ["0.875rem", { lineHeight: "1.45" }],
         meta: ["0.8125rem", { lineHeight: "1.4" }],
         caption: ["0.75rem", { lineHeight: "1.35" }],
       },
+      // One radius per level of hierarchy: badges 6, controls 10, cards 14, panels/modals 18.
+      // lg and xl are deliberately equal so buttons look the same whichever one a file used.
       borderRadius: {
-        xl2: "1.25rem",
+        sm: "0.25rem",
+        DEFAULT: "0.375rem",
+        md: "0.5rem",
+        lg: "0.625rem",
+        xl: "0.625rem",
+        "2xl": "0.875rem",
+        "3xl": "1.125rem",
+        xl2: "1.125rem",
       },
       boxShadow: {
-        soft: "0 18px 45px rgba(0,0,0,0.45)",
+        soft: "0 12px 32px rgba(0,0,0,0.45)",
       },
     },
   },
   plugins: [],
 };
-

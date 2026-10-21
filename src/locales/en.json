@@ -35,7 +35,11 @@
       "modrinth": "Modrinth",
       "curseforge": "CurseForge"
     },
-    "unlockConfirm": "Version and loader are synced with the selected profile. Change them anyway?",
+    "unlockTitle": "Version is fixed by the profile",
+    "unlockConfirm": "Change version and loader? Content you install may be incompatible with the profile.",
+    "lockedBanner": "Fixed by the profile: Minecraft {{version}} · {{loader}}. Mods are matched to it.",
+    "unlockedBanner": "You're browsing content that doesn't match the selected profile. Installed mods may not launch.",
+    "relock": "Match profile again",
     "searchPlaceholder": "Search...",
     "version": "Version",
     "syncedHint": "Synced with profile. Click «Change» to unlock.",
@@ -306,6 +310,10 @@
         "hint": "Drag a tab (Play, Mods, Modpacks, Settings) to a window edge to open a second pane."
       },
       "disableAnimations": { "label": "Disable animations:" },
+      "backgroundAnimation": {
+        "label": "Animated background:",
+        "hint": "Slow movement of the coloured glow behind the interface. Turn off if the launcher feels heavy on your GPU."
+      },
       "hideBanners": {
         "label": "Disable ad banner:",
         "hint": "Hides the news and banner carousel on the Play tab."
@@ -571,6 +579,11 @@
       "openTitle": "Open game folder",
       "alt": "Game folder"
     },
+    "dock": {
+      "folder": "Folder",
+      "settings": "Settings",
+      "noBuild": "No build selected"
+    },
     "home": {
       "recentTitle": "Recent packs",
       "seeAll": "All packs",
@@ -593,6 +606,14 @@
       "empty": "Logs will appear after the game starts.",
       "hint": "Controlled by the “Show console on game start” setting in the game section.",
       "analyzer": {
+        "readingDisk": "Reading logs…",
+        "okBadge": "No errors",
+        "refresh": "Re-read logs",
+        "sourcesLabel": "Checked",
+        "sourceConsole": "console",
+        "sourceLatest": "latest.log",
+        "sourceCrash": "crash reports: {{count}}",
+        "diskReadFailed": "Couldn't read logs from disk.",
         "title": "Log analyzer",
         "show": "Show",
         "hide": "Hide",
@@ -756,7 +777,12 @@
       "editGroupMenu": "Edit group",
       "deleteGroupMenu": "Delete group",
       "dropHint": "Drop here",
-      "selectedCount": "Selected: {{count}}"
+      "selectedCount": "Selected: {{count}}",
+      "title": "My profiles",
+      "newGroup": "New group",
+      "groupActions": "Group actions",
+      "dragCount": "{{count}} profiles",
+      "clearSelection": "Clear selection"
     },
     "groups": {
       "createTitle": "New profile group",
@@ -970,6 +996,8 @@
     },
     "contextMenu": {
       "settings": "Settings",
+      "moveToGroup": "Move to group",
+      "removeFromGroup": "Remove from group",
       "pinToSidebar": "Pin to sidebar",
       "unpinFromSidebar": "Unpin from sidebar",
       "deleteProfile": "Delete profile",
@@ -1359,6 +1387,16 @@
     "mcOnlineEly": "Ely",
     "mcOffline": "offline",
     "mcOfflineHint": "Sign in with Microsoft or Ely to join a friend's world.",
+    "joinClosedReason": "This room is closed, so you can't join it.",
+    "auto": {
+      "label": "Room game",
+      "fromProfile": "From profile “{{name}}”",
+      "fromMenu": "From the main menu",
+      "manual": "Change manually",
+      "useAuto": "Choose automatically",
+      "none": "No profile selected. Pick a version manually or in the main menu."
+    },
+    "needP2pReason": "Wait until the connection with the room members is ready (P2P is not ready yet).",
     "p2pLabel": "Link",
     "p2pReady": "ready",
     "p2pConnecting": "connecting…",
@@ -1383,6 +1421,8 @@
     "guestSteps": "When the host opens access - Join world. If the game is already running, the address is copied - connect via Multiplayer → Direct Connect.",
     "waitForPeer": "Invite a friend - the link appears when they join.",
     "needP2p": "Wait until the link with your friend is ready",
+    "peerLauncherOutdated": "Your friend is on an older launcher version — both of you need to update, otherwise joining the world won't work.",
+    "lanPortUnreachable": "Port {{port}} isn't responding yet. Open the world to LAN and enter the port shown in the game chat.",
     "visibility": {
       "public": "public",
       "private": "private",
@@ -1579,6 +1619,8 @@
   },
   "app": {
     "sidebar": {
+      "collapse": "Collapse sidebar",
+      "expand": "Expand sidebar",
       "play": "Play",
       "settings": "Settings",
       "mods": "Mods",
@@ -1621,6 +1663,7 @@
       "newAccountNameBase": "Player",
       "addAccount": "Add account",
       "sidebarTooltip": "Accounts",
+      "offlineBadge": "offline",
       "switcherTitle": "Switch account",
       "switcherHeading": "Accounts",
       "manageAll": "All accounts & sign-in…",
@@ -1792,7 +1835,13 @@
       "fabricNotInstalled": "Fabric profile is not installed for this version.",
       "quiltNotInstalled": "Quilt profile is not installed for this version."
     },
+    "window": {
+      "minimize": "Minimize",
+      "maximize": "Maximize",
+      "close": "Close"
+    },
     "versionBadge": {
+      "updateChip": "Update available",
       "latest": "You have the latest version",
       "outdatedWithVersion": "New version available: {{version}}",
       "outdated": "New version available",

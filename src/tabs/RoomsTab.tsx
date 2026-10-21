@@ -20,14 +20,14 @@ import { API_AUTH_CHANGED_EVENT, API_NICKNAME_KEY } from "../api/auth";
 import { ApiError, getStoredAccessToken } from "../api/client";
 import { UserProfileModal, type UserProfileSeed } from "../components/UserProfileModal";
 import {
-  allowGuestForward,
   attachLanTunnel,
-  getLocalLanIp,
+  probeLanPort,
+  setHostLanPort,
   startGuestBridge,
-  startHostBridge,
   stopBridge,
   type LanBridgeStatus,
 } from "../api/lanBridge";
+import type { RoomPeerSession } from "../api/webrtc/session";
 import { WS_EVENT, type WsEvent } from "../api/ws";
 import { useRoomPeerSession } from "../hooks/useRoomPeerSession";
 import { useT, type Language } from "../i18n";
@@ -75,6 +75,31 @@ export type RoomGameSettings = {
   gameVersion: string;
 };
 
+export type RoomCurrentGame = {
+  loader: RoomLoaderId;
+  gameVersion: string;
+  loaderVersion?: string | null;
+  source: "profile" | "menu";
+  label: string;
+};
+
+/** Finds the room version option that matches the profile / main-menu selection. */
+function pickRoomVersionId(list: RoomVersionOption[], cur: RoomCurrentGame | null | undefined): string | null {
+  if (!cur) return null;
+  const gv = cur.gameVersion.trim();
+  const lv = cur.loaderVersion?.trim();
+  if (gv && list.some((v) => v.id === gv)) return gv;
+  if (lv) {
+    const hit = list.find((v) => v.id === lv) ?? list.find((v) => v.id.endsWith(`-${lv}`));
+    if (hit) return hit.id;
+  }
+  if (gv) {
+    const byMc = list.find((v) => v.label.startsWith(`${gv} (`));
+    if (byMc) return byMc.id;
+  }
+  return null;
+}
+
 type RoomsTabProps = {
   showNotification: (kind: NotificationKind, message: string, options?: ShowNotificationOptions) => void;
   language: Language;
@@ -92,6 +117,8 @@ type RoomsTabProps = {
   onRoomLaunchContextChange?: (context: LaunchPresenceContext | null) => void;
   onOpenAccounts?: () => void;
   onApplyRoomGameSettings?: (settings: RoomGameSettings) => void;
+  /** Game the user currently has selected (profile, or main menu when no profile). Rooms follow it automatically. */
+  currentGame?: RoomCurrentGame | null;
 };
 
 const ROOM_LOADERS: RoomLoaderId[] = ["vanilla", "fabric", "quilt", "forge", "neoforge"];
@@ -167,7 +194,7 @@ function MemberAvatars({
       ))}
       {extra > 0 ? (
         <span
-          className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-[10px] font-semibold text-white/70 ring-2 ring-black/70"
+          className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-[0.75rem] font-semibold text-white/70 ring-2 ring-black/70"
           style={{ marginLeft: shown.length ? -8 : 0 }}
         >
           +{extra}
@@ -188,6 +215,7 @@ export function RoomsTab({
   onRoomLaunchContextChange,
   onOpenAccounts,
   onApplyRoomGameSettings,
+  currentGame = null,
 }: RoomsTabProps) {
   const tt = useT(language);
 
@@ -221,6 +249,8 @@ export function RoomsTab({
   const [createGameVersion, setCreateGameVersion] = useState("");
   const [createVersions, setCreateVersions] = useState<RoomVersionOption[]>([]);
   const [createVersionsLoading, setCreateVersionsLoading] = useState(false);
+  const [createManual, setCreateManual] = useState(false);
+  const pendingEditPickRef = useRef(false);
   const [createRoomVisibility, setCreateRoomVisibility] = useState<"public" | "private">("public");
   const [createRoomPassword, setCreateRoomPassword] = useState("");
   const [isVisibilityDropdownOpen, setIsVisibilityDropdownOpen] = useState(false);
@@ -235,11 +265,8 @@ export function RoomsTab({
   const [viewingProfile, setViewingProfile] = useState<UserProfileSeed | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [lanPortInput, setLanPortInput] = useState("25565");
-  const [bridgeStatus, setBridgeStatus] = useState<string>("idle");
   const [tunnelBusy, setTunnelBusy] = useState(false);
   const [hostReady, setHostReady] = useState(false);
-  const [localLanIp, setLocalLanIp] = useState<string | null>(null);
-  const [activeLanPort, setActiveLanPort] = useState<number | null>(null);
   const [guestBridgePort, setGuestBridgePort] = useState<number | null>(null);
 
   const syncAuth = useCallback(() => {
@@ -448,34 +475,14 @@ export function RoomsTab({
     };
   }, [accessToken, selectedRoomId]);
 
-  useEffect(() => {
-    if (!managing || !selectedRoomId) {
-      setLocalLanIp(null);
-      return;
-    }
-    let cancelled = false;
-    void getLocalLanIp()
-      .then((ip) => {
-        if (!cancelled) setLocalLanIp(ip);
-      })
-      .catch(() => {
-        if (!cancelled) setLocalLanIp(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [managing, selectedRoomId]);
-
+  // Адрес нужен только гостю: это локальный вход в туннель на его же компьютере.
+  // LAN-IP хоста гостю бесполезен — он в другой сети, поэтому хосту адрес не показываем.
   const roomConnectAddress = useMemo(() => {
-    if (isOwner && hostReady && activeLanPort != null) {
-      const hostIp = localLanIp ?? "127.0.0.1";
-      return `${hostIp}:${activeLanPort}`;
-    }
     if (!isOwner && guestBridgePort != null) {
       return `127.0.0.1:${guestBridgePort}`;
     }
     return null;
-  }, [activeLanPort, guestBridgePort, hostReady, isOwner, localLanIp]);
+  }, [guestBridgePort, isOwner]);
 
   useEffect(() => {
     if (!onPresenceContextChange) return;
@@ -516,132 +523,115 @@ export function RoomsTab({
     };
   }, [hostReady, isOwner, onRoomLaunchContextChange, selectedRoom, selectedRoomSessionStartedAt]);
 
-  const tunnelDisposeByPeerRef = useRef<Map<string, () => void>>(new Map());
-  const hostBridgeStartedByPeerRef = useRef<Set<string>>(new Set());
-  const pendingLanPortRef = useRef<number | null>(null);
-  const pendingGuestPeersRef = useRef<Set<string>>(new Set());
-  const sessionsRef = useRef<Record<string, import("../api/webrtc/session").RoomPeerSession>>({});
+  // Каждому пиру с открытым DataChannel — свой туннель в Rust-мосте. Туннель живёт, пока жив
+  // DataChannel: кратковременный обрыв ICE его не трогает, а новая WebRTC-сессия переподключает
+  // туннель к себе, сохраняя локальный порт гостя (адрес в игре не меняется).
+  type LanTunnelEntry = {
+    session: RoomPeerSession;
+    cancelled: boolean;
+    dispose: (() => void) | null;
+    ready: Promise<void>;
+  };
+  const tunnelsByPeerRef = useRef<Map<string, LanTunnelEntry>>(new Map());
+  const tunnelChainByPeerRef = useRef<Map<string, Promise<void>>>(new Map());
+  const warnedOutdatedPeersRef = useRef<Set<string>>(new Set());
 
-  const resetTunnelState = useCallback(() => {
-    for (const dispose of tunnelDisposeByPeerRef.current.values()) {
-      try {
-        dispose();
-      } catch {
-      }
-    }
-    tunnelDisposeByPeerRef.current.clear();
-    hostBridgeStartedByPeerRef.current.clear();
-    pendingLanPortRef.current = null;
-    pendingGuestPeersRef.current.clear();
-    setHostReady(false);
-    setActiveLanPort(null);
-    setGuestBridgePort(null);
-    setBridgeStatus("idle");
-    void stopBridge();
+  const disposeTunnel = useCallback((peerUserId: string) => {
+    const entry = tunnelsByPeerRef.current.get(peerUserId);
+    if (!entry) return;
+    tunnelsByPeerRef.current.delete(peerUserId);
+    entry.cancelled = true;
+    entry.dispose?.();
   }, []);
 
-  const ensureTunnelAttachedForPeer = useCallback(
-    async (peerUserId: string) => {
-      const session = sessionsRef.current[peerUserId];
-      if (!session?.channelOpen) {
-        throw new Error("P2P DataChannel is not open yet");
-      }
-      if (tunnelDisposeByPeerRef.current.has(peerUserId)) return;
+  const onBridgeStatus = useCallback((s: LanBridgeStatus) => {
+    if (s.state === "listening" && s.detail) {
+      const match = /:(\d+)$/.exec(s.detail);
+      if (match) setGuestBridgePort(Number.parseInt(match[1]!, 10));
+    } else if (s.state === "refused" || s.state === "error") {
+      console.warn("[Rooms] lan bridge", s.state, s.detail);
+    }
+  }, []);
 
-      const dispose = await attachLanTunnel({
-        sessionId: peerUserId,
-        sendBinary: (data) => session.sendBinary(data),
-        canSend: () => session.canSendBinary,
-        onRemoteBinary: (handler) => session.onRemoteBinary(handler),
-        onStatus: (s: LanBridgeStatus) => {
-          setBridgeStatus(s.state);
-          if (!isOwner && s.state === "listening" && s.detail) {
-            const match = /:(\d+)$/.exec(s.detail);
-            if (match) {
-              setGuestBridgePort(Number.parseInt(match[1]!, 10));
-            }
+  const attachTunnel = useCallback(
+    (peerUserId: string, session: RoomPeerSession): LanTunnelEntry => {
+      const entry: LanTunnelEntry = {
+        session,
+        cancelled: false,
+        dispose: null,
+        ready: Promise.resolve(),
+      };
+      tunnelsByPeerRef.current.set(peerUserId, entry);
+      // Подключения к одному пиру строго по очереди, чтобы старый attach не перекрыл новый.
+      const previous = tunnelChainByPeerRef.current.get(peerUserId) ?? Promise.resolve();
+      entry.ready = previous
+        .then(async () => {
+          if (entry.cancelled) return;
+          const dispose = await attachLanTunnel({
+            sessionId: peerUserId,
+            sendBinary: (data) => session.sendBinary(data),
+            canSend: () => session.canSendBinary,
+            onRemoteBinary: (handler) => session.onRemoteBinary(handler),
+            onStatus: onBridgeStatus,
+          });
+          if (entry.cancelled) dispose();
+          else entry.dispose = dispose;
+        })
+        .catch((err) => {
+          console.warn("[Rooms] lan tunnel attach failed", err);
+          if (tunnelsByPeerRef.current.get(peerUserId) === entry) {
+            tunnelsByPeerRef.current.delete(peerUserId);
           }
-          if (s.state === "connected" && isOwner) {
-            session.signalTunnelReady();
-          }
-          if (s.state === "connected" && !isOwner) {
-            session.signalTunnelOpen();
-            void session
-              .waitForTunnelReady(20_000)
-              .then(() => allowGuestForward(peerUserId))
-              .catch((err) => {
-                console.warn("[Rooms] tunnel:ready wait failed, allowing forward anyway", err);
-                return allowGuestForward(peerUserId);
-              });
-          }
-        },
-      });
-      tunnelDisposeByPeerRef.current.set(peerUserId, dispose);
+        });
+      tunnelChainByPeerRef.current.set(peerUserId, entry.ready);
+      return entry;
     },
-    [isOwner],
-  );
-
-  const startHostBridgeForPeer = useCallback(
-    async (peerUserId: string, port: number) => {
-      if (hostBridgeStartedByPeerRef.current.has(peerUserId)) return;
-      hostBridgeStartedByPeerRef.current.add(peerUserId);
-      try {
-        await ensureTunnelAttachedForPeer(peerUserId);
-        await startHostBridge(peerUserId, port);
-        setBridgeStatus("connecting");
-      } catch (e) {
-        hostBridgeStartedByPeerRef.current.delete(peerUserId);
-        showNotification("error", e instanceof Error ? e.message : String(e));
-      }
-    },
-    [ensureTunnelAttachedForPeer, showNotification],
-  );
-
-  const onTunnelOpen = useCallback(
-    (fromPeerUserId: string) => {
-      const port = pendingLanPortRef.current;
-      if (port == null) {
-        pendingGuestPeersRef.current.add(fromPeerUserId);
-        return;
-      }
-      void startHostBridgeForPeer(fromPeerUserId, port);
-    },
-    [startHostBridgeForPeer],
-  );
-
-  const onPeerChannelOpen = useCallback(
-    (peerUserId: string) => {
-      if (!isOwner || !hostReady || pendingLanPortRef.current == null) return;
-      void ensureTunnelAttachedForPeer(peerUserId).catch(() => {});
-    },
-    [ensureTunnelAttachedForPeer, hostReady, isOwner],
+    [onBridgeStatus],
   );
 
   const {
     link: peerLink,
     sessions,
+    peerLinks,
     expectedPeerIds,
     connectedPeerIds,
     offlinePeerIds,
     reconnectAll,
-  } = useRoomPeerSession(selectedRoom, userId, {
-    onTunnelOpen: isOwner ? onTunnelOpen : undefined,
-    onSessionReset: resetTunnelState,
-    onPeerChannelOpen: isOwner ? onPeerChannelOpen : undefined,
-  });
-  sessionsRef.current = sessions;
+  } = useRoomPeerSession(selectedRoom, userId);
+
+  useEffect(() => {
+    const wanted = new Map<string, RoomPeerSession>();
+    for (const peerId of expectedPeerIds) {
+      const session = sessions[peerId];
+      if (session && peerLinks[peerId]?.channelOpen) wanted.set(peerId, session);
+    }
+    for (const [peerId, entry] of [...tunnelsByPeerRef.current]) {
+      if (wanted.get(peerId) !== entry.session) disposeTunnel(peerId);
+    }
+    for (const [peerId, session] of wanted) {
+      if (tunnelsByPeerRef.current.has(peerId)) continue;
+      attachTunnel(peerId, session);
+      if (warnedOutdatedPeersRef.current.has(peerId)) continue;
+      window.setTimeout(() => {
+        if (!session.channelOpen || session.supportsLanTunnel) return;
+        if (warnedOutdatedPeersRef.current.has(peerId)) return;
+        warnedOutdatedPeersRef.current.add(peerId);
+        showNotification("warning", tt("rooms.peerLauncherOutdated"));
+      }, 5_000);
+    }
+  }, [attachTunnel, disposeTunnel, expectedPeerIds, peerLinks, sessions, showNotification, tt]);
 
   useEffect(() => {
     return () => {
-      for (const dispose of tunnelDisposeByPeerRef.current.values()) {
-        try {
-          dispose();
-        } catch {
-        }
-      }
-      tunnelDisposeByPeerRef.current.clear();
+      for (const peerId of [...tunnelsByPeerRef.current.keys()]) disposeTunnel(peerId);
+      tunnelChainByPeerRef.current.clear();
+      warnedOutdatedPeersRef.current.clear();
+      setHostReady(false);
+      setGuestBridgePort(null);
+      void setHostLanPort(null).catch(() => {});
+      void stopBridge().catch(() => {});
     };
-  }, []);
+  }, [selectedRoomId, disposeTunnel]);
 
   const handleHostShareWorld = async () => {
     const port = Number.parseInt(lanPortInput.trim(), 10);
@@ -649,28 +639,19 @@ export function RoomsTab({
       showNotification("warning", "Укажите порт Open to LAN (1–65535)");
       return;
     }
-    if (connectedPeerIds.length === 0) {
-      showNotification("warning", tt("rooms.needP2p"));
-      return;
-    }
     setTunnelBusy(true);
     try {
-      pendingLanPortRef.current = port;
-      setActiveLanPort(port);
+      await setHostLanPort(port);
       setHostReady(true);
-    
-      for (const peerId of connectedPeerIds) {
-        await ensureTunnelAttachedForPeer(peerId);
+      const reachable = await probeLanPort(port).catch(() => false);
+      if (reachable) {
+        showNotification(
+          "success",
+          "Мир готов к подключению. Гости могут нажать «Войти в мир».",
+        );
+      } else {
+        showNotification("warning", tt("rooms.lanPortUnreachable", { port }));
       }
-      const waitingGuests = [...pendingGuestPeersRef.current];
-      pendingGuestPeersRef.current.clear();
-      for (const peerId of waitingGuests) {
-        await startHostBridgeForPeer(peerId, port);
-      }
-      showNotification(
-        "success",
-        "Мир готов к подключению. Гости могут нажать «Войти в мир».",
-      );
     } catch (e) {
       showNotification("error", e instanceof Error ? e.message : String(e));
     } finally {
@@ -697,13 +678,19 @@ export function RoomsTab({
     }
     setTunnelBusy(true);
     try {
-      await ensureTunnelAttachedForPeer(hostPeerId);
-      const localPort = await startGuestBridge(hostPeerId);
-      setGuestBridgePort(localPort);
-      if (!sessionsRef.current[hostPeerId]?.channelOpen) {
+      const hostSession = sessions[hostPeerId];
+      if (!hostSession?.channelOpen) {
         throw new Error("P2P канал закрылся — дождитесь channel open и попробуйте снова");
       }
-      console.info("[Rooms] guest bridge listening", { localPort, bridgeStatus, hostPeerId });
+      if (!hostSession.supportsLanTunnel) {
+        throw new Error(tt("rooms.peerLauncherOutdated"));
+      }
+      const tunnel =
+        tunnelsByPeerRef.current.get(hostPeerId) ?? attachTunnel(hostPeerId, hostSession);
+      await tunnel.ready;
+      const localPort = await startGuestBridge(hostPeerId);
+      setGuestBridgePort(localPort);
+      console.info("[Rooms] guest bridge listening", { localPort, hostPeerId });
       const serverAddress = `127.0.0.1:${localPort}`;
       const presenceContext: LaunchPresenceContext = {
         kind: "room_world",
@@ -739,9 +726,10 @@ export function RoomsTab({
 
   const resetCreateForm = () => {
     setCreateRoomName("");
-    setCreateLoader("vanilla");
+    setCreateLoader(currentGame?.loader ?? "vanilla");
     setCreateGameVersion("");
     setCreateVersions([]);
+    setCreateManual(!currentGame);
     setCreateRoomVisibility("public");
     setCreateRoomPassword("");
     setIsVisibilityDropdownOpen(false);
@@ -778,8 +766,12 @@ export function RoomsTab({
       .then((list) => {
         if (cancelled) return;
         setCreateVersions(list);
+        const auto =
+          !createManual && currentGame?.loader === createLoader
+            ? pickRoomVersionId(list, currentGame)
+            : null;
         setCreateGameVersion((prev) =>
-          prev && list.some((v) => v.id === prev) ? prev : list[0]?.id ?? "",
+          auto ?? (prev && list.some((v) => v.id === prev) ? prev : list[0]?.id ?? ""),
         );
       })
       .catch((e) => {
@@ -794,7 +786,16 @@ export function RoomsTab({
     return () => {
       cancelled = true;
     };
-  }, [createLoader, loadVersionsForLoader, showCreateModal, showNotification]);
+  }, [
+    createLoader,
+    createManual,
+    currentGame?.loader,
+    currentGame?.gameVersion,
+    currentGame?.loaderVersion,
+    loadVersionsForLoader,
+    showCreateModal,
+    showNotification,
+  ]);
 
   useEffect(() => {
     if (!showCreateModal || !isVisibilityDropdownOpen) return;
@@ -861,8 +862,10 @@ export function RoomsTab({
       .then((list) => {
         if (cancelled) return;
         setEditVersions(list);
+        const auto = pendingEditPickRef.current ? pickRoomVersionId(list, currentGame) : null;
+        pendingEditPickRef.current = false;
         setEditGameVersion((prev) =>
-          prev && list.some((v) => v.id === prev) ? prev : list[0]?.id ?? prev,
+          auto ?? (prev && list.some((v) => v.id === prev) ? prev : list[0]?.id ?? prev),
         );
       })
       .catch(() => {
@@ -1211,19 +1214,19 @@ export function RoomsTab({
         key={room.id}
         type="button"
         onClick={() => openRoom(room)}
-        className="group flex items-center gap-3 rounded-xl border border-white/10 bg-black/35 px-3 py-2.5 text-left transition hover:border-emerald-400/35 hover:bg-black/50"
+        className="group flex items-center gap-3 rounded-xl border border-white/10 bg-black/35 px-3 py-2.5 text-left transition hover:border-accent-to/40 hover:bg-black/50"
       >
         <MemberAvatars members={members} avatarSrcFor={avatarSrcFor} max={3} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <p className="truncate text-sm font-semibold text-white/90">{roomTitle}</p>
             <span
-              className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ring-1 ${statusTone(room.status)}`}
+              className={`shrink-0 rounded-md px-1.5 py-0.5 text-[0.75rem] font-bold ring-1 ${statusTone(room.status)}`}
             >
               {statusLabel(room.status)}
             </span>
           </div>
-          <p className="mt-0.5 truncate text-[11px] text-white/40">
+          <p className="mt-0.5 truncate text-[0.8125rem] text-white/40">
             {tt("rooms.players", { count: room.member_count, max: room.max_players })}
             {" · "}
             {formatRoomVisibility(room.visibility, tt)}
@@ -1232,7 +1235,7 @@ export function RoomsTab({
             {formatRoomGameMeta(room) ? ` · ${formatRoomGameMeta(room)}` : ""}
           </p>
         </div>
-        <span className="shrink-0 text-xs text-white/35 group-hover:text-emerald-200/80">→</span>
+        <span className="shrink-0 text-xs text-white/35 group-hover:text-accent-hi">→</span>
       </button>
     );
   };
@@ -1267,12 +1270,12 @@ export function RoomsTab({
           <div className="flex items-center gap-2">
             <p className="truncate text-sm font-semibold text-white/90">{roomTitle}</p>
             <span
-              className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ring-1 ${statusTone(room.status)}`}
+              className={`shrink-0 rounded-md px-1.5 py-0.5 text-[0.75rem] font-bold ring-1 ${statusTone(room.status)}`}
             >
               {statusLabel(room.status)}
             </span>
           </div>
-          <p className="mt-0.5 truncate text-[11px] text-white/40">
+          <p className="mt-0.5 truncate text-[0.8125rem] text-white/40">
             {tt("rooms.ownedBy", { nick: ownerNick })}
             {" · "}
             {tt("rooms.players", { count: room.member_count, max: room.max_players })}
@@ -1288,6 +1291,7 @@ export function RoomsTab({
           loading={busyAction === `join:${room.id}`}
           loadingLabel={tt("rooms.joining")}
           disabled={!canJoin || (loading && busyAction !== `join:${room.id}`)}
+          disabledReason={!canJoin ? tt("rooms.joinClosedReason") : undefined}
           onClick={() => void handleJoin(room.id)}
         >
           {tt("rooms.joinFriendRoom")}
@@ -1302,7 +1306,7 @@ export function RoomsTab({
     const sessionPlaytimeSeconds = getElapsedSeconds(selectedRoomSessionStartedAt, nowMs);
     return (
       <>
-        <div className="flex w-full max-w-4xl flex-col gap-5 py-6">
+        <div className="flex w-full max-w-6xl flex-col gap-4 py-4">
           <div className="flex flex-wrap items-center gap-2">
             <ActionButton
               size="sm"
@@ -1318,14 +1322,14 @@ export function RoomsTab({
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="ui-title truncate text-base">{roomTitle}</h2>
                 <span
-                  className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ring-1 ${statusTone(selectedRoom.status)}`}
+                  className={`rounded-md px-1.5 py-0.5 text-[0.75rem] font-bold ring-1 ${statusTone(selectedRoom.status)}`}
                 >
                   {statusLabel(selectedRoom.status)}
                 </span>
                 <span
-                  className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${
+                  className={`rounded-md px-1.5 py-0.5 text-[0.75rem] font-semibold ${
                     isOwner
-                      ? "bg-emerald-500/15 text-emerald-200"
+                      ? "bg-accent-from/20 text-accent-hi"
                       : "bg-white/10 text-white/65"
                   }`}
                 >
@@ -1355,7 +1359,7 @@ export function RoomsTab({
                           tt("rooms.connectAddressCopied"),
                         )
                       }
-                      className="font-semibold text-emerald-300/85 transition hover:text-emerald-200"
+                      className="font-semibold text-accent-hi transition hover:text-white"
                       title={tt("rooms.connectAddressHint")}
                     >
                       {roomConnectAddress}
@@ -1477,17 +1481,38 @@ export function RoomsTab({
                 <p className="ui-section">{tt("rooms.worldTitle")}</p>
 
                 <div className="mt-2 flex flex-col gap-2 rounded-lg border border-white/10 bg-black/25 px-2.5 py-2">
-                  <p className="text-[11px] font-semibold text-white/45">{tt("rooms.gameMetaTitle")}</p>
+                  <p className="text-[0.8125rem] font-semibold text-white/45">{tt("rooms.gameMetaTitle")}</p>
                   {isOwner ? (
                     <div className="flex flex-col gap-2">
+                      {currentGame ? (
+                        <ActionButton
+                          size="sm"
+                          variant="sky"
+                          disabled={loading || editVersionsLoading}
+                          onClick={() => {
+                            pendingEditPickRef.current = true;
+                            if (editLoader === currentGame.loader) {
+                              const picked = pickRoomVersionId(editVersions, currentGame);
+                              pendingEditPickRef.current = false;
+                              if (picked) setEditGameVersion(picked);
+                            } else {
+                              setEditLoader(currentGame.loader);
+                            }
+                          }}
+                        >
+                          {currentGame.source === "profile"
+                            ? tt("rooms.auto.fromProfile", { name: currentGame.label })
+                            : tt("rooms.auto.fromMenu")}
+                        </ActionButton>
+                      ) : null}
                       <div className="flex flex-col gap-2 sm:flex-row">
                         <label className="flex flex-1 flex-col gap-1">
-                          <span className="text-[11px] text-white/45">{tt("rooms.loaderLabel")}</span>
+                          <span className="text-[0.8125rem] text-white/45">{tt("rooms.loaderLabel")}</span>
                           <select
                             value={editLoader}
                             onChange={(e) => setEditLoader(e.target.value as RoomLoaderId)}
                             disabled={loading || editVersionsLoading}
-                            className="rounded-lg border border-white/12 bg-black/40 px-2.5 py-2 text-sm text-white outline-none"
+                            className="launcher-select glass-control px-3 py-2 text-sm text-white outline-none"
                           >
                             {ROOM_LOADERS.map((id) => (
                               <option key={id} value={id}>
@@ -1497,12 +1522,12 @@ export function RoomsTab({
                           </select>
                         </label>
                         <label className="flex flex-[1.4] flex-col gap-1">
-                          <span className="text-[11px] text-white/45">{tt("rooms.versionLabel")}</span>
+                          <span className="text-[0.8125rem] text-white/45">{tt("rooms.versionLabel")}</span>
                           <select
                             value={editGameVersion}
                             onChange={(e) => setEditGameVersion(e.target.value)}
                             disabled={loading || editVersionsLoading || editVersions.length === 0}
-                            className="rounded-lg border border-white/12 bg-black/40 px-2.5 py-2 text-sm text-white outline-none"
+                            className="launcher-select glass-control px-3 py-2 text-sm text-white outline-none"
                           >
                             {editVersions.map((v) => (
                               <option key={v.id} value={v.id}>
@@ -1535,13 +1560,13 @@ export function RoomsTab({
                   <div className="mt-2 flex flex-col gap-2">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
                       <label className="flex flex-1 flex-col gap-1">
-                        <span className="text-[11px] font-semibold text-white/45">{tt("rooms.lanPort")}</span>
+                        <span className="text-[0.8125rem] font-semibold text-white/45">{tt("rooms.lanPort")}</span>
                         <div className="relative">
                           <input
                             type="text"
                             value={lanPortInput}
                             onChange={(e) => setLanPortInput(e.target.value)}
-                            className={`rounded-lg border border-white/10 bg-black/30 px-2.5 py-2 text-sm text-white outline-none focus:border-emerald-400/30 ${
+                            className={`glass-control rounded-lg px-2.5 py-2 text-sm text-white outline-none ${
                               lanPortInput ? "pr-9" : ""
                             }`}
                             placeholder="25565"
@@ -1556,32 +1581,36 @@ export function RoomsTab({
                           />
                         </div>
                       </label>
-                      <button
-                        type="button"
+                      <ActionButton
+                        variant="emerald"
+                        size="sm"
                         disabled={tunnelBusy || !p2pReady}
+                        disabledReason={!p2pReady ? tt("rooms.needP2pReason") : undefined}
                         onClick={() => void handleHostShareWorld()}
-                        className="interactive-press rounded-lg border border-emerald-500/40 bg-emerald-600/25 px-3 py-2 text-sm font-semibold text-emerald-50 hover:bg-emerald-600/35 disabled:opacity-60"
                       >
                         {hostReady ? tt("rooms.shareWorldWaiting") : tt("rooms.shareWorld")}
-                      </button>
+                      </ActionButton>
                     </div>
-                    <p className="text-[11px] leading-relaxed text-white/45">{tt("rooms.hostSteps")}</p>
+                    <p className="text-[0.8125rem] leading-relaxed text-white/45">{tt("rooms.hostSteps")}</p>
                   </div>
                 ) : (
                   <div className="mt-2 flex flex-col gap-2">
-                    <button
-                      type="button"
+                    <ActionButton
+                      variant="emerald"
                       disabled={tunnelBusy || !mcAuthOnline || !p2pReady}
-                      onClick={() => void handleGuestJoinWorld()}
-                      className="interactive-press w-full rounded-lg border border-emerald-500/40 bg-emerald-600/25 px-3 py-2.5 text-sm font-semibold text-emerald-50 hover:bg-emerald-600/35 disabled:opacity-60 sm:w-fit"
-                      title={
+                      disabledReason={
                         !mcAuthOnline
-                          ? "Войдите через Microsoft или Ely на вкладке Аккаунты"
-                          : undefined
+                          ? tt("rooms.mcOfflineHint")
+                          : !p2pReady
+                            ? tt("rooms.needP2pReason")
+                            : undefined
                       }
+                      onClick={() => void handleGuestJoinWorld()}
+                      className="sm:w-fit"
+                      fullWidth
                     >
                       {tt("rooms.joinWorld")}
-                    </button>
+                    </ActionButton>
                     <p className="ui-meta leading-relaxed">{tt("rooms.guestSteps")}</p>
                   </div>
                 )}
@@ -1749,11 +1778,7 @@ export function RoomsTab({
 
   if (!accessToken) {
     return (
-      <div className="flex w-full max-w-4xl flex-col gap-5 py-6">
-        <div className="w-full text-center">
-          <h1 className="ui-title">{tt("app.sidebar.rooms")}</h1>
-          <p className="ui-subtitle mt-1.5">{tt("rooms.subtitleSignedOut")}</p>
-        </div>
+      <div className="flex w-full max-w-6xl flex-col gap-4 py-4">
         <AuthGate
           title={tt("rooms.authGateTitle")}
           description={tt("rooms.authGateBody")}
@@ -1766,13 +1791,8 @@ export function RoomsTab({
 
   return (
     <>
-      <div className="flex w-full max-w-4xl flex-col gap-5 py-6">
-        <div className="w-full text-center">
-          <h1 className="ui-title">{tt("app.sidebar.rooms")}</h1>
-          <p className="ui-subtitle mt-1.5">{tt("rooms.subtitleSignedIn")}</p>
-        </div>
-
-        <Panel className="flex flex-wrap items-center justify-center gap-2">
+      <div className="flex w-full max-w-6xl flex-col gap-4 py-4">
+        <Panel className="flex flex-wrap items-center gap-2">
           <ActionButton
             size="sm"
             variant="emerald"
@@ -1793,6 +1813,7 @@ export function RoomsTab({
           <ActionButton
             size="sm"
             variant="secondary"
+            className="ml-auto"
             loading={busyAction === "refresh"}
             loadingLabel={tt("common.loading")}
             disabled={loading && busyAction !== "refresh"}
@@ -1803,7 +1824,7 @@ export function RoomsTab({
         </Panel>
 
         {showJoinPanel ? (
-          <Panel padding="sm" className="flex flex-col gap-2 border-sky-400/20 bg-sky-500/5">
+          <Panel padding="sm" className="flex flex-col gap-2">
             <p className="ui-meta leading-relaxed">{tt("rooms.joinHint")}</p>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <TextField
@@ -1815,7 +1836,7 @@ export function RoomsTab({
                     void handleJoin();
                   }
                 }}
-                className="flex-1 focus:border-sky-400/40"
+                className="flex-1"
                 placeholder={tt("rooms.joinIdPlaceholder")}
               />
               <TextField
@@ -1827,7 +1848,7 @@ export function RoomsTab({
                     void handleJoin();
                   }
                 }}
-                className="sm:w-44 focus:border-sky-400/40"
+                className="sm:w-44"
                 placeholder={tt("rooms.joinPasswordPlaceholder")}
                 autoComplete="off"
               />
@@ -1950,6 +1971,38 @@ export function RoomsTab({
             />
           </label>
 
+          {currentGame && !createManual ? (
+            <div className="glass-inset flex items-center gap-3 px-3.5 py-3">
+              <div className="min-w-0 flex-1">
+                <p className="ui-caption font-semibold">{tt("rooms.auto.label")}</p>
+                <p className="truncate text-base font-semibold text-white">
+                  {createVersionsLoading
+                    ? tt("common.loading")
+                    : `${createVersions.find((v) => v.id === createGameVersion)?.label ?? createGameVersion} · ${tt(`rooms.loader.${createLoader}`)}`}
+                </p>
+                <p className="ui-meta truncate">
+                  {currentGame.source === "profile"
+                    ? tt("rooms.auto.fromProfile", { name: currentGame.label })
+                    : tt("rooms.auto.fromMenu")}
+                </p>
+              </div>
+              <ActionButton size="sm" variant="ghost" onClick={() => setCreateManual(true)}>
+                {tt("rooms.auto.manual")}
+              </ActionButton>
+            </div>
+          ) : (
+          <div className="flex flex-col gap-2">
+            {currentGame ? (
+              <button
+                type="button"
+                onClick={() => setCreateManual(false)}
+                className="interactive-press self-start text-[0.8125rem] font-semibold text-accent-hi hover:text-white"
+              >
+                ← {tt("rooms.auto.useAuto")}
+              </button>
+            ) : (
+              <p className="locked-hint">{tt("rooms.auto.none")}</p>
+            )}
           <div className="flex flex-col gap-2 sm:flex-row">
             <label className="flex flex-1 flex-col gap-1">
               <span className="ui-caption font-semibold">{tt("rooms.loaderLabel")}</span>
@@ -1957,7 +2010,7 @@ export function RoomsTab({
                 value={createLoader}
                 onChange={(e) => setCreateLoader(e.target.value as RoomLoaderId)}
                 disabled={loading || createVersionsLoading}
-                className="rounded-xl border border-white/12 bg-black/40 px-3 py-2.5 text-sm text-white outline-none"
+                className="launcher-select glass-control px-3 py-2.5 text-sm text-white outline-none"
               >
                 {ROOM_LOADERS.map((id) => (
                   <option key={id} value={id}>
@@ -1972,7 +2025,7 @@ export function RoomsTab({
                 value={createGameVersion}
                 onChange={(e) => setCreateGameVersion(e.target.value)}
                 disabled={loading || createVersionsLoading || createVersions.length === 0}
-                className="rounded-xl border border-white/12 bg-black/40 px-3 py-2.5 text-sm text-white outline-none"
+                className="launcher-select glass-control px-3 py-2.5 text-sm text-white outline-none"
               >
                 {createVersions.map((v) => (
                   <option key={v.id} value={v.id}>
@@ -1982,6 +2035,8 @@ export function RoomsTab({
               </select>
             </label>
           </div>
+          </div>
+          )}
 
           <div ref={visibilityDropdownRef} className="relative flex flex-col gap-1">
             <span className="ui-caption font-semibold">{tt("rooms.visibilityLabel")}</span>
@@ -1989,14 +2044,14 @@ export function RoomsTab({
               type="button"
               disabled={loading}
               onClick={() => setIsVisibilityDropdownOpen((prev) => !prev)}
-              className="interactive-press flex w-full items-center justify-between rounded-xl border border-white/12 bg-black/40 px-3 py-2.5 text-left text-sm text-white outline-none transition-colors hover:border-white/25 hover:bg-black/50 focus:border-white/25 disabled:opacity-60"
+              className="interactive-press flex w-full items-center justify-between rounded-xl border border-white/10 bg-black/40 px-4 py-2.5 text-left text-sm text-white outline-none transition-colors hover:border-white/25 hover:bg-black/50 focus:border-white/25 disabled:opacity-60"
             >
               <span>
                 {createRoomVisibility === "private"
                   ? tt("rooms.visibility.private")
                   : tt("rooms.visibility.public")}
               </span>
-              <span className="text-[10px] text-white/50">▾</span>
+              <span className="text-[0.75rem] text-white/50">▾</span>
             </button>
             {isVisibilityDropdownOpen ? (
               <div className="absolute left-0 top-full z-30 mt-1 w-full overflow-hidden glass-popover p-1">
@@ -2017,7 +2072,7 @@ export function RoomsTab({
                         if (option.value === "public") setCreateRoomPassword("");
                       }}
                       className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors ${
-                        active ? "bg-white/90 text-black" : "text-white/80 hover:bg-white/10"
+                        active ? "seg-on" : "text-white/80 hover:bg-white/10"
                       }`}
                     >
                       <span>{option.label}</span>

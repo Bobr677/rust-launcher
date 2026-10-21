@@ -1,4 +1,5 @@
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { ButtonHTMLAttributes, MouseEvent, ReactNode } from "react";
 import { Spinner } from "./Spinner";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger" | "sky" | "emerald";
@@ -11,27 +12,28 @@ type Props = ButtonHTMLAttributes<HTMLButtonElement> & {
   loadingLabel?: ReactNode;
   children: ReactNode;
   fullWidth?: boolean;
+  /** @deprecated Buttons share one radius now; kept so existing call sites compile. */
   pill?: boolean;
+  /** Why the button is unavailable. Shown as a tooltip and as a bubble when the user clicks it anyway. */
+  disabledReason?: string;
 };
 
+// Every variant shares the .btn base (index.css), so height, radius and type match across tabs.
+// "emerald" and "sky" are kept as names for existing call sites: emerald is the tinted accent
+// (secondary confirm), sky the neutral secondary.
 const variantClasses: Record<Variant, string> = {
-  primary:
-    "accent-bg text-white shadow-soft hover:opacity-90 focus-visible:ring-white/35",
-  secondary:
-    "glass-control text-white hover:border-white/25 hover:bg-white/[0.08]",
-  ghost:
-    "border border-transparent bg-transparent text-white/70 hover:bg-white/10 hover:text-white",
-  danger:
-    "border border-red-400/30 bg-red-500/15 text-red-100 hover:bg-red-500/25",
-  sky: "border border-sky-400/30 bg-sky-500/12 text-sky-100 hover:bg-sky-500/22",
-  emerald:
-    "border border-emerald-400/30 bg-emerald-500/15 text-emerald-50 hover:bg-emerald-500/25",
+  primary: "btn-accent",
+  secondary: "btn-soft",
+  ghost: "btn-ghost",
+  danger: "btn-danger",
+  sky: "btn-soft",
+  emerald: "btn-tint",
 };
 
 const sizeClasses: Record<Size, string> = {
-  sm: "px-3 py-1.5 text-xs",
-  md: "px-4 py-2.5 text-sm",
-  lg: "px-12 py-3 text-sm sm:px-16",
+  sm: "btn-sm",
+  md: "",
+  lg: "btn-lg sm:px-10",
 };
 
 export function ActionButton({
@@ -41,24 +43,49 @@ export function ActionButton({
   loadingLabel,
   children,
   fullWidth = false,
-  pill = false,
+  pill: _pill,
   className = "",
   disabled,
+  disabledReason,
+  onClick,
+  title,
   ...rest
 }: Props) {
   const isDisabled = Boolean(disabled || loading);
+  const explain = Boolean(disabled && !loading && disabledReason);
+  const [bubble, setBubble] = useState(false);
+  const timerRef = useRef<number | null>(null);
 
-  return (
+  useEffect(() => {
+    return () => {
+      if (timerRef.current != null) window.clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  const handleClick = (e: MouseEvent<HTMLButtonElement>) => {
+    if (explain) {
+      e.preventDefault();
+      setBubble(true);
+      if (timerRef.current != null) window.clearTimeout(timerRef.current);
+      timerRef.current = window.setTimeout(() => setBubble(false), 2600);
+      return;
+    }
+    onClick?.(e);
+  };
+
+  const button = (
     <button
       type="button"
-      disabled={isDisabled}
+      disabled={explain ? undefined : isDisabled}
+      aria-disabled={explain || undefined}
+      title={explain ? disabledReason : title}
+      onClick={handleClick}
       aria-busy={loading || undefined}
       className={[
-        "inline-flex items-center justify-center gap-2 font-semibold tracking-wide transition-colors duration-200",
-        pill ? "rounded-full" : "rounded-xl",
-        loading ? "" : "interactive-press",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent",
-        "disabled:cursor-not-allowed disabled:opacity-45 disabled:transform-none",
+        "btn",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-to/60 focus-visible:ring-offset-2 focus-visible:ring-offset-ink-950",
+        "disabled:cursor-not-allowed",
+        explain ? "cursor-not-allowed opacity-50" : "",
         fullWidth ? "w-full" : "",
         sizeClasses[size],
         variantClasses[variant],
@@ -77,5 +104,21 @@ export function ActionButton({
         children
       )}
     </button>
+  );
+
+  if (!explain) return button;
+
+  return (
+    <span className={`relative inline-flex ${fullWidth ? "w-full" : ""}`}>
+      {button}
+      {bubble && (
+        <span
+          role="status"
+          className="locked-hint pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 w-max max-w-[18rem] -translate-x-1/2 shadow-soft"
+        >
+          {disabledReason}
+        </span>
+      )}
+    </span>
   );
 }

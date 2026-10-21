@@ -1065,12 +1065,13 @@ export function ModsTab({
             className="glass-modal max-w-md p-5"
             onClick={(e) => e.stopPropagation()}
           >
-            <p className="mb-4 text-sm text-white/90">{tt("mods.unlockConfirm")}</p>
+            <p className="mb-2 text-sm font-semibold text-white">{tt("mods.unlockTitle")}</p>
+            <p className="mb-4 text-sm text-white/80">{tt("mods.unlockConfirm")}</p>
             <div className="flex justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setShowUnlockConfirm(false)}
-                className="interactive-press rounded-xl bg-white/10 px-4 py-1.5 text-xs font-semibold text-white hover:bg-white/20"
+                className="interactive-press rounded-xl bg-white/10 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-white/20"
               >
                 {tt("common.cancel")}
               </button>
@@ -1080,12 +1081,48 @@ export function ModsTab({
                   setVersionLoaderLocked(false);
                   setShowUnlockConfirm(false);
                 }}
-                className="interactive-press rounded-xl bg-amber-500 px-4 py-1.5 text-xs font-semibold text-white hover:bg-amber-400"
+                className="interactive-press rounded-xl bg-amber-500 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-amber-400"
               >
                 {tt("common.change")}
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {activeProfileId && contentType !== "modpack" && (
+        <div className="relative z-10 mb-3">
+          {versionLoaderLocked ? (
+            <div className="locked-hint w-full justify-between">
+              <span className="flex min-w-0 items-center gap-2">
+                <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
+                <span className="truncate">
+                  {tt("mods.lockedBanner", {
+                    version: activeProfileGameVersion || gameVersion || "—",
+                    loader: activeProfileLoader || (loader === "any" ? "—" : loader),
+                  })}
+                </span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowUnlockConfirm(true)}
+                className="interactive-press shrink-0 rounded-lg bg-amber-400/20 px-3 py-1 text-[0.8125rem] font-semibold text-amber-100 hover:bg-amber-400/30"
+              >
+                {tt("common.change")}
+              </button>
+            </div>
+          ) : (
+            <div className="locked-hint w-full justify-between border-sky-300/25 bg-gradient-to-br from-sky-400/15 to-sky-400/5 text-sky-100">
+              <span className="truncate">{tt("mods.unlockedBanner")}</span>
+              <button
+                type="button"
+                onClick={() => setVersionLoaderLocked(true)}
+                className="interactive-press shrink-0 rounded-lg bg-sky-400/20 px-3 py-1 text-[0.8125rem] font-semibold text-sky-50 hover:bg-sky-400/30"
+              >
+                {tt("mods.relock")}
+              </button>
+            </div>
+          )}
         </div>
       )}
 

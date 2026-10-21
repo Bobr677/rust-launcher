@@ -33,15 +33,17 @@ import { ModsTab } from "./tabs/ModsTab";
 import { PlayTab } from "./tabs/PlayTab";
 import { FriendsTab } from "./tabs/FriendsTab";
 import { RoomsTab } from "./tabs/RoomsTab";
-import type { RoomGameSettings } from "./tabs/RoomsTab";
+import type { RoomCurrentGame, RoomGameSettings } from "./tabs/RoomsTab";
 import { AccountsTab } from "./tabs/AccountsTab";
 import { TabSplitDropOverlay } from "./components/tab_split_drop_overlay";
 import { LauncherBackgroundImage } from "./components/LauncherBackgroundImage";
+import { LauncherGradientBackground } from "./components/LauncherGradientBackground";
 import { HalloweenDecorations } from "./components/HalloweenDecorations";
 import { UpdatePopupModal } from "./components/UpdatePopupModal";
 import { shouldShowThematicDecorations } from "./lib/seasonalTheme";
 import { AccountAvatar } from "./components/account_avatar";
-import { AuthProviderWatermark } from "./components/auth_provider_watermark";
+import { SidebarAccount } from "./components/sidebar_account";
+import { API_AUTH_CHANGED_EVENT, API_NICKNAME_KEY } from "./api/auth";
 import {
   createFallbackUpdatePopupBanner,
   fetchLauncherBanners,
@@ -185,6 +187,7 @@ type Settings = {
   minimize_to_tray_on_close: boolean;
   autostart_enabled: boolean;
   animations_disabled: boolean;
+  background_animation_disabled?: boolean;
   thematic_decorations_disabled?: boolean;
   show_launcher_banners?: boolean;
   interface_language?: string;
@@ -683,42 +686,6 @@ function SettingsIcon() {
   );
 }
 
-function ModsIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className="h-7 w-7 fill-current"
-      aria-hidden="true"
-    >
-      <path d="M11.2 3.1a2 2 0 0 1 1.6 0l6.1 2.7a1.5 1.5 0 0 1 .9 1.37V16.8a1.5 1.5 0 0 1-.9 1.37l-6.1 2.73a2 2 0 0 1-1.6 0L5.1 18.17A1.5 1.5 0 0 1 4.2 16.8V7.17A1.5 1.5 0 0 1 5.1 5.8l6.1-2.7Z" />
-    </svg>
-  );
-}
-
-function ModpackIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className="h-7 w-7 fill-current"
-      aria-hidden="true"
-    >
-      <path d="M4 4h16v4h-2V6H6v12h4v2H4V4zm14 6v10H8V10h10zm-2 2h-6v6h6v-6z" />
-    </svg>
-  );
-}
-
-function ProfileIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className="h-8 w-8 fill-current"
-      aria-hidden="true"
-    >
-      <path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm0 2c-3 0-8 1.5-8 4.5V21h16v-2.5C20 15.5 15 14 12 14Z" />
-    </svg>
-  );
-}
-
 function PlusIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
@@ -850,6 +817,24 @@ function App() {
   const sidebarButtonRefs = useRef<
     Partial<Record<SidebarItemId, HTMLButtonElement | null>>
   >({});
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return window.localStorage.getItem("sidebar_collapsed") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggleSidebarCollapsed = useCallback(() => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem("sidebar_collapsed", next ? "1" : "0");
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
   const [sidebarIndicator, setSidebarIndicator] = useState<{
     offset: number;
     span: number;
@@ -866,20 +851,23 @@ function App() {
     const horizontal = isSidebarHorizontal(parseSidebarPosition(settings?.sidebar_position));
 
     if (horizontal) {
-      const span = Math.max(24, btnRect.width);
-      const offset = btnRect.left - containerRect.left;
+      const span = Math.max(16, btnRect.width - 20);
+      const offset = btnRect.left - containerRect.left + (btnRect.width - span) / 2;
       setSidebarIndicator({ offset, span, ready: true });
       return;
     }
 
-    const span = 32;
+    const span = Math.max(20, btnRect.height - 14);
     const offset = btnRect.top - containerRect.top + (btnRect.height - span) / 2;
     setSidebarIndicator({ offset, span, ready: true });
   }, [activeItem, settings?.sidebar_position]);
 
   useLayoutEffect(() => {
     updateSidebarIndicator();
-  }, [updateSidebarIndicator, sidebarPosition]);
+    // Width/height animate for ~0.3s after collapsing; re-measure once it settles.
+    const timer = window.setTimeout(updateSidebarIndicator, 320);
+    return () => window.clearTimeout(timer);
+  }, [updateSidebarIndicator, sidebarPosition, sidebarCollapsed]);
 
   useEffect(() => {
     let raf = 0;
@@ -1488,19 +1476,6 @@ function App() {
 
   useEffect(() => () => cleanupSidebarTabDragListeners(), [cleanupSidebarTabDragListeners]);
 
-  const sidebarIconClass = useCallback(
-    (tab: SplittableTabId) => {
-      const parts: string[] = [];
-      if (activeItem === tab) parts.push("sidebar-icon-active");
-      else if (effectiveTabSplit && tabPaneRole(tab, effectiveTabSplit)) {
-        parts.push("sidebar-icon-split-pane");
-      }
-      if (canUseSplitView) parts.push("sidebar-icon-splittable");
-      return parts.join(" ");
-    },
-    [activeItem, canUseSplitView, effectiveTabSplit],
-  );
-
   const onTabSplitDividerPointerDown = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
       if (!effectiveTabSplit || e.button !== 0) return;
@@ -1705,6 +1680,25 @@ function App() {
   const settingsSaveGenRef = useRef(0);
   const settingsSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const settingsSavePendingRef = useRef(false);
+
+  const [platformNickname, setPlatformNickname] = useState(() => {
+    try {
+      return window.localStorage.getItem(API_NICKNAME_KEY)?.trim() ?? "";
+    } catch {
+      return "";
+    }
+  });
+  useEffect(() => {
+    const sync = () => {
+      try {
+        setPlatformNickname(window.localStorage.getItem(API_NICKNAME_KEY)?.trim() ?? "");
+      } catch {
+        setPlatformNickname("");
+      }
+    };
+    window.addEventListener(API_AUTH_CHANGED_EVENT, sync);
+    return () => window.removeEventListener(API_AUTH_CHANGED_EVENT, sync);
+  }, []);
 
   const profileAvatarInput = useMemo<ProfileAvatarInput>(
     () => ({
@@ -2306,9 +2300,10 @@ function App() {
     minimize_to_tray_on_close: false,
     autostart_enabled: false,
     animations_disabled: false,
+    background_animation_disabled: false,
     thematic_decorations_disabled: false,
     show_launcher_banners: true,
-    background_accent_color: "#0b1530",
+    background_accent_color: "#4a22a8",
     background_image_url: null,
     background_blur_enabled: true,
     split_view_enabled: false,
@@ -2321,11 +2316,16 @@ function App() {
   const refreshSettings = useCallback(async (profileId?: string | null) => {
     if (settingsSavePendingRef.current) return;
     try {
-      const s =
+      const loaded =
         profileId != null && profileId !== ""
           ? await invoke<Settings>("get_effective_settings", { profileId })
           : await invoke<Settings>("get_settings");
       if (settingsSavePendingRef.current) return;
+      // The old default accent was navy; move it to the new purple default.
+      const s =
+        loaded.background_accent_color?.trim().toLowerCase() === "#0b1530"
+          ? { ...loaded, background_accent_color: "#4a22a8" }
+          : loaded;
       const storedLang = readStoredLanguage();
       if (storedLang && storedLang !== s.interface_language) {
         const synced = { ...s, interface_language: storedLang };
@@ -4003,6 +4003,30 @@ function App() {
     await runVersionInstall();
   };
 
+  const roomCurrentGame = useMemo<RoomCurrentGame | null>(() => {
+    const known = ["vanilla", "fabric", "quilt", "forge", "neoforge"];
+    if (activeInstanceProfile?.game_version?.trim()) {
+      const l = (activeInstanceProfile.loader || "vanilla").toLowerCase();
+      return {
+        loader: (known.includes(l) ? l : "vanilla") as RoomCurrentGame["loader"],
+        gameVersion: activeInstanceProfile.game_version.trim(),
+        loaderVersion: activeInstanceProfile.loader_version ?? null,
+        source: "profile",
+        label: activeInstanceProfile.name,
+      };
+    }
+    if (selectedVersion) {
+      return {
+        loader: loader as RoomCurrentGame["loader"],
+        gameVersion: selectedVersion.id,
+        loaderVersion: null,
+        source: "menu",
+        label: "",
+      };
+    }
+    return null;
+  }, [activeInstanceProfile, loader, selectedVersion]);
+
   const applyRoomGameSettings = useCallback(
     (settings: RoomGameSettings) => {
       pendingRoomGameRef.current = settings;
@@ -4129,7 +4153,7 @@ function App() {
     [handleLaunchToServer, showNotification, tt],
   );
 
-  const accentColor = settings?.background_accent_color ?? "#0b1530";
+  const accentColor = settings?.background_accent_color ?? "#4a22a8";
 
   useEffect(() => {
     (async () => {
@@ -4431,6 +4455,7 @@ function App() {
               onOpenProfile={(profileId) => {
                 void handleOpenProfileInModpacks(profileId);
               }}
+              onOpenProfileSettings={handleTitleBarProfileSettings}
             />
             </div>
           );
@@ -4518,7 +4543,7 @@ function App() {
       <LauncherAnimationScope animationsDisabled={animationsDisabled}>
       <OnboardingFlow
         language={language}
-        accentColor={settings?.background_accent_color ?? "#0b1530"}
+        accentColor={settings?.background_accent_color ?? "#4a22a8"}
         backgroundImageUrl={backgroundImageUrl}
         backgroundAnimated={backgroundIsAnimated}
         onLanguagePersist={persistInterfaceLanguage}
@@ -4549,33 +4574,23 @@ function App() {
       }
     >
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <LauncherBackgroundImage
-          imageUrl={backgroundImageUrl}
-          blurEnabled={settings?.background_blur_enabled ?? true}
-          animated={backgroundIsAnimated}
-        />
+        {settings?.background_image_url?.trim() ? (
+          <LauncherBackgroundImage
+            imageUrl={backgroundImageUrl}
+            blurEnabled={settings?.background_blur_enabled ?? true}
+            animated={backgroundIsAnimated}
+          />
+        ) : (
+          <LauncherGradientBackground animated={!(settings?.background_animation_disabled ?? false)} />
+        )}
       </div>
-      <div className="pointer-events-none absolute inset-0 bg-black/55" />
-      <div className="pointer-events-none absolute inset-0">
-        <div
-          className="absolute -top-24 -left-24 h-72 w-72 rounded-full blur-3xl accent-glow-orb"
-          style={{
-            background: `radial-gradient(circle at 30% 30%, ${accentColor}80, transparent 70%)`,
-          }}
-        />
-        <div
-          className="absolute top-1/3 -right-32 h-80 w-80 rounded-full blur-3xl accent-glow-orb"
-          style={{
-            background: `radial-gradient(circle at 70% 30%, ${accentColor}70, transparent 75%)`,
-          }}
-        />
-        <div
-          className="absolute bottom-[-6rem] left-1/4 h-64 w-64 rounded-full blur-3xl accent-glow-orb"
-          style={{
-            background: `radial-gradient(circle at 50% 50%, ${accentColor}75, transparent 75%)`,
-          }}
-        />
-      </div>
+      <div
+        className={`pointer-events-none absolute inset-0 ${
+          settings?.background_image_url?.trim()
+            ? "bg-gradient-to-b from-black/50 via-black/60 to-black/75"
+            : "bg-transparent"
+        }`}
+      />
       {shouldShowThematicDecorations(settings?.thematic_decorations_disabled) && (
         <HalloweenDecorations />
       )}
@@ -4583,22 +4598,22 @@ function App() {
       <div className="pointer-events-none fixed top-11 left-0 right-0 z-30 flex flex-col items-center px-4">
         {notifications.map((n) => {
           const baseClasses =
-            "pointer-events-auto group inline-flex w-max max-w-[min(36rem,calc(100vw-2rem))] cursor-pointer items-center gap-3 rounded-2xl px-4 py-2.5 text-sm font-medium leading-snug shadow-soft transition-opacity hover:opacity-90 active:opacity-80 outline-none focus-visible:ring-2 focus-visible:ring-white/35";
+            "pointer-events-auto group inline-flex w-max max-w-[min(36rem,calc(100vw-2rem))] cursor-pointer items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium leading-snug shadow-soft transition-colors hover:bg-ink-800 outline-none focus-visible:ring-2 focus-visible:ring-accent-to/60";
           let bgClasses = "";
           let iconSrc = "";
           let style: React.CSSProperties | undefined;
 
           if (n.kind === "info") {
-            bgClasses = "bg-neutral-800/90 border border-white/35 text-white";
+            bgClasses = "bg-ink-850 border border-white/15 border-l-[3px] border-l-accent-to text-white";
             iconSrc = "/launcher-assets/info.png";
           } else if (n.kind === "success") {
-            bgClasses = "bg-emerald-600/95 border border-emerald-300/60 text-white";
+            bgClasses = "bg-ink-850 border border-white/15 border-l-[3px] border-l-emerald-400 text-white";
             iconSrc = "/launcher-assets/success.png";
           } else if (n.kind === "error") {
-            bgClasses = "bg-red-700/95 border border-red-400/70 text-white";
+            bgClasses = "bg-ink-850 border border-red-400/30 border-l-[3px] border-l-red-400 text-white";
             iconSrc = "/launcher-assets/errorIcon.png";
           } else if (n.kind === "warning") {
-            bgClasses = "bg-amber-500/95 border border-amber-300/70 text-black";
+            bgClasses = "bg-ink-850 border border-amber-400/30 border-l-[3px] border-l-amber-400 text-white";
             iconSrc = "/launcher-assets/warn.png";
           } else {
             const resolvedIcon = resolveRemoteNotificationIconSrc(n.iconMsg);
@@ -4611,7 +4626,7 @@ function App() {
                 color: resolvedBg.textColor === "black" ? "#000" : "#fff",
               };
             } else {
-              bgClasses = "bg-neutral-800/90 border border-white/35 text-white";
+              bgClasses = "bg-ink-850 border border-white/15 text-white";
             }
           }
 
@@ -4685,7 +4700,7 @@ function App() {
           return (
             <div
               key={n.id}
-              className={`relative rounded-2xl border border-white/10 bg-black/35 p-4 backdrop-blur-lg shadow-[0_0_12px_rgba(0,0,0,0.25)] ${
+              className={`relative rounded-2xl border border-white/10 bg-ink-900/90 p-4 ${
                 n.leaving ? "animate-notification-slide-out" : "animate-notification-slide-in"
               }`}
               style={{
@@ -4870,14 +4885,14 @@ function App() {
               <button
                 type="button"
                 onClick={() => setPendingRemoveAccountId(null)}
-                className="interactive-press rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs font-semibold text-white hover:bg-white/18"
+                className="interactive-press rounded-xl border border-white/10 bg-white/10 px-3.5 py-2 text-xs font-semibold text-white hover:bg-white/18"
               >
                 {tt("common.cancel")}
               </button>
               <button
                 type="button"
                 onClick={() => void confirmRemoveLauncherAccount()}
-                className="interactive-press rounded-full bg-amber-500 px-4 py-2 text-xs font-semibold text-white shadow-lg hover:bg-amber-400"
+                className="interactive-press rounded-xl bg-amber-500 px-3.5 py-2 text-xs font-semibold text-white shadow-lg hover:bg-amber-400"
               >
                 {tt("common.delete")}
               </button>
@@ -4979,55 +4994,52 @@ function App() {
       )}
 
       <div
-        className="relative z-20 flex h-9 items-center justify-between px-4 select-none"
+        className="relative z-20 flex h-11 items-center justify-between gap-3 px-3 select-none"
         onMouseDown={handleTitleBarMouseDown}
       >
-        <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.16em] text-white/40 select-none">
-          <span>16Launcher</span>
+        <div className="flex min-w-0 items-center gap-2 pl-1 select-none">
+          <span className="text-[0.8125rem] font-semibold tracking-[-0.01em] text-white/60">
+            16Launcher
+          </span>
           {launcherVersion ? (
-            <div className="flex items-center gap-2">
-              <span
-                className="font-mono text-[11px] font-medium normal-case tracking-normal text-white/35"
-                title={tt("app.launcherVersionTitle", { version: launcherVersion })}
-              >
-                v{launcherVersion}
-              </span>
-              {launcherVersionBadgeKind === "latest" ? (
-                <span
-                  className="rounded-full border border-emerald-400/25 bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] font-semibold normal-case tracking-normal text-emerald-200"
-                  title={tt("app.versionBadge.latest")}
-                >
-                  LATEST
-                </span>
-              ) : launcherVersionBadgeKind === "outdated" ? (
-                <span
-                  className="rounded-full border border-amber-400/25 bg-amber-500/10 px-2 py-0.5 font-mono text-[10px] font-semibold normal-case tracking-normal text-amber-100"
-                  title={
-                    updateVersion
+            <span
+              className="flex items-center gap-1.5 text-[0.75rem] font-medium tabular-nums text-white/35"
+              title={
+                launcherVersionBadgeKind === "latest"
+                  ? tt("app.versionBadge.latest")
+                  : launcherVersionBadgeKind === "outdated"
+                    ? updateVersion
                       ? tt("app.versionBadge.outdatedWithVersion", { version: updateVersion })
                       : tt("app.versionBadge.outdated")
-                  }
-                >
-                  OUTDATED
-                </span>
-              ) : (
-                <span
-                  className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 font-mono text-[10px] font-semibold normal-case tracking-normal text-white/45"
-                  title={tt("app.versionBadge.unknown")}
-                >
-                  LATEST
-                </span>
-              )}
-            </div>
+                    : tt("app.versionBadge.unknown")
+              }
+            >
+              {launcherVersion}
+              {launcherVersionBadgeKind === "latest" ? (
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400/80" aria-hidden="true" />
+              ) : null}
+            </span>
+          ) : null}
+          {launcherVersion && launcherVersionBadgeKind === "outdated" ? (
+            <span
+              className="rounded-md border border-amber-400/25 bg-amber-500/10 px-1.5 py-0.5 text-[0.6875rem] font-semibold text-amber-100"
+              title={
+                updateVersion
+                  ? tt("app.versionBadge.outdatedWithVersion", { version: updateVersion })
+                  : tt("app.versionBadge.outdated")
+              }
+            >
+              {tt("app.versionBadge.updateChip")}
+            </span>
           ) : null}
           <button
             type="button"
             onClick={() => setShowHelpModal(true)}
-            className="interactive-press flex h-6 w-6 items-center justify-center rounded-md bg-black/20 text-white/60 hover:bg-black/40 hover:text-white/90 transition-colors"
+            className="icon-btn ml-0.5 h-7 w-7"
             title={tt("app.help.title")}
             data-no-drag
           >
-            <img src="/launcher-assets/help.png" alt="" className="h-3.5 w-3.5 object-contain" />
+            <img src="/launcher-assets/help.png" alt="" className="h-3.5 w-3.5 object-contain opacity-70" />
           </button>
         </div>
         {activeInstanceProfile ? (
@@ -5049,7 +5061,7 @@ function App() {
             />
           </div>
         ) : null}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <SessionNotificationsBell
             language={language}
             open={sessionNotificationsOpen}
@@ -5061,7 +5073,7 @@ function App() {
             }}
             onClear={() => setSessionNotifications([])}
           />
-          <div className="relative mr-1" ref={accountSwitcherRef} data-no-drag>
+          <div className="relative" ref={accountSwitcherRef} data-no-drag>
             <button
               type="button"
               onClick={() => {
@@ -5070,25 +5082,28 @@ function App() {
                 setAccountSwitcherOpen((o) => !o);
               }}
               data-tour-id="tour-account-switcher"
-              className="interactive-press relative flex max-w-[200px] items-center gap-2 overflow-hidden rounded-lg border border-white/15 bg-black/25 py-1 pl-1.5 pr-2 text-left text-[11px] font-semibold text-white/88 hover:bg-black/40"
+              className={`interactive-press flex h-8 max-w-[200px] items-center gap-2 rounded-lg border pl-1 pr-2 text-left text-[0.8125rem] font-semibold text-white/90 transition-colors ${
+                accountSwitcherOpen
+                  ? "border-white/15 bg-ink-800"
+                  : "border-white/10 bg-ink-850 hover:bg-ink-800"
+              }`}
               title={tt("app.accounts.switcherTitle")}
             >
-              <AuthProviderWatermark kind={activeAccountKind} />
               <AccountAvatar
                 username={activeAccountLabel}
                 profile={profileAvatarInput}
                 kind={activeAccountKind}
                 size={56}
-                className={`relative z-[1] h-7 w-7 shrink-0 rounded-full ${accountKindAvatarClass(activeAccountKind)}`}
+                className={`h-6 w-6 shrink-0 rounded-md ${accountKindAvatarClass(activeAccountKind)}`}
               />
-              <span className="relative z-[1] min-w-0 flex-1 truncate">{activeAccountLabel}</span>
+              <span className="min-w-0 flex-1 truncate">{activeAccountLabel}</span>
               <ChevronDownIcon
-                className={`relative z-[1] ${accountSwitcherOpen ? "rotate-180 opacity-100" : "opacity-70"}`}
+                className={`transition-transform ${accountSwitcherOpen ? "rotate-180 opacity-100" : "opacity-60"}`}
               />
             </button>
             {accountSwitcherOpen ? (
               <div className="glass-popover absolute right-0 top-full z-[100] mt-1.5 min-w-[240px] max-w-[min(320px,calc(100vw-2rem))] overflow-hidden py-1">
-                <p className="px-3 py-2 text-[10px] font-bold uppercase tracking-[0.14em] text-white/40">
+                <p className="px-3 py-2 text-[0.75rem] font-bold text-white/40">
                   {tt("app.accounts.switcherHeading")}
                 </p>
                 <div className="max-h-[min(280px,45vh)] overflow-y-auto">
@@ -5096,7 +5111,7 @@ function App() {
                     <div
                       key={acc.id}
                       className={`flex items-center gap-2 border-t border-white/5 px-2 py-1.5 first:border-t-0 ${
-                        acc.is_active ? "bg-emerald-500/10" : "hover:bg-white/5"
+                        acc.is_active ? "bg-accent-from/20" : "hover:bg-white/5"
                       }`}
                     >
                       <AccountAvatar
@@ -5117,7 +5132,7 @@ function App() {
                         <span className="block truncate text-sm font-medium text-white/95">
                           {acc.label}
                         </span>
-                        <span className="mt-0.5 block text-[10px] text-white/45">
+                        <span className="mt-0.5 block text-[0.75rem] text-white/45">
                           {accountKindShortLabel(acc.kind)}
                           {acc.is_active
                             ? ` · ${tt("app.accounts.activeBadge")}`
@@ -5140,7 +5155,7 @@ function App() {
                   type="button"
                   disabled={addingAccount}
                   onClick={() => void handleAddLauncherAccount()}
-                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-medium text-emerald-200/95 hover:bg-white/10 disabled:opacity-50"
+                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-xs font-medium text-accent-hi hover:bg-white/10 disabled:opacity-50"
                 >
                   <PlusIcon className="h-3.5 w-3.5 shrink-0 opacity-90" />
                   {tt("app.accounts.addAccount")}
@@ -5151,42 +5166,47 @@ function App() {
                     setAccountSwitcherOpen(false);
                     setActiveItemWithSound("accounts");
                   }}
-                  className="w-full border-t border-white/10 px-3 py-2.5 text-left text-xs font-medium text-sky-300/95 hover:bg-white/10"
+                  className="w-full border-t border-white/10 px-3 py-2.5 text-left text-xs font-medium text-white/70 hover:bg-white/10 hover:text-white"
                 >
                   {tt("app.accounts.manageAll")}
                 </button>
               </div>
             ) : null}
           </div>
-          <button
-            type="button"
-            onClick={handleMinimize}
-            className="interactive-press flex h-7 w-7 items-center justify-center rounded-md bg-black/30 text-gray-300 hover:bg-black/50 hover:text-white"
-            data-no-drag
-          >
-            <MinimizeIcon />
-          </button>
-          <button
-            type="button"
-            onClick={handleToggleMaximize}
-            className="interactive-press flex h-7 w-7 items-center justify-center rounded-md bg-black/30 text-gray-300 hover:bg-black/50 hover:text-white"
-            data-no-drag
-          >
-            <MaximizeIcon />
-          </button>
-          <button
-            type="button"
-            onClick={handleClose}
-            className="interactive-press flex h-7 w-7 items-center justify-center rounded-md bg-black/30 text-gray-300 hover:bg-black/50 hover:text-white"
-            data-no-drag
-          >
-            <CloseIcon />
-          </button>
+          <div className="ml-1.5 flex items-center gap-0.5 border-l border-white/10 pl-2">
+            <button
+              type="button"
+              onClick={handleMinimize}
+              className="icon-btn h-8 w-8"
+              aria-label={tt("app.window.minimize")}
+              data-no-drag
+            >
+              <MinimizeIcon />
+            </button>
+            <button
+              type="button"
+              onClick={handleToggleMaximize}
+              className="icon-btn h-8 w-8"
+              aria-label={tt("app.window.maximize")}
+              data-no-drag
+            >
+              <MaximizeIcon />
+            </button>
+            <button
+              type="button"
+              onClick={handleClose}
+              className="icon-btn h-8 w-8 hover:!bg-red-600/90 hover:!text-white"
+              aria-label={tt("app.window.close")}
+              data-no-drag
+            >
+              <CloseIcon />
+            </button>
+          </div>
         </div>
       </div>
 
       <div
-        className={`relative z-10 flex h-[calc(100vh-2.25rem)] ${
+        className={`relative z-10 flex h-[calc(100vh-2.75rem)] ${
           sidebarPosition === "top"
             ? "flex-col"
             : sidebarPosition === "bottom"
@@ -5196,315 +5216,206 @@ function App() {
                 : "flex-row"
         }`}
       >
-        <aside
-          ref={sidebarRef}
-          data-tour-id="tour-sidebar"
-          className={
-            sidebarHorizontal
-              ? `relative z-40 mx-3 flex h-[6.25rem] shrink-0 flex-row items-center justify-between gap-4 overflow-visible rounded-3xl bg-black/55 px-4 py-2.5 backdrop-blur-lg ${
-                  sidebarPosition === "top" ? "mt-3 w-[calc(100%-1.5rem)]" : "mb-3 w-[calc(100%-1.5rem)]"
-                }`
-              : "relative z-40 m-3 flex w-20 shrink-0 flex-col justify-between overflow-visible rounded-3xl bg-black/55 px-3 py-6 backdrop-blur-lg"
-          }
-        >
-          <span
-            className={`pointer-events-none absolute rounded-full accent-bg transition-transform duration-200 ease-out ${
-              sidebarHorizontal
-                ? sidebarPosition === "bottom"
-                  ? "bottom-3 left-0 h-1"
-                  : "top-3 left-0 h-1"
-                : sidebarPosition === "right"
-                  ? "right-3 top-0 w-1"
-                  : "left-3 top-0 w-1"
-            }`}
-            style={
-              sidebarHorizontal
-                ? {
-                    width: `${sidebarIndicator.span}px`,
-                    transform: `translateX(${sidebarIndicator.offset}px)`,
-                    opacity: sidebarIndicator.ready ? 1 : 0,
-                    willChange: "transform",
-                  }
-                : {
-                    height: `${sidebarIndicator.span}px`,
-                    transform: `translateY(${sidebarIndicator.offset}px)`,
-                    opacity: sidebarIndicator.ready ? 1 : 0,
-                    willChange: "transform",
-                  }
-            }
-          />
-          <div
-            className={
-              sidebarHorizontal
-                ? "flex flex-row items-center gap-3"
-                : "flex flex-col items-center gap-3"
-            }
+          <aside
+            ref={sidebarRef}
+            data-tour-id="tour-sidebar"
+            className={[
+              "shell-sidebar",
+              sidebarPosition === "right" ? "shell-sidebar-right" : "",
+              sidebarHorizontal ? "shell-sidebar-horizontal" : "",
+              sidebarPosition === "bottom" ? "shell-sidebar-bottom" : "",
+              sidebarCollapsed ? "shell-sidebar-collapsed" : "",
+            ].join(" ")}
           >
-            {orderedSidebarItems.map((item) => {
-              const tabId = item.id as SplittableTabId;
-              const splitRole =
-                effectiveTabSplit && tabPaneRole(tabId, effectiveTabSplit);
-              const isActive = activeItem === tabId;
-              const label = tt(item.labelKey);
-              const tooltipSide =
+            <span
+              className="shell-nav-bar"
+              style={
                 sidebarHorizontal
-                  ? sidebarPosition === "bottom"
-                    ? "bottom-full left-1/2 mb-2 -translate-x-1/2"
-                    : "top-full left-1/2 mt-2 -translate-x-1/2"
-                  : sidebarPosition === "right"
-                    ? "right-full top-1/2 mr-2 -translate-y-1/2"
-                    : "left-full top-1/2 ml-2 -translate-y-1/2";
-              return (
-              <div
-                key={item.id}
-                className={[
-                  "group relative flex shrink-0 items-center justify-center",
-                  sidebarHorizontal ? "h-auto w-[3.6rem] flex-col gap-1" : "h-10 w-10",
-                  isActive ? "sidebar-item-active" : "",
-                ].join(" ")}
-                data-tour-id={TOUR_SIDEBAR_TARGET_IDS[item.id]}
-              >
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (sidebarDragConsumedRef.current) {
-                      sidebarDragConsumedRef.current = false;
-                      return;
+                  ? {
+                      width: `${sidebarIndicator.span}px`,
+                      transform: `translateX(${sidebarIndicator.offset}px)`,
+                      opacity: sidebarIndicator.ready ? 1 : 0,
+                      willChange: "transform",
                     }
-                    if (tabId === "modpacks") {
-                      const modpacksPaneVisible =
-                        effectiveTabSplit != null
-                          ? effectiveTabSplit.primary === "modpacks" ||
-                            effectiveTabSplit.secondary === "modpacks"
-                          : activeItem === "modpacks";
-                      if (modpacksPaneVisible && handleModpackSidebarClick()) {
-                        activateSidebarTab(tabId);
-                        return;
-                      }
+                  : {
+                      height: `${sidebarIndicator.span}px`,
+                      transform: `translateY(${sidebarIndicator.offset}px)`,
+                      opacity: sidebarIndicator.ready ? 1 : 0,
+                      willChange: "transform",
                     }
-                    activateSidebarTab(tabId);
-                  }}
-                  aria-label={label}
-                  title={
-                    canUseSplitView
-                      ? tt("app.splitView.dragHint", { tab: label })
-                      : label
-                  }
-                  ref={(el) => {
-                    sidebarButtonRefs.current[item.id] = el;
-                  }}
-                  className="interactive-press relative flex h-10 w-10 shrink-0 items-center justify-center"
-                  onPointerDown={(e) => handleSidebarTabPointerDown(tabId, e)}
-                >
-                  <div
-                    className={`sidebar-icon flex items-center justify-center ${sidebarIconClass(tabId)}`}
-                  >
-                    {SIDEBAR_ICON_PATHS[item.id] ? (
-                      <img
-                        src={SIDEBAR_ICON_PATHS[item.id]}
-                        alt=""
-                        className="h-7 w-7 object-contain"
-                      />
-                    ) : (
-                      <>
-                        {item.id === "play" && <PlayIcon />}
-                        {item.id === "settings" && <SettingsIcon />}
-                        {item.id === "mods" && <ModsIcon />}
-                        {item.id === "modpacks" && <ModpackIcon />}
-                      </>
-                    )}
-                  </div>
-                </button>
-                {sidebarHorizontal ? (
-                  <span className="sidebar-label" aria-hidden="true">
-                    {label}
-                  </span>
-                ) : (
-                  <span className={`sidebar-tooltip ${tooltipSide}`}>{label}</span>
-                )}
-                {splitRole ? (
-                  <button
-                    type="button"
-                    className={[
-                      "tab-split-sidebar-close interactive-press no-shift",
-                      sidebarHorizontal
-                        ? "tab-split-sidebar-close-horizontal"
-                        : "tab-split-sidebar-close-vertical",
-                    ].join(" ")}
-                    title={tt("app.splitView.closePane")}
-                    aria-label={tt("app.splitView.closePane")}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      dismissTabSplitPane(splitRole);
-                    }}
-                    onPointerDown={(e) => e.stopPropagation()}
-                  >
-                    <CloseIcon />
-                  </button>
-                ) : null}
-              </div>
-            );
-            })}
-          </div>
-
-          <div
-            className={
-              sidebarHorizontal
-                ? "flex flex-row items-center gap-2"
-                : "mt-40 flex flex-col items-center gap-2"
-            }
-          >
-            {pinnedProfiles.map((profile) => (
-              <button
-                key={profile.id}
-                type="button"
-                onClick={() => {
-                  void handlePlayPinnedProfile(profile);
-                }}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setPinnedContextMenu({
-                    profileId: profile.id,
-                    x: e.clientX,
-                    y: e.clientY,
-                  });
-                }}
-                title={profile.name}
-                className="interactive-press group relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-white/20 bg-black/40 hover:bg-black/60"
-              >
-                <ProfileInstanceIcon
-                  profile={{ id: profile.id, name: profile.name }}
-                  className="absolute inset-0 size-full rounded-xl"
-                  initialClassName="text-xs"
+              }
+            />
+            <SidebarAccount
+              avatar={
+                <AccountAvatar
+                  username={activeAccountLabel}
+                  profile={profileAvatarInput}
+                  kind={activeAccountKind}
+                  size={72}
+                  className="h-8 w-8 shrink-0 rounded-lg"
                 />
-                <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition group-hover:bg-black/35 group-hover:opacity-100">
-                  <img
-                    src="/launcher-assets/play.png"
-                    alt=""
-                    className="h-4 w-4 object-contain"
-                    onError={(e) => {
-                      e.currentTarget.style.display = "none";
-                      const fallback = e.currentTarget.parentElement?.querySelector(
-                        '[data-sidebar-play-fallback="1"]',
-                      ) as HTMLElement | null;
-                      if (fallback) fallback.style.display = "block";
-                    }}
-                  />
-                  <svg
-                    data-sidebar-play-fallback="1"
-                    viewBox="0 0 24 24"
-                    className="h-4 w-4 fill-current"
-                    style={{ display: "none" }}
-                    aria-hidden="true"
-                  >
-                    <path d="M8 6.5v11l9-5.5-9-5.5z" />
-                  </svg>
-                </div>
-              </button>
-            ))}
-          </div>
-
-          <div
-            className={
-              sidebarHorizontal
-                ? "flex shrink-0 items-center gap-3 border-l border-white/10 pl-4"
-                : "flex flex-col items-center gap-3 border-t border-white/10 pt-4"
-            }
-          >
-            {BOTTOM_SIDEBAR_ITEMS.map((item) => {
-              const tooltipSide =
-                sidebarHorizontal
-                  ? sidebarPosition === "bottom"
-                    ? "bottom-full left-1/2 mb-2 -translate-x-1/2"
-                    : "top-full left-1/2 mt-2 -translate-x-1/2"
-                  : sidebarPosition === "right"
-                    ? "right-full top-1/2 mr-2 -translate-y-1/2"
-                    : "left-full top-1/2 ml-2 -translate-y-1/2";
-              const label = tt(item.labelKey);
-              const isActive = activeItem === item.id;
-              return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setActiveItemWithSound(item.id)}
-                aria-label={label}
-                ref={(el) => {
-                  sidebarButtonRefs.current[item.id] = el;
-                }}
-                className={[
-                  "interactive-press group relative flex shrink-0 items-center justify-center",
-                  sidebarHorizontal ? "w-[3.6rem] flex-col gap-1" : "h-10 w-10",
-                  isActive ? "sidebar-item-active" : "",
-                ].join(" ")}
-              >
-                <div
-                  className={`sidebar-icon flex h-10 w-10 items-center justify-center ${
-                    isActive
-                      ? "sidebar-icon-active"
-                      : "bg-black/40 hover:bg-black/70"
-                  }`}
-                >
-                  {SIDEBAR_ICON_PATHS[item.id] ? (
-                    <img
-                      src={SIDEBAR_ICON_PATHS[item.id]}
-                      alt=""
-                      className="h-7 w-7 object-contain"
-                    />
-                  ) : null}
-                </div>
-                {sidebarHorizontal ? (
-                  <span className="sidebar-label" aria-hidden="true">
-                    {label}
-                  </span>
-                ) : (
-                  <span className={`sidebar-tooltip ${tooltipSide}`}>{label}</span>
-                )}
-              </button>
-              );
-            })}
-            <button
-              type="button"
-              onClick={() => setActiveItemWithSound("accounts")}
-              aria-label={tt("app.accounts.sidebarTooltip")}
-              ref={(el) => {
+              }
+              label={activeAccountLabel}
+              kind={activeAccountKind}
+              platformNickname={platformNickname}
+              offlineText={tt("app.accounts.offlineBadge")}
+              title={tt("app.accounts.sidebarTooltip")}
+              active={activeItem === "accounts"}
+              collapsed={sidebarCollapsed}
+              buttonRef={(el) => {
                 sidebarButtonRefs.current.accounts = el;
               }}
-              className={[
-                "interactive-press group relative flex shrink-0 items-center justify-center",
-                sidebarHorizontal ? "w-[3.6rem] flex-col gap-1" : "h-10 w-10",
-                activeItem === "accounts" ? "sidebar-item-active" : "",
-              ].join(" ")}
-            >
-              <div
-                className={`sidebar-icon flex h-10 w-10 items-center justify-center rounded-full ${
-                  activeItem === "accounts" ? "sidebar-icon-active" : "bg-black/40 hover:bg-black/70"
-                }`}
+              onClick={() => setActiveItemWithSound("accounts")}
+            />
+            <nav className="shell-nav">
+              {orderedSidebarItems.map((item) => {
+                const tabId = item.id as SplittableTabId;
+                const splitRole = effectiveTabSplit && tabPaneRole(tabId, effectiveTabSplit);
+                const isActive = activeItem === tabId;
+                const label = tt(item.labelKey);
+                return (
+                  <div
+                    key={item.id}
+                    className="group relative"
+                    data-tour-id={TOUR_SIDEBAR_TARGET_IDS[item.id]}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (sidebarDragConsumedRef.current) {
+                          sidebarDragConsumedRef.current = false;
+                          return;
+                        }
+                        if (tabId === "modpacks") {
+                          const modpacksPaneVisible =
+                            effectiveTabSplit != null
+                              ? effectiveTabSplit.primary === "modpacks" ||
+                                effectiveTabSplit.secondary === "modpacks"
+                              : activeItem === "modpacks";
+                          if (modpacksPaneVisible && handleModpackSidebarClick()) {
+                            activateSidebarTab(tabId);
+                            return;
+                          }
+                        }
+                        activateSidebarTab(tabId);
+                      }}
+                      aria-label={label}
+                      title={
+                        canUseSplitView
+                          ? tt("app.splitView.dragHint", { tab: label })
+                          : sidebarCollapsed
+                            ? label
+                            : undefined
+                      }
+                      ref={(el) => {
+                        sidebarButtonRefs.current[item.id] = el;
+                      }}
+                      className={[
+                        "nav-item",
+                        isActive ? "nav-item-active" : "",
+                        !isActive && splitRole ? "nav-item-split" : "",
+                        canUseSplitView ? "nav-item-splittable" : "",
+                      ].join(" ")}
+                      onPointerDown={(e) => handleSidebarTabPointerDown(tabId, e)}
+                    >
+                      {SIDEBAR_ICON_PATHS[item.id] ? (
+                        <img src={SIDEBAR_ICON_PATHS[item.id]} alt="" draggable={false} />
+                      ) : null}
+                      <span className="truncate">{label}</span>
+                    </button>
+                    {splitRole ? (
+                      <button
+                        type="button"
+                        className="tab-split-sidebar-close tab-split-sidebar-close-vertical interactive-press no-shift"
+                        title={tt("app.splitView.closePane")}
+                        aria-label={tt("app.splitView.closePane")}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          dismissTabSplitPane(splitRole);
+                        }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                      >
+                        <CloseIcon />
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </nav>
+
+            <div className="shell-foot">
+              {pinnedProfiles.length > 0 ? (
+                <div className="pin-row">
+                  {pinnedProfiles.map((profile) => (
+                    <button
+                      key={profile.id}
+                      type="button"
+                      onClick={() => {
+                        void handlePlayPinnedProfile(profile);
+                      }}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setPinnedContextMenu({
+                          profileId: profile.id,
+                          x: e.clientX,
+                          y: e.clientY,
+                        });
+                      }}
+                      title={profile.name}
+                      className="pin-btn group"
+                    >
+                      <ProfileInstanceIcon
+                        profile={{ id: profile.id, name: profile.name }}
+                        className="absolute inset-0 size-full rounded-xl"
+                        initialClassName="text-xs"
+                      />
+                      <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition group-hover:bg-black/40 group-hover:opacity-100">
+                        <svg viewBox="0 0 24 24" className="h-4 w-4 fill-white" aria-hidden="true">
+                          <path d="M8 6.5v11l9-5.5-9-5.5z" />
+                        </svg>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              {BOTTOM_SIDEBAR_ITEMS.map((item) => {
+                const label = tt(item.labelKey);
+                const isActive = activeItem === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setActiveItemWithSound(item.id)}
+                    aria-label={label}
+                    title={sidebarCollapsed ? label : undefined}
+                    ref={(el) => {
+                      sidebarButtonRefs.current[item.id] = el;
+                    }}
+                    className={`nav-item ${isActive ? "nav-item-active" : ""}`}
+                  >
+                    {SIDEBAR_ICON_PATHS[item.id] ? (
+                      <img src={SIDEBAR_ICON_PATHS[item.id]} alt="" draggable={false} />
+                    ) : null}
+                    <span className="truncate">{label}</span>
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                onClick={toggleSidebarCollapsed}
+                className="nav-item shell-collapse-btn"
+                aria-label={tt(sidebarCollapsed ? "app.sidebar.expand" : "app.sidebar.collapse")}
+                title={tt(sidebarCollapsed ? "app.sidebar.expand" : "app.sidebar.collapse")}
+                aria-expanded={!sidebarCollapsed}
               >
-                <ProfileIcon />
-              </div>
-              {sidebarHorizontal ? (
-                <span className="sidebar-label" aria-hidden="true">
-                  {tt("app.accounts.sidebarTooltip")}
-                </span>
-              ) : (
-              <span
-                className={`sidebar-tooltip ${
-                  sidebarHorizontal
-                    ? sidebarPosition === "bottom"
-                      ? "bottom-full left-1/2 mb-2 -translate-x-1/2"
-                      : "top-full left-1/2 mt-2 -translate-x-1/2"
-                    : sidebarPosition === "right"
-                      ? "right-full top-1/2 mr-2 -translate-y-1/2"
-                      : "left-full top-1/2 ml-2 -translate-y-1/2"
-                }`}
-              >
-                {tt("app.accounts.sidebarTooltip")}
-              </span>
-              )}
-            </button>
-          </div>
-        </aside>
+                <svg viewBox="0 0 24 24" className="shell-collapse-icon" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M15 6l-6 6 6 6" />
+                </svg>
+                <span className="truncate">{tt("app.sidebar.collapse")}</span>
+              </button>
+            </div>
+          </aside>
 
         <main
           ref={mainSplitRef}
@@ -5514,7 +5425,7 @@ function App() {
         >
           {splitViewEnabled && splitTooNarrow ? (
             <div
-              className="mb-2 shrink-0 rounded-full border border-amber-400/30 bg-amber-500/15 px-3 py-1.5 text-center text-caption text-amber-100/90"
+              className="mb-2 shrink-0 rounded-xl border border-amber-400/30 bg-amber-500/15 px-3 py-1.5 text-center text-caption text-amber-100/90"
               role="status"
             >
               {tt("app.splitView.tooNarrowBanner")}
@@ -5568,6 +5479,7 @@ function App() {
               onRoomLaunchContextChange={setLaunchPresenceContext}
               onOpenAccounts={() => setActiveItemWithSound("accounts")}
               onApplyRoomGameSettings={applyRoomGameSettings}
+              currentGame={roomCurrentGame}
             />
           </div>
           {activeItem === "friends" ? (

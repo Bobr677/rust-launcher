@@ -47,7 +47,7 @@ export function OnboardingLayout({
   return (
     <div
       className="relative flex min-h-screen w-full flex-col overflow-hidden text-white"
-      style={{ "--accent-color": accentColor ?? "#0b1530" } as CSSProperties}
+      style={{ "--accent-color": accentColor ?? "#4a22a8" } as CSSProperties}
     >
       <OnboardingBackground accentColor={accentColor} backgroundImageUrl={backgroundImageUrl} />
 

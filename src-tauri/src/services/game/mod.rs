@@ -43,8 +43,8 @@ pub use launcher::{
     cancel_download, is_game_running_now, is_minecraft_client_running, launch_game, reset_download_cancel, stop_game,
 };
 pub use runtime::{
-    get_local_lan_ip, lan_bridge_guest_allow_forward, lan_bridge_guest_port, lan_bridge_start_guest,
-    lan_bridge_start_host, lan_bridge_stop, lan_bridge_write,
+    lan_bridge_attach, lan_bridge_detach, lan_bridge_guest_port, lan_bridge_probe_port, lan_bridge_set_flow,
+    lan_bridge_set_host_port, lan_bridge_start_guest, lan_bridge_stop, lan_bridge_write,
 };
 pub use build_presets::{
     create_build_preset_from_profile, delete_build_preset, get_build_preset_icon_data_uri,

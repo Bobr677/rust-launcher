@@ -90,7 +90,7 @@ function MicrosoftIcon() {
 
 function ElyByIcon() {
   return (
-    <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded bg-[#2d7d46] text-[9px] font-bold text-white">
+    <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded bg-[#2d7d46] text-[0.6875rem] font-bold text-white">
       E
     </span>
   );
@@ -261,7 +261,7 @@ export function AccountsTab({
                     nickname={systemNickname}
                     isSponsor={systemIsSponsor}
                     sponsorTitle={tt("common.sponsor")}
-                    className="truncate text-lg font-semibold text-emerald-100/90"
+                    className="truncate text-lg font-semibold text-white"
                     as="p"
                   />
                 ) : (
@@ -270,7 +270,7 @@ export function AccountsTab({
                   </p>
                 )}
                 <span
-                  className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${
+                  className={`rounded-md px-1.5 py-0.5 text-[0.75rem] font-semibold ${
                     activeAccountKind === "microsoft"
                       ? "bg-sky-500/25 text-sky-100"
                       : activeAccountKind === "ely"
@@ -283,7 +283,7 @@ export function AccountsTab({
               </div>
 
               <div className="mt-1 flex min-w-0 items-center gap-2">
-                <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-white/40">
+                <span className="shrink-0 text-[0.75rem] font-bold text-white/40">
                   {tt("platform.inGameNickname")}
                 </span>
                 {headerNicknameEditing && !isAuthorized ? (
@@ -405,7 +405,7 @@ export function AccountsTab({
                   {tt("app.accounts.elyDialogTitle")}
                 </p>
                 <p className="break-all text-xs text-white/90">{elyAuthUrl}</p>
-                <p className="mt-1.5 text-[11px] text-white/60">{tt("app.accounts.elyDialogTip")}</p>
+                <p className="mt-1.5 text-[0.8125rem] text-white/60">{tt("app.accounts.elyDialogTip")}</p>
               </div>
             ) : null}
             {msAuthUrl ? (
@@ -432,7 +432,7 @@ export function AccountsTab({
               onClick={() => setAccountsSubTab(id)}
               className={`interactive-press rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors ${
                 accountsSubTab === id
-                  ? "bg-white/90 text-black"
+                  ? "seg-on"
                   : "text-white/70 hover:bg-white/10 hover:text-white"
               }`}
             >
@@ -451,10 +451,10 @@ export function AccountsTab({
           <aside className="glass-panel flex min-h-[200px] flex-col overflow-hidden md:min-h-0">
             <div className="flex shrink-0 items-center justify-between gap-2 border-b border-white/10 px-3.5 py-3">
               <div className="min-w-0">
-                <h2 className="text-xs font-bold uppercase tracking-wider text-white/45">
+                <h2 className="text-xs font-bold text-white/45">
                   {tt("app.accounts.savedListTitle")}
                 </h2>
-                <p className="mt-0.5 truncate text-[11px] text-white/35">
+                <p className="mt-0.5 truncate text-[0.8125rem] text-white/35">
                   {tt("app.accounts.savedListHintShort")}
                 </p>
               </div>
@@ -462,7 +462,7 @@ export function AccountsTab({
                 type="button"
                 disabled={addingAccount}
                 onClick={() => void onAddAccount()}
-                className="interactive-press flex h-8 shrink-0 items-center gap-1 rounded-lg border border-emerald-500/35 bg-emerald-600/20 px-2.5 text-[11px] font-semibold text-emerald-100 hover:bg-emerald-600/30 disabled:opacity-50"
+                className="interactive-press flex h-8 shrink-0 items-center gap-1 rounded-lg border border-accent-to/40 bg-accent-from/20 px-2.5 text-[0.8125rem] font-semibold text-accent-hi hover:bg-accent-from/30 disabled:opacity-50"
                 title={tt("app.accounts.addAccount")}
               >
                 <PlusIcon className="h-3.5 w-3.5" />
@@ -478,7 +478,7 @@ export function AccountsTab({
                     type="button"
                     disabled={addingAccount}
                     onClick={() => void onAddAccount()}
-                    className="interactive-press mt-3 rounded-xl border border-emerald-500/35 bg-emerald-600/20 px-3 py-2 text-xs font-semibold text-emerald-100 hover:bg-emerald-600/30 disabled:opacity-50"
+                    className="interactive-press mt-3 rounded-xl border border-accent-to/40 bg-accent-from/20 px-3 py-2 text-xs font-semibold text-accent-hi hover:bg-accent-from/30 disabled:opacity-50"
                   >
                     {tt("app.accounts.addAccount")}
                   </button>
@@ -490,7 +490,7 @@ export function AccountsTab({
                       <div
                         className={`group flex items-center gap-2 rounded-xl border px-2 py-2 transition ${
                           acc.is_active
-                            ? "border-emerald-400/35 bg-emerald-500/10"
+                            ? "border-accent-to/40 bg-accent-from/20"
                             : "border-transparent bg-white/[0.02] hover:border-white/10 hover:bg-white/[0.04]"
                         }`}
                       >
@@ -514,7 +514,7 @@ export function AccountsTab({
                           </span>
                           <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
                             <span
-                              className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${
+                              className={`rounded-md px-1.5 py-0.5 text-[0.75rem] font-semibold ${
                                 acc.kind === "microsoft"
                                   ? "bg-sky-500/25 text-sky-100"
                                   : acc.kind === "ely"
@@ -525,7 +525,7 @@ export function AccountsTab({
                               {accountKindShortLabel(acc.kind)}
                             </span>
                             {acc.is_active ? (
-                              <span className="text-[10px] font-medium uppercase tracking-wide text-emerald-300/90">
+                              <span className="text-[0.75rem] font-medium text-emerald-300/90">
                                 {tt("app.accounts.activeBadge")}
                               </span>
                             ) : null}
@@ -547,7 +547,7 @@ export function AccountsTab({
             </div>
 
             {!isAuthorized ? (
-              <p className="shrink-0 border-t border-white/10 px-3.5 py-2.5 text-[11px] leading-snug text-white/45">
+              <p className="shrink-0 border-t border-white/10 px-3.5 py-2.5 text-[0.8125rem] leading-snug text-white/45">
                 {tt("app.accounts.hint")}
               </p>
             ) : null}
@@ -700,14 +700,14 @@ export function AccountsTab({
               <button
                 type="button"
                 onClick={() => setPendingRemoveAccountId(null)}
-                className="interactive-press rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs font-semibold text-white hover:bg-white/18"
+                className="interactive-press rounded-xl border border-white/10 bg-white/10 px-3.5 py-2 text-xs font-semibold text-white hover:bg-white/18"
               >
                 {tt("common.cancel")}
               </button>
               <button
                 type="button"
                 onClick={() => void confirmRemoveAccount()}
-                className="interactive-press rounded-full bg-amber-500 px-4 py-2 text-xs font-semibold text-white shadow-lg hover:bg-amber-400"
+                className="interactive-press rounded-xl bg-amber-500 px-3.5 py-2 text-xs font-semibold text-white shadow-lg hover:bg-amber-400"
               >
                 {tt("common.delete")}
               </button>

@@ -35,7 +35,11 @@
       "modrinth": "modrinth",
       "curseforge": "Forja maldita"
     },
-    "unlockConfirm": "La versión y el cargador se sincronizan con el perfil seleccionado. ¿Cambiarlos de todos modos?",
+    "unlockTitle": "Versión fijada por el perfil",
+    "unlockConfirm": "¿Cambiar versión y cargador? El contenido que instales puede ser incompatible con el perfil.",
+    "lockedBanner": "Fijado por el perfil: Minecraft {{version}} · {{loader}}. Los mods se ajustan a ella.",
+    "unlockedBanner": "Estás viendo contenido que no coincide con el perfil seleccionado. Los mods instalados podrían no iniciar.",
+    "relock": "Volver al perfil",
     "searchPlaceholder": "Buscar...",
     "version": "Versión",
     "syncedHint": "Sincronizado con el perfil. Haga clic en «Cambiar» para desbloquear.",
@@ -324,6 +328,10 @@
       "disableAnimations": {
         "label": "Desactivar animaciones:"
       },
+      "backgroundAnimation": {
+        "label": "Fondo animado:",
+        "hint": "Movimiento lento de los destellos de color del fondo. Desactívalo si el launcher sobrecarga tu GPU."
+      },
       "hideBanners": {
         "label": "Desactivar banner publicitario:",
         "hint": "Oculta el carrusel de noticias y banners en la pestaña Jugar."
@@ -599,6 +607,11 @@
       "openTitle": "Abrir carpeta del juego",
       "alt": "Carpeta de juego"
     },
+    "dock": {
+      "folder": "Carpeta",
+      "settings": "Ajustes",
+      "noBuild": "Ninguna instancia"
+    },
     "home": {
       "recentTitle": "Packs recientes",
       "seeAll": "Todos los packs",
@@ -621,6 +634,14 @@
       "empty": "Los registros aparecerán después de que comience el juego.",
       "hint": "Controlado por la configuración \"Mostrar consola al iniciar el juego\" en la sección del juego.",
       "analyzer": {
+        "readingDisk": "Leyendo logs…",
+        "okBadge": "Sin errores",
+        "refresh": "Volver a leer logs",
+        "sourcesLabel": "Revisado",
+        "sourceConsole": "consola",
+        "sourceLatest": "latest.log",
+        "sourceCrash": "crash reports: {{count}}",
+        "diskReadFailed": "No se pudieron leer los logs del disco.",
         "title": "Analizador de logs",
         "show": "Mostrar",
         "hide": "Ocultar",
@@ -783,8 +804,13 @@
       "createGroupMenu": "Nuevo grupo de perfil",
       "editGroupMenu": "Editar grupo",
       "deleteGroupMenu": "Eliminar grupo",
-      "dropHint": "Caer aquí",
-      "selectedCount": "Seleccionado: {{count}}"
+      "dropHint": "Arrastra aquí",
+      "selectedCount": "Seleccionado: {{count}}",
+      "title": "Mis perfiles",
+      "newGroup": "Nuevo grupo",
+      "groupActions": "Acciones del grupo",
+      "dragCount": "{{count}} perfiles",
+      "clearSelection": "Quitar selección"
     },
     "groups": {
       "createTitle": "Nuevo grupo de perfil",
@@ -998,6 +1024,8 @@
     },
     "contextMenu": {
       "settings": "Ajustes",
+      "moveToGroup": "Mover al grupo",
+      "removeFromGroup": "Quitar del grupo",
       "pinToSidebar": "Fijar a la barra lateral",
       "unpinFromSidebar": "Desanclar de la barra lateral",
       "deleteProfile": "Eliminar perfil",
@@ -1274,6 +1302,16 @@
     "mcOnlineEly": "Ely",
     "mcOffline": "sin conexión",
     "mcOfflineHint": "Inicia sesión con Microsoft o Ely para unirte al mundo de un amigo.",
+    "joinClosedReason": "Esta sala está cerrada, no puedes unirte.",
+    "auto": {
+      "label": "Juego de la sala",
+      "fromProfile": "Del perfil «{{name}}»",
+      "fromMenu": "Del menú principal",
+      "manual": "Cambiar manualmente",
+      "useAuto": "Elegir automáticamente",
+      "none": "Ningún perfil seleccionado. Elige la versión manualmente o en el menú principal."
+    },
+    "needP2pReason": "Espera a que la conexión con los miembros de la sala esté lista (P2P aún no está listo).",
     "p2pLabel": "Enlace",
     "p2pReady": "listo",
     "p2pConnecting": "conectando…",
@@ -1294,6 +1332,8 @@
     "guestSteps": "Cuando el anfitrión abra el acceso - Entrar al mundo. Microsoft o Ely necesarios.",
     "waitForPeer": "Invita a un amigo: el enlace aparece cuando se una.",
     "needP2p": "Espera a que el enlace con tu amigo esté listo",
+    "peerLauncherOutdated": "Tu amigo usa una versión antigua del launcher: actualizad ambos o no se podrá entrar al mundo.",
+    "lanPortUnreachable": "El puerto {{port}} aún no responde. Abre el mundo en LAN e introduce el puerto que aparece en el chat del juego.",
     "visibility": {
       "public": "pública",
       "private": "privada",
@@ -1487,6 +1527,8 @@
   },
   "app": {
     "sidebar": {
+      "collapse": "Contraer barra lateral",
+      "expand": "Expandir barra lateral",
       "play": "Jugar",
       "settings": "Ajustes",
       "mods": "Modificaciones",
@@ -1529,6 +1571,7 @@
       "newAccountNameBase": "Jugador",
       "addAccount": "Agregar cuenta",
       "sidebarTooltip": "Cuentas",
+      "offlineBadge": "offline",
       "switcherTitle": "Cambiar de cuenta",
       "switcherHeading": "Cuentas",
       "manageAll": "Todas las cuentas e inicio de sesión...",
@@ -1699,7 +1742,13 @@
       "fabricNotInstalled": "El perfil de tela no está instalado para esta versión.",
       "quiltNotInstalled": "El perfil de tejido no está instalado para esta versión."
     },
+    "window": {
+      "minimize": "Minimizar",
+      "maximize": "Maximizar",
+      "close": "Cerrar"
+    },
     "versionBadge": {
+      "updateChip": "Actualización disponible",
       "latest": "Tienes la última versión",
       "outdatedWithVersion": "Nueva versión disponible: {{version}}",
       "outdated": "Nueva versión disponible",

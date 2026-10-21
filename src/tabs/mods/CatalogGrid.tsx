@@ -143,14 +143,14 @@ export function CatalogGrid({
                     layout === "grid" ? "flex flex-col" : "flex items-stretch"
                   } ${
                     isBatchSelected
-                      ? "border-sky-400/70 bg-sky-500/10"
+                      ? "border-accent-to/70 bg-accent-from/15"
                       : isInstalledInProfile
                         ? isActive
-                          ? "border-emerald-400 bg-white/12"
-                          : "border-emerald-500/80 bg-black/35 hover:border-emerald-400 hover:bg-black/55"
+                          ? "border-emerald-400/60 bg-ink-800"
+                          : "border-emerald-400/30 bg-ink-900/90 hover:border-emerald-400/50 hover:bg-ink-850"
                         : isActive
-                          ? "border-white/60 bg-white/12"
-                          : "border-white/10 bg-black/35 hover:border-white/40 hover:bg-black/55"
+                          ? "border-accent-to/60 bg-ink-800"
+                          : "border-white/[0.07] bg-ink-900/90 hover:border-white/15 hover:bg-ink-850"
                   }`}
                 >
                   {canSelect ? (
@@ -162,7 +162,7 @@ export function CatalogGrid({
                         type="checkbox"
                         checked={isBatchSelected}
                         onChange={() => onToggleBatchSelect?.(p.key)}
-                        className="h-4 w-4 cursor-pointer rounded border-white/30 bg-black/40 accent-sky-400"
+                        className="h-4 w-4 cursor-pointer rounded border-white/20 bg-black/40 accent-sky-400"
                         aria-label={tt("mods.batch.selectOne", { title: p.title })}
                       />
                     </label>
@@ -192,18 +192,18 @@ export function CatalogGrid({
                         <span className="truncate text-sm font-semibold text-white">
                           {p.title}
                         </span>
-                        <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-gray-300">
+                        <span className="rounded-md bg-white/10 px-2 py-0.5 text-[0.75rem] text-gray-300">
                           {p.project_type}
                         </span>
                       </div>
                       <p className="mt-0.5 line-clamp-2 text-xs text-white/70">
                         {p.description}
                       </p>
-                      <p className="mt-1 text-[11px] text-white/50">
+                      <p className="mt-1 text-[0.8125rem] text-white/50">
                         by {p.author}
                       </p>
                     </div>
-                    <div className="flex flex-col items-end justify-between text-right text-[11px] text-white/70">
+                    <div className="flex flex-col items-end justify-between text-right text-[0.8125rem] text-white/70">
                       <div className="flex items-center gap-3">
                         <div className="flex items-center gap-1">
                           <DownloadStatIcon />
@@ -227,7 +227,7 @@ export function CatalogGrid({
                         e.stopPropagation();
                         onQuickInstall(p.key);
                       }}
-                      className={`absolute right-2 bottom-2 inline-flex items-center gap-1 rounded-full accent-bg px-2.5 py-1 text-[10px] font-semibold text-white shadow-soft transition-opacity disabled:cursor-not-allowed disabled:opacity-60 ${
+                      className={`absolute right-2 bottom-2 inline-flex items-center gap-1 rounded-xl accent-bg px-2.5 py-1 text-[0.75rem] font-semibold text-white shadow-soft transition-opacity disabled:cursor-not-allowed disabled:opacity-60 ${
                         isInstalling
                           ? "opacity-100"
                           : "opacity-0 group-hover:opacity-100"
@@ -240,7 +240,7 @@ export function CatalogGrid({
                     </button>
                   )}
                   {isInstalledInProfile && (
-                    <span className="absolute right-2 bottom-2 rounded-full bg-emerald-500/80 px-2 py-0.5 text-[10px] font-semibold text-white">
+                    <span className="absolute right-2 bottom-2 rounded-md bg-emerald-500/80 px-2 py-0.5 text-[0.75rem] font-semibold text-white">
                       {tt("mods.installed")}
                     </span>
                   )}
@@ -254,7 +254,7 @@ export function CatalogGrid({
         )}
       </div>
       {showBatchBar ? (
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-sky-400/25 bg-sky-500/10 px-3 py-2 text-[11px] text-white/85">
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-sky-400/25 bg-sky-500/10 px-3 py-2 text-[0.8125rem] text-white/85">
           <span className="font-semibold">
             {tt("mods.batch.selected", { count: batchCount })}
           </span>
@@ -263,7 +263,7 @@ export function CatalogGrid({
               type="button"
               disabled={batchInstalling}
               onClick={() => onClearBatchSelection?.()}
-              className="interactive-press rounded-full bg-white/10 px-3 py-1 text-xs font-semibold hover:bg-white/20 disabled:opacity-40"
+              className="interactive-press rounded-xl bg-white/10 px-3 py-1 text-xs font-semibold hover:bg-white/20 disabled:opacity-40"
             >
               {tt("mods.batch.clear")}
             </button>
@@ -271,7 +271,7 @@ export function CatalogGrid({
               type="button"
               disabled={batchInstalling}
               onClick={() => onBatchInstall?.()}
-              className="interactive-press inline-flex items-center gap-1.5 rounded-full accent-bg px-3 py-1 text-xs font-semibold text-white disabled:opacity-60"
+              className="interactive-press inline-flex items-center gap-1.5 rounded-xl accent-bg px-3 py-1 text-xs font-semibold text-white disabled:opacity-60"
             >
               {batchInstalling ? <Spinner className="h-3 w-3" /> : null}
               {batchInstalling
@@ -282,7 +282,7 @@ export function CatalogGrid({
         </div>
       ) : null}
       {totalHits > pageSize && (
-        <div className="mt-2 flex items-center justify-between rounded-2xl bg-black/40 px-3 py-2 text-[11px] text-white/70">
+        <div className="mt-2 flex items-center justify-between rounded-2xl bg-black/40 px-3 py-2 text-[0.8125rem] text-white/70">
           <span>
             {tt("mods.pageOf", { current: currentPage, total: totalPages })}
           </span>
@@ -291,7 +291,7 @@ export function CatalogGrid({
               type="button"
               disabled={!canPrevPage || loading}
               onClick={() => onPageChange(Math.max(0, page - 1))}
-              className="interactive-press rounded-full bg-white/10 px-3 py-1 text-xs font-semibold hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40"
+              className="interactive-press rounded-xl bg-white/10 px-3 py-1 text-xs font-semibold hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {tt("mods.prev")}
             </button>
@@ -299,7 +299,7 @@ export function CatalogGrid({
               type="button"
               disabled={!canNextPage || loading}
               onClick={() => onPageChange(page + 1)}
-              className="interactive-press rounded-full bg-white/10 px-3 py-1 text-xs font-semibold hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40"
+              className="interactive-press rounded-xl bg-white/10 px-3 py-1 text-xs font-semibold hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {tt("mods.next")}
             </button>

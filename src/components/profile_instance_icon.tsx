@@ -36,7 +36,7 @@ export function ProfileInstanceIcon({
   const content = (
     <>
       <span
-        className={`flex h-full w-full items-center justify-center font-bold uppercase tracking-wide text-white ${initialClassName}`}
+        className={`flex h-full w-full items-center justify-center font-bold text-white ${initialClassName}`}
       >
         {initial}
       </span>

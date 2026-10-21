@@ -31,7 +31,7 @@ type SelectedProfileTitleBarProps = {
 };
 
 const ICON_BTN_CLASS =
-  "interactive-press flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white/10 text-white/85 hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50";
+  "interactive-press flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-white/80 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50";
 
 export function SelectedProfileTitleBar({
   profile,
@@ -73,28 +73,28 @@ export function SelectedProfileTitleBar({
 
   return (
     <div
-      className="pointer-events-auto glass-toolbar flex min-w-[280px] max-w-[min(480px,calc(100vw-16rem))] items-center gap-2.5 rounded-lg px-2.5 py-1"
+      className="pointer-events-auto glass-toolbar flex h-8 min-w-[15rem] max-w-[min(30rem,calc(100vw-34rem))] items-center gap-2 rounded-lg pl-1 pr-1"
       data-no-drag
     >
       <button
         type="button"
         onClick={onOpenProfile}
-        className="interactive-press flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1 py-0.5 hover:bg-white/10"
+        className="interactive-press flex h-6 min-w-0 flex-1 items-center gap-2 rounded-md pl-0.5 pr-1.5 hover:bg-white/[0.06]"
         title={profile.name}
       >
         <ProfileInstanceIcon
           key={`${profile.id}:${profile.icon_path ?? ""}`}
           profile={{ id: profile.id, name: profile.name }}
-          className="h-6 w-6 shrink-0 rounded-md"
-          initialClassName="text-[9px]"
+          className="h-5 w-5 shrink-0 rounded"
+          initialClassName="text-[0.6875rem]"
           imageFit="contain"
         />
-        <span className="truncate text-[11px] font-semibold text-white/90">{profile.name}</span>
+        <span className="truncate text-[0.8125rem] font-semibold text-white/90">{profile.name}</span>
       </button>
 
       {isRunning ? (
         <span
-          className="flex shrink-0 items-center gap-1.5 font-mono text-[10px] tabular-nums text-emerald-400/90"
+          className="flex shrink-0 items-center gap-1.5 text-[0.75rem] font-medium tabular-nums text-emerald-300/90"
           title={tt("modpacks.list.playtimeLabel")}
         >
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" aria-hidden />
@@ -102,7 +102,7 @@ export function SelectedProfileTitleBar({
         </span>
       ) : null}
 
-      <div className="ml-auto flex shrink-0 items-center gap-0.5 border-l border-white/10 pl-1.5">
+      <div className="ml-auto flex shrink-0 items-center gap-0.5 border-l border-white/10 pl-1">
         {isRunning ? (
           <button
             type="button"

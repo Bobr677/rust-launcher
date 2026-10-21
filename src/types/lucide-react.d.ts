@@ -32,5 +32,10 @@ declare module "lucide-react" {
   export const ExternalLink: LucideIcon;
   export const Loader2: LucideIcon;
   export const PartyPopper: LucideIcon;
+  export const FolderPlus: LucideIcon;
+  export const History: LucideIcon;
+  export const MoreHorizontal: LucideIcon;
+  export const Play: LucideIcon;
+  export const X: LucideIcon;
 }
 

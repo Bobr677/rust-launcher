@@ -3,6 +3,7 @@ import { GameConsolePanel } from "../components/GameConsolePanel";
 import { ProfileInstanceIcon, ProfileCardIconBackdrop } from "../components/profile_instance_icon";
 import { BannerSkeleton, InputClearButton, Spinner } from "../components/ui";
 import { formatPlaytimeShort, useT, type Language } from "../i18n";
+import { useProfileIconSrc } from "../hooks/useProfileIconSrc";
 import { copyTextToClipboard } from "../lib/clipboard";
 import {
   bannerServerAddress,
@@ -24,6 +25,15 @@ export type PlayHomeProfile = {
 };
 
 type LoaderId = "vanilla" | "fabric" | "forge" | "quilt" | "neoforge";
+
+/** Optional loader icons for the build dock, e.g. "/launcher-assets/brand/fabric.svg". Empty keeps text only. */
+const LOADER_ICONS: Record<LoaderId, string> = {
+  vanilla: "",
+  fabric: "",
+  forge: "",
+  quilt: "",
+  neoforge: "",
+};
 
 type VersionSummary = {
   id: string;
@@ -110,6 +120,7 @@ type PlayTabProps = {
   onPlayProfile?: (profileId: string) => void;
   onOpenModpacks?: () => void;
   onOpenProfile?: (profileId: string) => void;
+  onOpenProfileSettings?: () => void;
 };
 
 const loaderLabels: Record<LoaderId, string> = {
@@ -163,6 +174,7 @@ export function PlayTab({
   onPlayProfile,
   onOpenModpacks,
   onOpenProfile,
+  onOpenProfileSettings,
 }: PlayTabProps) {
   const tt = useT(language);
   const [banners, setBanners] = useState<LauncherBannerData[]>([]);
@@ -180,6 +192,12 @@ export function PlayTab({
       })
       .slice(0, 4);
   }, [profiles]);
+
+  const selectedProfile = useMemo(
+    () => profiles.find((p) => p.id === selectedProfileId) ?? null,
+    [profiles, selectedProfileId],
+  );
+  const dockIconSrc = useProfileIconSrc(selectedProfile?.id ?? "");
 
   const consoleText = useMemo(
     () => playConsoleLines.map((e) => e.line).join("\n"),
@@ -337,12 +355,12 @@ export function PlayTab({
   }, [isVersionDropdownOpen, filteredVersions.length]);
 
   const bannerClass = fillPane
-    ? "glass-panel relative flex min-h-[7rem] max-h-[min(220px,42%)] w-full max-w-none shrink-0 overflow-hidden"
-    : "glass-panel relative flex h-[260px] w-full shrink-0 overflow-hidden";
+    ? "menu-banner min-h-[7rem] max-h-[min(220px,42%)]"
+    : "menu-banner h-[240px]";
 
   const controlsClass = fillPane
-    ? "relative mt-2 flex w-full max-w-none shrink-0 justify-center px-2"
-    : "pointer-events-none relative mt-auto mb-10 flex w-full max-w-[95vw] justify-center px-2";
+    ? "relative mt-2 w-full shrink-0"
+    : "relative mt-auto w-full shrink-0 pt-3";
 
   const homeCards = (
     <div
@@ -354,14 +372,14 @@ export function PlayTab({
       }
     >
       <div className="flex items-center justify-between px-1">
-        <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-white/55">
+        <h3 className="text-sm font-semibold tracking-tight text-white/80">
           {tt("play.home.recentTitle")}
         </h3>
         {onOpenModpacks && (
           <button
             type="button"
             onClick={onOpenModpacks}
-            className="text-[11px] font-medium text-white/55 transition-colors hover:text-white/90"
+            className="text-[0.8125rem] font-medium text-white/55 transition-colors hover:text-white/90"
           >
             {tt("play.home.seeAll")}
           </button>
@@ -384,9 +402,9 @@ export function PlayTab({
                 key={`empty-${index}`}
                 type="button"
                 onClick={onOpenModpacks}
-                className={`glass-panel group flex min-h-[5.5rem] flex-col items-center justify-center gap-1.5 border-dashed px-3 py-3 text-center transition-colors hover:border-white/30 sm:min-h-[6.5rem] ${
+                className={`home-card home-card-empty group min-h-[5.5rem] sm:min-h-[6.5rem] ${
                   fillPane ? "min-h-0" : ""
-                } ${onOpenModpacks ? "cursor-pointer" : "cursor-default"}`}
+                } ${onOpenModpacks ? "" : "cursor-default"}`}
               >
                 {isFirstEmpty ? (
                   <>
@@ -395,7 +413,7 @@ export function PlayTab({
                       alt=""
                       className="h-7 w-7 object-contain opacity-50 transition-opacity group-hover:opacity-80"
                     />
-                    <span className="text-[11px] font-medium text-white/45 group-hover:text-white/70">
+                    <span className="text-[0.8125rem] font-medium text-white/45 group-hover:text-white/70">
                       {profiles.length === 0
                         ? tt("play.home.emptyCreate")
                         : tt("play.home.emptySlot")}
@@ -422,13 +440,9 @@ export function PlayTab({
                   onSelectProfile?.(profile.id);
                 }
               }}
-              className={`glass-panel group relative flex min-h-[5.5rem] cursor-pointer items-stretch gap-3 overflow-hidden px-3 py-3 text-left transition-colors sm:min-h-[6.5rem] sm:px-4 sm:py-3.5 ${
+              className={`home-card group min-h-[5.5rem] sm:min-h-[6.5rem] ${
                 fillPane ? "min-h-0" : ""
-              } ${
-                isSelected
-                  ? "border border-emerald-400/70 bg-white/12 ring-1 ring-emerald-400/35"
-                  : "border border-white/10 hover:border-white/25 hover:bg-white/8"
-              }`}
+              } ${isSelected ? "home-card-selected" : ""}`}
             >
               <ProfileCardIconBackdrop profileId={profile.id} />
               <ProfileInstanceIcon
@@ -439,10 +453,10 @@ export function PlayTab({
                 <div className="truncate text-sm font-semibold text-white">
                   {profile.name}
                 </div>
-                <div className="mt-0.5 truncate text-[11px] text-white/60">
+                <div className="mt-0.5 truncate text-[0.8125rem] text-white/60">
                   {profile.game_version} · {profile.loader}
                 </div>
-                <div className="mt-1 flex items-center gap-2 text-[10px] text-white/45">
+                <div className="mt-1 flex items-center gap-2 text-[0.75rem] text-white/45">
                   <span className="inline-flex items-center gap-1">
                     <img
                       src="/launcher-assets/clock.png"
@@ -464,7 +478,7 @@ export function PlayTab({
                     e.stopPropagation();
                     onPlayProfile(profile.id);
                   }}
-                  className={`interactive-press absolute right-2 top-2 z-[2] inline-flex h-8 w-8 items-center justify-center rounded-full text-white opacity-0 shadow-soft transition-opacity group-hover:opacity-100 focus-visible:opacity-100 ${primaryColorClasses}`}
+                  className={`interactive-press absolute right-2 top-2 z-[2] inline-flex h-8 w-8 items-center justify-center rounded-lg text-white opacity-0 shadow-soft transition-opacity group-hover:opacity-100 focus-visible:opacity-100 ${primaryColorClasses}`}
                 >
                   <img
                     src="/launcher-assets/play.png"
@@ -472,11 +486,6 @@ export function PlayTab({
                     className="h-4 w-4 object-contain"
                   />
                 </button>
-              )}
-              {isSelected && (
-                <span className="absolute bottom-2 right-2 z-[2] rounded-full bg-emerald-500/90 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white">
-                  {tt("play.home.selectedBadge")}
-                </span>
               )}
             </div>
           );
@@ -503,12 +512,13 @@ export function PlayTab({
         ) : currentBanner ? (
           <>
             <img
+              key={currentBanner.imageUrl}
               src={resolveBannerImageUrl(currentBanner.imageUrl)}
               alt={
                 currentBanner.title ??
                 tt("play.banner.defaultAlt")
               }
-              className="absolute inset-0 h-full w-full object-cover"
+              className="banner-fade absolute inset-0 h-full w-full object-cover"
             />
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-black/10" />
 
@@ -530,7 +540,7 @@ export function PlayTab({
                       type="button"
                       disabled={isLaunching || isInstalling}
                       onClick={() => void onPlayServer(bannerServerIp)}
-                      className={`inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-semibold text-white shadow-soft ${primaryColorClasses} ${
+                      className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-semibold text-white shadow-soft ${primaryColorClasses} ${
                         isLaunching || isInstalling
                           ? "cursor-not-allowed opacity-60"
                           : "interactive-press hover:opacity-90"
@@ -545,10 +555,10 @@ export function PlayTab({
                       href={currentBanner.link}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center rounded-full bg-white/10 px-4 py-1.5 text-xs font-semibold text-white backdrop-blur hover:bg-white/20"
+                      className="inline-flex items-center rounded-xl border border-white/15 bg-ink-950/60 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-ink-800"
                     >
                       {tt("play.banner.learnMore")}
-                      <span className="ml-1 text-[10px]">↗</span>
+                      <span className="ml-1 text-[0.75rem]">↗</span>
                     </a>
                   )}
                 </div>
@@ -568,167 +578,224 @@ export function PlayTab({
       {homeCards}
 
       <div className={controlsClass}>
-        <div className="pointer-events-auto relative w-full max-w-2xl">
-          <div className="glass-chip flex flex-wrap items-center justify-center gap-4 px-6 py-4 sm:gap-6 sm:px-8" data-tour-id="tour-launch-controls">
-            <div className="relative flex flex-col text-left">
-              <span className="text-[11px] uppercase tracking-[0.16em] text-gray-400">
-                {tt("play.version.label")}
+        <div className="dock" data-tour-id="tour-launch-controls">
+          <div className="dock-backdrop" aria-hidden="true">
+            {selectedProfile && dockIconSrc ? (
+              <img key={selectedProfile.id} src={dockIconSrc} alt="" />
+            ) : null}
+            {!selectedProfile && selectedVersion ? (
+              <span key={selectedVersion.id} className="dock-version-ghost">
+                {versionDisplayName(selectedVersion)}
               </span>
-              <button
-                type="button"
-                disabled={versions.length === 0 || versionsLoading}
-                onClick={() =>
-                  setIsVersionDropdownOpen(!isVersionDropdownOpen)
-                }
-                className="mt-1 inline-flex max-w-[200px] items-center gap-2 truncate text-left text-sm font-semibold text-white/90 disabled:cursor-not-allowed disabled:text-white/40 sm:max-w-[240px]"
-              >
-                <span className="min-w-0 truncate">
-                  {selectedVersion
-                    ? versionDisplayName(selectedVersion)
-                    : versionsLoading
-                      ? tt("play.version.loading")
-                      : tt("play.version.select")}
-                </span>
-                <span className="shrink-0 text-xs text-gray-400">▾</span>
-              </button>
+            ) : null}
+          </div>
 
-              {isVersionDropdownOpen && versions.length > 0 && (
-                <div className="absolute left-0 bottom-full mb-2 z-30 w-64 glass-popover p-1 text-xs">
-                  <div className="px-2 pt-2 pb-1">
-                    <div className="relative">
-                      <input
-                        ref={versionInputRef}
-                        type="text"
-                        value={versionQuery}
-                        onChange={(e) => setVersionQuery(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Escape") {
-                            setIsVersionDropdownOpen(false);
-                            return;
-                          }
-                          if (e.key === "Enter") {
-                            const q = versionQuery.trim().toLowerCase();
-                            if (!q) return;
-                            const exact =
-                              versions.find((v) => v.id.toLowerCase() === q) ??
-                              versions.find(
-                                (v) => versionDisplayName(v).toLowerCase() === q,
-                              );
-                            const first = filteredVersions[0];
-                            const chosen = exact ?? first;
-                            if (chosen) {
-                              setSelectedVersion(chosen);
-                              setIsVersionDropdownOpen(false);
-                            }
-                          }
-                        }}
-                        placeholder={tt("play.version.searchPlaceholder")}
-                        className={`h-8 w-full rounded-xl border border-white/15 bg-black/40 px-3 text-xs text-white/90 placeholder:text-white/35 outline-none focus:border-white/35 ${
-                          versionQuery ? "pr-8" : ""
-                        }`}
-                      />
-                      <InputClearButton
-                        value={versionQuery}
-                        onClear={() => setVersionQuery("")}
-                        className="absolute right-1 top-1/2 -translate-y-1/2"
-                        aria-label={tt("common.clear")}
-                      />
-                    </div>
-                    {snapshotHintVisible && (
-                      <div className="mt-1 rounded-xl border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
-                        {tt("play.version.snapshotHint")}
-                      </div>
-                    )}
-                  </div>
+          <div className="dock-body">
+            {selectedProfile ? (
+              <ProfileInstanceIcon
+                profile={selectedProfile}
+                className="h-14 w-14 shrink-0 rounded-2xl"
+              />
+            ) : (
+              <div className="dock-icon-empty" aria-hidden="true" />
+            )}
 
-                  <div
-                    ref={versionListRef}
-                    className="max-h-[min(70vh,320px)] overflow-y-auto px-1 pb-1"
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-base font-semibold tracking-tight text-white">
+                {selectedProfile?.name ?? tt("play.dock.noBuild")}
+              </div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <div className="relative">
+                  <button
+                    type="button"
+                    title={tt("play.loader.label")}
+                    onClick={() => setIsLoaderDropdownOpen(!isLoaderDropdownOpen)}
+                    className="dock-chip"
                   >
-                    {filteredVersions.length === 0 ? (
-                      <div className="px-3 py-2 text-[11px] text-white/50">
-                        {tt("play.version.nothingFound")}
-                      </div>
-                    ) : (
-                      filteredVersions.map((v) => {
-                        const selected = !!selectedVersion && selectedVersion.id === v.id;
-                        const installed = installedVersionIds.has(v.id);
+                    {LOADER_ICONS[loader] ? (
+                      <img src={LOADER_ICONS[loader]} alt="" draggable={false} />
+                    ) : null}
+                    {loaderLabels[loader]}
+                    <span className="text-[0.75rem] text-white/50">▾</span>
+                  </button>
+
+                  {isLoaderDropdownOpen && (
+                    <div className="absolute left-0 bottom-full mb-2 z-30 max-h-[min(50vh,240px)] min-w-[9rem] overflow-y-auto glass-popover p-1 text-xs">
+                      {(["vanilla", "fabric", "forge", "quilt", "neoforge"] as LoaderId[]).map((id) => {
+                        const isActive = loader === id;
                         return (
                           <button
-                            key={v.id}
-                            ref={(el) => {
-                              if (selected) selectedButtonRef.current = el;
-                            }}
+                            key={id}
                             type="button"
                             onClick={() => {
-                              setSelectedVersion(v);
-                              setIsVersionDropdownOpen(false);
+                              setLoader(id);
+                              setIsLoaderDropdownOpen(false);
                             }}
-                            className={`flex w-full items-center justify-between rounded-xl px-3 py-1.5 text-left transition-colors ${
-                              selected
-                                ? "bg-white/90 text-black"
-                                : installed
-                                  ? "bg-emerald-500/10 text-white/90 hover:bg-emerald-500/15"
-                                  : "text-white/80 hover:bg-white/10"
+                            className={`flex w-full items-center gap-2 rounded-xl px-3 py-1.5 text-left transition-colors ${
+                              isActive
+                                ? "seg-on"
+                                : "text-white/80 hover:bg-white/10"
                             }`}
                           >
-                            <span className="min-w-0 truncate">{versionDisplayName(v)}</span>
-                            <span className="ml-2 shrink-0 flex items-center gap-2">
-                              {!isForgeVersion(v) && !isNeoForgeVersion(v) && (
-                                <span className="text-[10px] uppercase text-gray-400">
-                                  {(v as VersionSummary).version_type}
-                                </span>
-                              )}
-                            </span>
+                            {LOADER_ICONS[id] ? (
+                              <img src={LOADER_ICONS[id]} alt="" className="h-3.5 w-3.5 object-contain" />
+                            ) : null}
+                            <span>{loaderLabels[id]}</span>
                           </button>
                         );
-                      })
-                    )}
-                  </div>
+                      })}
+                    </div>
+                  )}
                 </div>
-              )}
+
+                <div className="relative">
+                  <button
+                    type="button"
+                    title={tt("play.version.label")}
+                    disabled={versions.length === 0 || versionsLoading}
+                    onClick={() => setIsVersionDropdownOpen(!isVersionDropdownOpen)}
+                    className="dock-chip"
+                  >
+                    <span className="min-w-0 truncate">
+                      {selectedVersion
+                        ? versionDisplayName(selectedVersion)
+                        : versionsLoading
+                          ? tt("play.version.loading")
+                          : tt("play.version.select")}
+                    </span>
+                    <span className="shrink-0 text-[0.75rem] text-white/50">▾</span>
+                  </button>
+
+                  {isVersionDropdownOpen && versions.length > 0 && (
+                    <div className="absolute left-0 bottom-full mb-2 z-30 w-64 glass-popover p-1 text-xs">
+                      <div className="px-2 pt-2 pb-1">
+                        <div className="relative">
+                          <input
+                            ref={versionInputRef}
+                            type="text"
+                            value={versionQuery}
+                            onChange={(e) => setVersionQuery(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Escape") {
+                                setIsVersionDropdownOpen(false);
+                                return;
+                              }
+                              if (e.key === "Enter") {
+                                const q = versionQuery.trim().toLowerCase();
+                                if (!q) return;
+                                const exact =
+                                  versions.find((v) => v.id.toLowerCase() === q) ??
+                                  versions.find(
+                                    (v) => versionDisplayName(v).toLowerCase() === q,
+                                  );
+                                const first = filteredVersions[0];
+                                const chosen = exact ?? first;
+                                if (chosen) {
+                                  setSelectedVersion(chosen);
+                                  setIsVersionDropdownOpen(false);
+                                }
+                              }
+                            }}
+                            placeholder={tt("play.version.searchPlaceholder")}
+                            className={`glass-control h-8 w-full rounded-xl border px-3 text-xs text-white/90 placeholder:text-white/35 outline-none ${
+                              versionQuery ? "pr-8" : ""
+                            }`}
+                          />
+                          <InputClearButton
+                            value={versionQuery}
+                            onClear={() => setVersionQuery("")}
+                            className="absolute right-1 top-1/2 -translate-y-1/2"
+                            aria-label={tt("common.clear")}
+                          />
+                        </div>
+                        {snapshotHintVisible && (
+                          <div className="mt-1 rounded-xl border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-[0.8125rem] text-amber-200">
+                            {tt("play.version.snapshotHint")}
+                          </div>
+                        )}
+                      </div>
+
+                      <div
+                        ref={versionListRef}
+                        className="max-h-[min(70vh,320px)] overflow-y-auto px-1 pb-1"
+                      >
+                        {filteredVersions.length === 0 ? (
+                          <div className="px-3 py-2 text-[0.8125rem] text-white/50">
+                            {tt("play.version.nothingFound")}
+                          </div>
+                        ) : (
+                          filteredVersions.map((v) => {
+                            const selected = !!selectedVersion && selectedVersion.id === v.id;
+                            const installed = installedVersionIds.has(v.id);
+                            return (
+                              <button
+                                key={v.id}
+                                ref={(el) => {
+                                  if (selected) selectedButtonRef.current = el;
+                                }}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedVersion(v);
+                                  setIsVersionDropdownOpen(false);
+                                }}
+                                className={`flex w-full items-center justify-between rounded-xl px-3 py-1.5 text-left transition-colors ${
+                                  selected
+                                    ? "seg-on"
+                                    : installed
+                                      ? "bg-accent-from/20 text-white/90 hover:bg-accent-from/30"
+                                      : "text-white/80 hover:bg-white/10"
+                                }`}
+                              >
+                                <span className="min-w-0 truncate">{versionDisplayName(v)}</span>
+                                <span className="ml-2 shrink-0 flex items-center gap-2">
+                                  {!isForgeVersion(v) && !isNeoForgeVersion(v) && (
+                                    <span className="text-[0.75rem] text-gray-400">
+                                      {(v as VersionSummary).version_type}
+                                    </span>
+                                  )}
+                                </span>
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
-            <div className="flex flex-1 flex-col items-center justify-center gap-3">
+            <div className="dock-actions">
+              <button
+                type="button"
+                onClick={handleOpenGameFolder}
+                title={tt("play.gameFolder.openTitle")}
+                className="dock-btn"
+              >
+                {tt("play.dock.folder")}
+              </button>
+              {onOpenProfileSettings && selectedProfile ? (
+                <button type="button" onClick={onOpenProfileSettings} className="dock-btn">
+                  {tt("play.dock.settings")}
+                </button>
+              ) : null}
+
               {isInstalling || installPaused ? (
                 <>
-                  <div className="flex flex-wrap items-center justify-center gap-3">
-                    <button
-                      type="button"
-                      onClick={installPaused ? handleResumeInstall : handlePauseInstall}
-                      className="interactive-press rounded-xl accent-bg px-6 py-2 text-sm font-semibold text-white shadow-soft hover:opacity-90"
-                    >
-                      {installPaused ? tt("play.install.resume") : tt("play.install.pause")}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleCancelInstall}
-                      className="interactive-press rounded-xl bg-red-600 px-6 py-2 text-sm font-semibold text-white shadow-soft hover:bg-red-500"
-                    >
-                      {tt("play.install.cancel")}
-                    </button>
-                  </div>
-                  <div className="mt-1 w-full max-w-md">
-                    <div className="h-3 w-full overflow-hidden rounded-full bg-black/40">
-                      <div
-                        className="h-full rounded-full accent-bg transition-[width] duration-200"
-                        style={{
-                          width: `${Math.max(
-                            0,
-                            Math.min(
-                              100,
-                              Math.round(progress?.percent ?? 0),
-                            ),
-                          )}%`,
-                        }}
-                      />
-                    </div>
-                    <div className="mt-1 text-center text-xs text-white/70">
-                      {progress && progress.total > 0
-                        ? `${Math.round(progress.percent)}%`
-                        : tt("play.install.preparing")}
-                    </div>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={installPaused ? handleResumeInstall : handlePauseInstall}
+                    className="play-btn accent-bg min-w-0 px-5"
+                  >
+                    {installPaused ? tt("play.install.resume") : tt("play.install.pause")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCancelInstall}
+                    className="play-btn min-w-0 bg-red-600 px-5"
+                  >
+                    {tt("play.install.cancel")}
+                  </button>
                 </>
               ) : (
                 <button
@@ -736,7 +803,7 @@ export function PlayTab({
                   onClick={handlePrimaryClick}
                   disabled={isLaunching}
                   aria-busy={isLaunching || undefined}
-                  className={`inline-flex items-center justify-center gap-2 rounded-full px-12 py-3 text-sm font-semibold tracking-wide text-white shadow-soft transition-colors sm:px-16 ${primaryColorClasses} ${
+                  className={`play-btn ${primaryColorClasses} ${
                     isLaunching ? "cursor-not-allowed" : "interactive-press"
                   }`}
                 >
@@ -745,62 +812,28 @@ export function PlayTab({
                 </button>
               )}
             </div>
-
-            <div className="relative flex flex-col items-end text-right">
-              <span className="text-[11px] uppercase tracking-[0.16em] text-gray-400">
-                {tt("play.loader.label")}
-              </span>
-              <div className="mt-1 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setIsLoaderDropdownOpen(!isLoaderDropdownOpen)
-                  }
-                  className="inline-flex items-center gap-2 rounded-full bg-white/6 px-3 py-1 text-xs font-semibold text-white/90 hover:bg-white/15"
-                >
-                  {loaderLabels[loader]}
-                  <span className="text-[10px] text-gray-400">▾</span>
-                </button>
-              </div>
-
-              {isLoaderDropdownOpen && (
-                <div className="absolute right-0 bottom-full mb-2 z-30 max-h-[min(50vh,240px)] overflow-y-auto glass-popover p-1 text-xs">
-                  {(["vanilla", "fabric", "forge", "quilt", "neoforge"] as LoaderId[]).map((id) => {
-                    const isActive = loader === id;
-                    return (
-                      <button
-                        key={id}
-                        type="button"
-                        onClick={() => {
-                          setLoader(id);
-                          setIsLoaderDropdownOpen(false);
-                        }}
-                        className={`flex w-full items-center justify-between rounded-xl px-3 py-1.5 text-left transition-colors ${
-                          isActive
-                            ? "bg-white/90 text-black"
-                            : "text-white/80 hover:bg-white/10"
-                        }`}
-                      >
-                        <span>{loaderLabels[id]}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
           </div>
-          <button
-            type="button"
-            onClick={handleOpenGameFolder}
-            title={tt("play.gameFolder.openTitle")}
-            className="pointer-events-auto absolute -right-14 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-black/60 text-gray-200 shadow-soft transition-colors hover:border-white/40 hover:bg-black/80 hover:text-white"
-          >
-            <img
-              src="/launcher-assets/folder.png"
-              alt={tt("play.gameFolder.alt")}
-              className="h-6 w-6 object-contain"
-            />
-          </button>
+
+          {isInstalling || installPaused ? (
+            <div
+              className="dock-progress"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(progress?.percent ?? 0)}
+              title={
+                progress && progress.total > 0
+                  ? `${Math.round(progress.percent)}%`
+                  : tt("play.install.preparing")
+              }
+            >
+              <span
+                style={{
+                  width: `${Math.max(0, Math.min(100, Math.round(progress?.percent ?? 0)))}%`,
+                }}
+              />
+            </div>
+          ) : null}
         </div>
       </div>
 

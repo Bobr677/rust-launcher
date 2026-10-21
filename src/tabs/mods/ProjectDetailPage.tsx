@@ -158,7 +158,7 @@ export function ProjectDetailPage({
                 onClick={onQuickInstall}
                 disabled={modpackImportBusy || installBusy}
                 aria-busy={installBusy || undefined}
-                className="interactive-press inline-flex items-center gap-2 rounded-full accent-bg px-5 py-2.5 text-sm font-semibold text-white shadow-soft hover:opacity-90 disabled:opacity-40"
+                className="interactive-press inline-flex items-center gap-2 rounded-xl accent-bg px-5 py-2.5 text-sm font-semibold text-white shadow-soft hover:opacity-90 disabled:opacity-40"
               >
                 {installBusy ? <Spinner className="h-4 w-4" /> : null}
                 {installBusy ? tt("mods.installing") : tt("mods.quickInstall")}
@@ -167,7 +167,7 @@ export function ProjectDetailPage({
             <button
               type="button"
               onClick={onOpenExternal}
-              className="interactive-press rounded-full bg-white/10 px-5 py-2.5 text-sm font-semibold text-violet-200 hover:bg-white/20"
+              className="interactive-press rounded-xl bg-white/10 px-5 py-2.5 text-sm font-semibold text-violet-200 hover:bg-white/20"
             >
               {provider === "modrinth"
                 ? tt("mods.openOnModrinth")
@@ -185,7 +185,7 @@ export function ProjectDetailPage({
                 className="h-full w-full object-cover"
               />
             ) : (
-              <span className="text-[10px] text-white/50">{tt("mods.noIcon")}</span>
+              <span className="text-[0.75rem] text-white/50">{tt("mods.noIcon")}</span>
             )}
           </div>
           <div className="min-w-0 flex-1">
@@ -194,11 +194,11 @@ export function ProjectDetailPage({
                 {detail.title}
               </h2>
               {isInstalled && (
-                <span className="rounded-full bg-emerald-500/80 px-2.5 py-0.5 text-[11px] font-semibold text-white">
+                <span className="rounded-md bg-emerald-500/80 px-2.5 py-0.5 text-[0.8125rem] font-semibold text-white">
                   {tt("mods.installed")}
                 </span>
               )}
-              <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-[11px] uppercase tracking-[0.14em] text-gray-300">
+              <span className="rounded-md bg-white/10 px-2.5 py-0.5 text-[0.8125rem] text-gray-300">
                 {detail.project_type}
               </span>
             </div>
@@ -224,7 +224,7 @@ export function ProjectDetailPage({
             {detail.categories.map((cat) => (
               <span
                 key={cat}
-                className="rounded-full bg-white/10 px-2.5 py-0.5 text-[11px] capitalize text-white/70"
+                className="rounded-md bg-white/10 px-2.5 py-0.5 text-[0.8125rem] capitalize text-white/70"
               >
                 {cat.replace(/-/g, " ")}
               </span>
@@ -232,7 +232,7 @@ export function ProjectDetailPage({
           </div>
         )}
 
-        <div className="mt-4 flex h-10 items-center gap-1 rounded-2xl border border-white/12 bg-black/40 p-1">
+        <div className="mt-4 flex h-10 items-center gap-1 rounded-2xl border border-white/10 bg-black/40 p-1">
           {(
             [
               ["overview", "mods.detail.description"],
@@ -245,9 +245,9 @@ export function ProjectDetailPage({
                 key={id}
                 type="button"
                 onClick={() => setTab(id)}
-                className={`interactive-press flex-1 rounded-xl px-3 py-1.5 text-sm font-semibold transition-colors ${
+                className={`interactive-press flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition-colors ${
                   active
-                    ? "bg-white/90 text-black"
+                    ? "seg-on"
                     : "text-white/65 hover:bg-white/10 hover:text-white"
                 }`}
               >
@@ -266,7 +266,7 @@ export function ProjectDetailPage({
           <div className="mx-auto w-full max-w-4xl">
             {detail.gallery.length > 0 && (
               <div className="mb-5">
-                <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/45">
+                <div className="mb-2 text-[0.8125rem] font-semibold text-white/45">
                   {tt("mods.detail.gallery")}
                 </div>
                 <div className="custom-scrollbar flex gap-2 overflow-x-auto pb-1">
@@ -303,7 +303,7 @@ export function ProjectDetailPage({
                     <div className="text-xs font-semibold text-white/80">
                       {tt("mods.modpackImport.title")}
                     </div>
-                    <div className="mt-1 text-[11px] text-white/60">
+                    <div className="mt-1 text-[0.8125rem] text-white/60">
                       {modpackImportPhaseLabel}
                       {modpackImportProgress?.message
                         ? `: ${modpackImportProgress.message}`
@@ -428,12 +428,12 @@ function renderVersionsList({
               <div className="flex flex-wrap items-center gap-2">
                 <span className="truncate font-semibold">{v.version_number}</span>
                 {isInstalled && (
-                  <span className="shrink-0 rounded-full bg-emerald-500/80 px-2.5 py-0.5 text-[11px] font-semibold text-white">
+                  <span className="shrink-0 rounded-md bg-emerald-500/80 px-2.5 py-0.5 text-[0.8125rem] font-semibold text-white">
                     {tt("mods.installed")}
                   </span>
                 )}
               </div>
-              <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-white/55">
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[0.8125rem] text-white/55">
                 {gameVersion ? (
                   <span className="rounded-lg bg-white/10 px-2 py-0.5">
                     MC {gameVersion}

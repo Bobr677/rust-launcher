@@ -104,7 +104,7 @@ export function AchievementsPanel({
   if (!accessToken) {
     return (
       <div className={shellClass}>
-        <p className="text-[10px] font-bold uppercase tracking-wider text-white/45">
+        <p className="text-[0.75rem] font-bold text-white/45">
           {tt("achievements.title")}
         </p>
         <p className="mt-2 text-sm text-white/55">{tt("achievements.signInFirst")}</p>
@@ -117,7 +117,7 @@ export function AchievementsPanel({
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <AchievementIcon className="h-4 w-4 object-contain" />
-          <p className="text-[10px] font-bold uppercase tracking-wider text-white/45">
+          <p className="text-[0.75rem] font-bold text-white/45">
             {tt("achievements.title")}
           </p>
         </div>
@@ -129,7 +129,7 @@ export function AchievementsPanel({
             type="button"
             disabled={loading}
             onClick={() => void reload()}
-            className="interactive-press rounded-lg border border-white/10 bg-black/35 px-2.5 py-1 text-[11px] font-semibold text-white/70 hover:bg-black/55 disabled:opacity-60"
+            className="interactive-press rounded-lg border border-white/10 bg-black/35 px-3 py-1 text-[0.8125rem] font-semibold text-white/70 hover:bg-black/55 disabled:opacity-60"
           >
             {tt("achievements.refresh")}
           </button>
@@ -182,13 +182,13 @@ export function AchievementsPanel({
                   )}
                 </p>
                 {achievement.unlocked && achievement.unlocked_at ? (
-                  <p className="mt-auto pt-1.5 whitespace-nowrap text-[10px] text-amber-200/70">
+                  <p className="mt-auto pt-1.5 whitespace-nowrap text-[0.75rem] text-amber-200/70">
                     {tt("achievements.unlockedAt", {
                       date: new Date(achievement.unlocked_at).toLocaleDateString(),
                     })}
                   </p>
                 ) : (
-                  <p className="mt-auto pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-white/35">
+                  <p className="mt-auto pt-1.5 text-[0.75rem] font-semibold text-white/35">
                     {tt("achievements.locked")}
                   </p>
                 )}

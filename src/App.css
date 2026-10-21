@@ -1,45 +1,63 @@
 :root {
-  --accent-color: #0b1530;
-  --glass-tint: color-mix(in srgb, var(--accent-color) 22%, transparent);
+  --accent-color: #4a22a8;
+}
+
+/* Derived accent tokens. Custom properties resolve where they are declared, so they are re-declared on
+   every element that sets --accent-color inline (the app root, onboarding) to follow the user's pick. */
+:root,
+[style*="--accent-color"] {
+  --accent-from: color-mix(in srgb, var(--accent-color) 72%, #7c4dff);
+  --accent-to: color-mix(in srgb, var(--accent-color) 38%, #c77dff);
+  --accent-gradient: linear-gradient(135deg, var(--accent-from) 0%, var(--accent-to) 100%);
+  --accent-hi: color-mix(in srgb, var(--accent-color) 28%, #e7dcff);
+  --accent-soft: color-mix(in srgb, var(--accent-from) 16%, transparent);
+  --accent-line: color-mix(in srgb, var(--accent-to) 45%, transparent);
+  --glass-tint: transparent;
 }
 
 .accent-bg {
-  background-color: var(--accent-color);
+  background: var(--accent-gradient);
+  color: #fff;
 }
 
 .accent-border {
-  border-color: var(--accent-color);
+  border-color: var(--accent-line);
 }
 
 .accent-chip {
-  background: color-mix(in srgb, var(--accent-color) 70%, #020617 30%);
+  background: var(--accent-soft);
+  color: var(--accent-hi);
 }
 
 .accent-checkbox {
-  height: 0.875rem;
-  width: 0.875rem;
+  height: 1rem;
+  width: 1rem;
   cursor: pointer;
   appearance: none;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  background-color: rgba(0, 0, 0, 0.5);
+  border-radius: 0.3125rem;
+  border: 1.5px solid rgba(220, 208, 245, 0.32);
+  background-color: var(--ink-0, #0b0910);
   background-position: center;
   background-repeat: no-repeat;
-  background-size: 0.65rem 0.65rem;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  background-size: 0.7rem 0.7rem;
   outline: none;
   flex-shrink: 0;
+  transition: border-color 120ms ease-out, background-color 120ms ease-out;
+}
+
+.accent-checkbox:hover {
+  border-color: rgba(220, 208, 245, 0.5);
 }
 
 .accent-checkbox:checked {
-  border-color: var(--accent-color);
-  background-color: var(--accent-color);
+  border-color: transparent;
+  background-color: var(--accent-from);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M3.5 8.5 6.5 11.5 12.5 4.5' stroke='%23fff' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 
 .accent-checkbox:indeterminate {
-  border-color: var(--accent-color);
-  background-color: var(--accent-color);
+  border-color: transparent;
+  background-color: var(--accent-from);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M4 8h8' stroke='%23fff' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E");
 }
 
@@ -51,65 +69,8 @@
 .accent-checkbox-lg {
   height: 1.125rem;
   width: 1.125rem;
-  border-radius: 0.35rem;
-  border-width: 1.5px;
+  border-radius: 0.375rem;
   background-size: 0.75rem 0.75rem;
-  box-shadow: none;
-}
-
-.sidebar-icon {
-  width: 2.75rem;
-  height: 2.75rem;
-  border-radius: 0.9rem;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background:
-    linear-gradient(155deg, var(--glass-tint), transparent 55%),
-    rgba(0, 0, 0, 0.34);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 10px 24px rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  transition:
-    background-color 0.18s ease-out,
-    box-shadow 0.18s ease-out,
-    transform 0.18s ease-out,
-    outline-color 0.18s ease-out,
-    border-color 0.18s ease-out;
-}
-
-.sidebar-icon:hover {
-  transform: translateY(-1px);
-  border-color: rgba(255, 255, 255, 0.16);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 14px 30px rgba(0, 0, 0, 0.55);
-}
-
-.sidebar-icon-active {
-  border-color: rgba(255, 255, 255, 0.22);
-  background:
-    linear-gradient(155deg, color-mix(in srgb, var(--accent-color) 55%, transparent), transparent 60%),
-    color-mix(in srgb, var(--accent-color) 48%, rgba(2, 6, 23, 0.85));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    0 0 0 1px color-mix(in srgb, var(--accent-color) 35%, transparent),
-    0 16px 36px rgba(0, 0, 0, 0.7);
-}
-
-.sidebar-icon-split-pane {
-  border-color: rgba(255, 255, 255, 0.18);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    0 12px 28px rgba(0, 0, 0, 0.65);
-  background:
-    linear-gradient(155deg, color-mix(in srgb, var(--accent-color) 35%, transparent), transparent 60%),
-    color-mix(in srgb, var(--accent-color) 28%, rgba(2, 6, 23, 0.8));
-}
-
-.sidebar-icon-splittable:not(.sidebar-icon-active):not(.sidebar-icon-split-pane) {
-  outline: 1.5px dashed rgba(255, 255, 255, 0.18);
-  outline-offset: 2px;
-}
-
-.sidebar-icon-splittable:not(.sidebar-icon-active):not(.sidebar-icon-split-pane):hover {
-  outline-color: rgba(255, 255, 255, 0.4);
 }
 
 .tab-split-main {
@@ -245,7 +206,7 @@
 
 .tab-split-divider {
   flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--seam, rgba(214, 200, 240, 0.09));
   transition: background-color 0.15s ease-out;
 }
 
@@ -261,7 +222,7 @@
 
 .tab-split-divider:hover,
 .tab-split-divider-dragging {
-  background: rgba(255, 255, 255, 0.22);
+  background: var(--accent-line);
 }
 
 .tab-split-drop-overlay {
@@ -285,7 +246,7 @@
   border-radius: 9999px;
   background: rgba(0, 0, 0, 0.55);
   padding: 0.25rem 0.65rem;
-  font-size: 0.65rem;
+  font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -295,8 +256,8 @@
 }
 
 .tab-split-zone-active {
-  border-color: color-mix(in srgb, var(--accent-color) 55%, #34d399 45%);
-  background: color-mix(in srgb, var(--accent-color) 18%, transparent);
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
 }
 
 .tab-split-zone-active .tab-split-zone-label {
@@ -348,11 +309,8 @@
   justify-content: center;
   width: 2.75rem;
   height: 2.75rem;
-  border-radius: 0.9rem;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background:
-    linear-gradient(155deg, color-mix(in srgb, var(--accent-color) 55%, transparent), transparent 60%),
-    color-mix(in srgb, var(--accent-color) 55%, rgba(2, 6, 23, 0.85));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 14px 32px rgba(0, 0, 0, 0.75);
+  border-radius: var(--r-control, 0.625rem);
+  background: var(--accent-gradient);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 14px 32px rgba(0, 0, 0, 0.6);
   transform: translate(-50%, -50%);
 }

@@ -21,9 +21,9 @@ export function ActiveDownloadsPanel({ jobs, language }: ActiveDownloadsPanelPro
           key={job.id}
           className="pointer-events-auto glass-panel px-3 py-2"
         >
-          <div className="flex items-center justify-between gap-2 text-[11px]">
+          <div className="flex items-center justify-between gap-2 text-[0.8125rem]">
             <span className="min-w-0 truncate font-medium text-white/90">{job.label}</span>
-            <span className="shrink-0 uppercase tracking-wide text-white/45">
+            <span className="shrink-0 text-white/45">
               {job.status === "paused"
                 ? tt("app.downloads.paused")
                 : tt(`app.downloads.kind.${job.kind}`)}
@@ -37,7 +37,7 @@ export function ActiveDownloadsPanel({ jobs, language }: ActiveDownloadsPanelPro
               }}
             />
           </div>
-          <div className="mt-0.5 text-right text-[10px] text-white/55">
+          <div className="mt-0.5 text-right text-[0.75rem] text-white/55">
             {job.percent != null && job.percent > 0
               ? `${Math.round(job.percent)}%`
               : tt("app.downloads.preparing")}

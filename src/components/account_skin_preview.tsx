@@ -593,7 +593,7 @@ export function AccountSkinPreview({
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_86%_18%,rgba(251,191,36,0.12),transparent_40%)]" />
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_70%,rgba(255,255,255,0.06),transparent_45%)]" />
       <div className="absolute inset-x-0 bottom-0 h-[48%] bg-gradient-to-t from-black/40 via-black/10 to-transparent" />
-      <div className="absolute left-1/2 bottom-[10%] h-10 w-[min(70%,18rem)] -translate-x-1/2 rounded-[100%] bg-emerald-400/30 blur-2xl" />
+      <div className="absolute left-1/2 bottom-[10%] h-10 w-[min(70%,18rem)] -translate-x-1/2 rounded-[100%] bg-accent-to/25 blur-2xl" />
       <div className="absolute left-1/2 bottom-[12%] h-2 w-[min(42%,10rem)] -translate-x-1/2 rounded-[100%] bg-white/25 blur-md" />
       <div className="absolute inset-0 shadow-[inset_0_0_70px_rgba(0,0,0,0.35)]" />
     </div>
@@ -614,15 +614,15 @@ export function AccountSkinPreview({
         <CapeIcon />
         <span>{capePickerTitle}</span>
         {activeCape ? (
-          <span className="ml-0.5 h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.7)]" />
+          <span className="ml-0.5 h-2 w-2 rounded-full bg-emerald-400" />
         ) : null}
       </button>
 
       {capePickerOpen ? (
         <div className="glass-popover w-[min(100vw-2rem,15.5rem)] overflow-hidden">
           <div className="border-b border-white/[0.06] px-3 py-2.5">
-            <p className="text-[11px] font-semibold text-white/85">{capePickerTitle}</p>
-            <p className="mt-0.5 truncate text-[10px] text-white/40">
+            <p className="text-[0.8125rem] font-semibold text-white/85">{capePickerTitle}</p>
+            <p className="mt-0.5 truncate text-[0.75rem] text-white/40">
               {activeCape ? activeCape.alias : capeNoneLabel}
             </p>
           </div>
@@ -672,14 +672,14 @@ export function AccountSkinPreview({
             )}
 
             {!capesLoading && !capesError && capes.length === 0 ? (
-              <p className="px-3 py-2 text-center text-[11px] leading-snug text-white/40">
+              <p className="px-3 py-2 text-center text-[0.8125rem] leading-snug text-white/40">
                 {capeEmptyHint}
               </p>
             ) : null}
           </div>
 
           {capeApplying ? (
-            <div className="border-t border-white/[0.06] px-3 py-1.5 text-center text-[10px] text-white/40">
+            <div className="border-t border-white/[0.06] px-3 py-1.5 text-center text-[0.75rem] text-white/40">
               …
             </div>
           ) : null}
@@ -725,7 +725,7 @@ export function AccountSkinPreview({
           <div className="flex shrink-0 items-center justify-between gap-2 border-b border-white/10 px-4 py-3">
             <div className="min-w-0">
               <h2 className="text-sm font-semibold text-white/95">{skinLibraryTitle}</h2>
-              <p className="mt-0.5 truncate text-[11px] text-white/40">
+              <p className="mt-0.5 truncate text-[0.8125rem] text-white/40">
                 {showCapePicker
                   ? skinLibraryPreviewHint
                   : skinLibraryMicrosoftOnly}
@@ -757,7 +757,7 @@ export function AccountSkinPreview({
                     key={id}
                     type="button"
                     onClick={() => setLibraryTool(id)}
-                    className={`interactive-press rounded-t-lg px-3 py-2 text-[11px] font-semibold transition ${
+                    className={`interactive-press rounded-t-lg px-3 py-2 text-[0.8125rem] font-semibold transition ${
                       libraryTool === id
                         ? "bg-white/10 text-white"
                         : "text-white/50 hover:text-white/80"
@@ -803,7 +803,7 @@ export function AccountSkinPreview({
                             onClick={() => void handlePreviewLibrarySkin(skin)}
                             className={`interactive-press flex flex-col overflow-hidden rounded-xl border text-left transition disabled:opacity-60 ${
                               isPreview
-                                ? "border-emerald-400/50 bg-emerald-500/10"
+                                ? "border-accent-to/40 bg-accent-from/20"
                                 : "border-white/10 bg-black/30 hover:border-white/25 hover:bg-black/45"
                             }`}
                           >
@@ -814,16 +814,16 @@ export function AccountSkinPreview({
                                 large
                               />
                               {isActive ? (
-                                <span className="absolute left-1.5 top-1.5 rounded-md bg-emerald-500/90 px-1.5 py-0.5 text-[9px] font-semibold text-white">
+                                <span className="absolute left-1.5 top-1.5 rounded-md accent-bg px-1.5 py-0.5 text-[0.6875rem] font-semibold text-white">
                                   {skinLibraryActive}
                                 </span>
                               ) : null}
                             </div>
                             <div className="flex items-center justify-between gap-1 px-2 py-1.5">
-                              <span className="truncate text-[11px] font-medium text-white/85">
+                              <span className="truncate text-[0.8125rem] font-medium text-white/85">
                                 {skin.alias}
                               </span>
-                              <span className="shrink-0 text-[9px] text-white/35">
+                              <span className="shrink-0 text-[0.6875rem] text-white/35">
                                 {skin.variant === "SLIM" ? skinModelSlim : skinModelStandard}
                               </span>
                             </div>
@@ -852,7 +852,7 @@ export function AccountSkinPreview({
                       type="button"
                       onClick={() => void handlePickSkinFile()}
                       disabled={skinUploadBusy}
-                      className="interactive-press truncate rounded-lg border border-white/10 bg-black/35 px-3 py-2.5 text-left text-xs text-white/75 transition hover:bg-black/50 disabled:opacity-60"
+                      className="interactive-press truncate rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-left text-xs text-white/75 transition hover:bg-black/50 disabled:opacity-60"
                     >
                       {skinUploadPath ? skinUploadPath.split(/[/\\]/).pop() : skinUploadPick}
                     </button>
@@ -860,12 +860,12 @@ export function AccountSkinPreview({
                       type="button"
                       disabled={skinUploadBusy || !skinUploadPath}
                       onClick={() => void handleUploadSkin()}
-                      className="interactive-press rounded-lg border border-emerald-400/25 bg-emerald-500/15 px-3 py-2 text-xs font-semibold text-emerald-100/95 transition hover:bg-emerald-500/25 disabled:opacity-50"
+                      className="interactive-press rounded-lg border border-accent-to/40 bg-accent-from/20 px-3 py-2 text-xs font-semibold text-accent-hi transition hover:bg-accent-from/30 disabled:opacity-50"
                     >
                       {skinUploadBusy ? skinUploadLoading : skinUploadApply}
                     </button>
                     {uploadErrorMessage ? (
-                      <p className="text-[11px] text-amber-200/80">{uploadErrorMessage}</p>
+                      <p className="text-[0.8125rem] text-amber-200/80">{uploadErrorMessage}</p>
                     ) : null}
                   </div>
                 ) : null}
@@ -891,7 +891,7 @@ export function AccountSkinPreview({
                           disabled={skinLookupLoading}
                           spellCheck={false}
                           autoComplete="off"
-                          className={`min-w-0 w-full rounded-lg border border-white/10 bg-black/35 px-2.5 py-2 text-xs text-white/90 outline-none transition placeholder:text-white/30 focus:border-emerald-400/35 disabled:opacity-60 ${
+                          className={`glass-control min-w-0 w-full rounded-lg border px-2.5 py-2 text-xs text-white/90 outline-none transition placeholder:text-white/30 disabled:opacity-60 ${
                             skinUsernameDraft ? "pr-8" : ""
                           }`}
                         />
@@ -908,21 +908,21 @@ export function AccountSkinPreview({
                       <button
                         type="submit"
                         disabled={skinLookupLoading || !skinUsernameDraft.trim()}
-                        className="interactive-press shrink-0 rounded-lg border border-emerald-400/25 bg-emerald-500/15 px-3 py-2 text-[11px] font-semibold text-emerald-100/95 transition hover:bg-emerald-500/25 disabled:opacity-50"
+                        className="interactive-press shrink-0 rounded-lg border border-accent-to/40 bg-accent-from/20 px-3 py-2 text-[0.8125rem] font-semibold text-accent-hi transition hover:bg-accent-from/30 disabled:opacity-50"
                       >
                         {skinLookupLoading ? "…" : skinByUsernameApply}
                       </button>
                     </form>
                     {skinLookupError ? (
-                      <p className="text-[11px] text-amber-200/80">{skinLookupError}</p>
+                      <p className="text-[0.8125rem] text-amber-200/80">{skinLookupError}</p>
                     ) : skinOverrideLabel ? (
-                      <p className="truncate text-[11px] text-emerald-200/70">{skinOverrideLabel}</p>
+                      <p className="truncate text-[0.8125rem] text-accent-hi/70">{skinOverrideLabel}</p>
                     ) : null}
                     {skinOverrideLabel ? (
                       <button
                         type="button"
                         onClick={handleResetSkinOverride}
-                        className="interactive-press self-start text-[11px] font-semibold text-emerald-300/80 hover:text-emerald-200"
+                        className="interactive-press self-start text-[0.8125rem] font-semibold text-accent-hi/90 hover:text-white"
                       >
                         {skinByUsernameReset}
                       </button>
@@ -939,7 +939,7 @@ export function AccountSkinPreview({
                     type="button"
                     disabled={skinApplying}
                     onClick={() => void handleSelectLibrarySkin(highlightedSkinId)}
-                    className="interactive-press w-full rounded-xl border border-emerald-400/30 bg-emerald-500/20 px-3 py-2.5 text-xs font-semibold text-emerald-50 transition hover:bg-emerald-500/30 disabled:opacity-50"
+                    className="interactive-press w-full rounded-xl border border-accent-to/40 bg-accent-from/20 px-3 py-2 text-xs font-semibold text-accent-hi transition hover:bg-accent-from/30 disabled:opacity-50"
                   >
                     {skinApplying ? "…" : skinLibraryApply}
                   </button>
@@ -996,7 +996,7 @@ export function AccountSkinPreview({
                     disabled={skinLookupLoading}
                     spellCheck={false}
                     autoComplete="off"
-                    className={`min-w-0 w-full rounded-lg border border-white/10 bg-black/35 px-2.5 py-1.5 text-xs text-white/90 outline-none transition placeholder:text-white/30 focus:border-emerald-400/35 disabled:opacity-60 ${
+                    className={`glass-control min-w-0 w-full rounded-lg border px-2.5 py-1.5 text-xs text-white/90 outline-none transition placeholder:text-white/30 disabled:opacity-60 ${
                       skinUsernameDraft ? "pr-8" : ""
                     }`}
                   />
@@ -1013,17 +1013,17 @@ export function AccountSkinPreview({
                 <button
                   type="submit"
                   disabled={skinLookupLoading || !skinUsernameDraft.trim()}
-                  className="interactive-press shrink-0 rounded-lg border border-emerald-400/25 bg-emerald-500/15 px-3 py-1.5 text-[11px] font-semibold text-emerald-100/95 transition hover:bg-emerald-500/25 disabled:opacity-50"
+                  className="interactive-press shrink-0 rounded-lg border border-accent-to/40 bg-accent-from/20 px-3 py-1.5 text-[0.8125rem] font-semibold text-accent-hi transition hover:bg-accent-from/30 disabled:opacity-50"
                 >
                   {skinLookupLoading ? "…" : skinByUsernameApply}
                 </button>
               </form>
               {skinLookupLoading ? (
-                <p className="px-3 pb-2.5 text-[10px] text-white/40">{skinByUsernameLoading}</p>
+                <p className="px-3 pb-2.5 text-[0.75rem] text-white/40">{skinByUsernameLoading}</p>
               ) : skinLookupError ? (
-                <p className="px-3 pb-2.5 text-[10px] text-amber-200/80">{skinLookupError}</p>
+                <p className="px-3 pb-2.5 text-[0.75rem] text-amber-200/80">{skinLookupError}</p>
               ) : skinOverrideLabel ? (
-                <p className="truncate px-3 pb-2.5 text-[10px] text-emerald-200/70">{skinOverrideLabel}</p>
+                <p className="truncate px-3 pb-2.5 text-[0.75rem] text-accent-hi/70">{skinOverrideLabel}</p>
               ) : null}
             </SkinPanelShell>
           ) : null}
@@ -1048,7 +1048,7 @@ export function AccountSkinPreview({
                     type="button"
                     onClick={() => void handlePickSkinFile()}
                     disabled={skinUploadBusy}
-                    className="interactive-press min-w-0 flex-1 truncate rounded-lg border border-white/10 bg-black/35 px-2.5 py-1.5 text-left text-[11px] text-white/75 transition hover:bg-black/50 disabled:opacity-60"
+                    className="interactive-press min-w-0 flex-1 truncate rounded-lg border border-white/10 bg-black/35 px-3 py-1.5 text-left text-[0.8125rem] text-white/75 transition hover:bg-black/50 disabled:opacity-60"
                   >
                     {skinUploadPath ? skinUploadPath.split(/[/\\]/).pop() : skinUploadPick}
                   </button>
@@ -1056,16 +1056,16 @@ export function AccountSkinPreview({
                     type="button"
                     disabled={skinUploadBusy || !skinUploadPath}
                     onClick={() => void handleUploadSkin()}
-                    className="interactive-press shrink-0 rounded-lg border border-emerald-400/25 bg-emerald-500/15 px-3 py-1.5 text-[11px] font-semibold text-emerald-100/95 transition hover:bg-emerald-500/25 disabled:opacity-50"
+                    className="interactive-press shrink-0 rounded-lg border border-accent-to/40 bg-accent-from/20 px-3 py-1.5 text-[0.8125rem] font-semibold text-accent-hi transition hover:bg-accent-from/30 disabled:opacity-50"
                   >
                     {skinUploadBusy ? "…" : skinUploadApply}
                   </button>
                 </div>
               </div>
               {skinUploadBusy ? (
-                <p className="px-3 pb-2.5 text-[10px] text-white/40">{skinUploadLoading}</p>
+                <p className="px-3 pb-2.5 text-[0.75rem] text-white/40">{skinUploadLoading}</p>
               ) : uploadErrorMessage ? (
-                <p className="px-3 pb-2.5 text-[10px] text-amber-200/80">{uploadErrorMessage}</p>
+                <p className="px-3 pb-2.5 text-[0.75rem] text-amber-200/80">{uploadErrorMessage}</p>
               ) : null}
             </SkinPanelShell>
           ) : null}
@@ -1109,7 +1109,7 @@ export function AccountSkinPreview({
                   </ul>
                 )}
                 {!skinsLoading && !skinsError && skins.length === 0 ? (
-                  <p className="px-3 py-2 text-center text-[11px] leading-snug text-white/40">
+                  <p className="px-3 py-2 text-center text-[0.8125rem] leading-snug text-white/40">
                     {skinLibraryEmpty}
                   </p>
                 ) : null}
@@ -1177,14 +1177,14 @@ function SkinPanelShell({
     <div className="glass-popover w-[min(100vw-2rem,18.5rem)] overflow-hidden">
       <div className="flex items-center justify-between gap-2 border-b border-white/[0.06] px-3 py-2.5">
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold text-white/85">{title}</p>
-          {subtitle ? <p className="mt-0.5 truncate text-[10px] text-white/40">{subtitle}</p> : null}
+          <p className="text-[0.8125rem] font-semibold text-white/85">{title}</p>
+          {subtitle ? <p className="mt-0.5 truncate text-[0.75rem] text-white/40">{subtitle}</p> : null}
         </div>
         {resetLabel && onReset ? (
           <button
             type="button"
             onClick={onReset}
-            className="interactive-press shrink-0 text-[10px] font-semibold text-emerald-300/80 hover:text-emerald-200"
+            className="interactive-press shrink-0 text-[0.75rem] font-semibold text-accent-hi/90 hover:text-white"
           >
             {resetLabel}
           </button>
@@ -1208,9 +1208,9 @@ function VariantToggle({
     <button
       type="button"
       onClick={onClick}
-      className={`interactive-press flex-1 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition ${
+      className={`interactive-press flex-1 rounded-lg border px-3 py-1.5 text-[0.8125rem] font-semibold transition ${
         selected
-          ? "border-emerald-400/35 bg-emerald-500/15 text-emerald-100/95"
+          ? "border-accent-to/40 bg-accent-from/20 text-accent-hi"
           : "border-white/10 bg-black/35 text-white/70 hover:bg-black/50"
       }`}
     >
@@ -1238,7 +1238,7 @@ function SkinActionButton({
       onClick={onClick}
       className={`interactive-press flex h-9 items-center gap-2 rounded-xl border px-3 text-xs font-semibold shadow-[0_4px_16px_rgba(0,0,0,0.35)] transition ${
         active
-          ? "border-emerald-400/30 bg-[#1c1c26] text-emerald-100/95"
+          ? "border-accent-to/40 bg-accent-from/15 text-accent-hi"
           : "glass-control text-white/90 hover:border-white/20"
       }`}
       title={title}
@@ -1247,7 +1247,7 @@ function SkinActionButton({
       <SkinIcon />
       <span>{label}</span>
       {indicator ? (
-        <span className="ml-0.5 h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.7)]" />
+        <span className="ml-0.5 h-2 w-2 rounded-full bg-emerald-400" />
       ) : null}
     </button>
   );
@@ -1321,23 +1321,23 @@ function SkinLibraryItem({
         onClick={onClick}
         title={`${label} (${variantLabel})`}
         className={`interactive-press flex w-full items-center gap-2.5 px-3 py-1.5 text-left transition disabled:opacity-60 ${
-          selected ? "bg-emerald-500/[0.08]" : "hover:bg-white/[0.04]"
+          selected ? "bg-accent-from/20" : "hover:bg-white/[0.04]"
         }`}
       >
         <div
           className={`relative h-8 w-8 shrink-0 overflow-hidden rounded-lg border bg-[#0c0c11] ${
-            selected ? "border-emerald-400/35" : "border-white/[0.07]"
+            selected ? "border-accent-to/40" : "border-white/[0.07]"
           }`}
         >
           <SkinLibraryThumb url={url} variant={variant} />
         </div>
-        <span className={`min-w-0 flex-1 truncate text-[11px] font-medium ${selected ? "text-emerald-100/95" : "text-white/75"}`}>
+        <span className={`min-w-0 flex-1 truncate text-[0.8125rem] font-medium ${selected ? "text-white" : "text-white/75"}`}>
           {label}
         </span>
-        <span className="shrink-0 text-[10px] text-white/35">{variantLabel}</span>
+        <span className="shrink-0 text-[0.75rem] text-white/35">{variantLabel}</span>
         <span
           className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition ${
-            selected ? "border-emerald-400/50 bg-emerald-500 text-white" : "border-white/15 bg-transparent"
+            selected ? "border-transparent accent-bg text-white" : "border-white/15 bg-transparent"
           }`}
           aria-hidden
         >
@@ -1407,20 +1407,20 @@ function CapeListItem({
         title={label}
         className={`interactive-press flex w-full items-center gap-2.5 px-3 py-1.5 text-left transition disabled:opacity-60 ${
           selected
-            ? "bg-emerald-500/[0.08]"
+            ? "bg-accent-from/20"
             : "hover:bg-white/[0.04]"
         }`}
       >
         <div
           className={`relative flex h-8 w-5 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-[#0c0c11] ${
-            selected ? "border-emerald-400/35" : "border-white/[0.07]"
+            selected ? "border-accent-to/40" : "border-white/[0.07]"
           }`}
         >
           {children}
         </div>
         <span
-          className={`min-w-0 flex-1 truncate text-[11px] font-medium ${
-            selected ? "text-emerald-100/95" : "text-white/75"
+          className={`min-w-0 flex-1 truncate text-[0.8125rem] font-medium ${
+            selected ? "text-white" : "text-white/75"
           }`}
         >
           {label}
@@ -1428,7 +1428,7 @@ function CapeListItem({
         <span
           className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition ${
             selected
-              ? "border-emerald-400/50 bg-emerald-500 text-white"
+              ? "border-transparent accent-bg text-white"
               : "border-white/15 bg-transparent"
           }`}
           aria-hidden

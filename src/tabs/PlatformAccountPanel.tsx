@@ -87,7 +87,7 @@ function PrivacyPolicyLink({ language }: { language: Language }) {
   return (
     <button
       type="button"
-      className="text-emerald-200/90 underline decoration-emerald-400/40 underline-offset-2 hover:text-emerald-100 hover:decoration-emerald-300/70"
+      className="text-accent-hi underline decoration-accent-to/40 underline-offset-2 hover:text-white hover:decoration-accent-to/70"
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -587,7 +587,7 @@ export function PlatformAccountPanel({
         type="button"
         disabled={loading || linking !== null || providerLoginBusy || !accessToken || linkedProviders.minecraft}
         onClick={() => void handleLink("minecraft")}
-        className={`interactive-press flex items-center gap-2 rounded-xl border border-white/20 bg-[#0078d4]/90 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-[#106ebe] disabled:opacity-60 ${
+        className={`interactive-press flex items-center gap-2 rounded-xl border border-white/15 bg-[#0078d4]/90 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-[#106ebe] disabled:opacity-60 ${
           compactMode ? "min-w-[170px] justify-center shadow-lg" : ""
         }`}
         title={!launcherProfile.mc_uuid ? tt("platform.linkMicrosoftTitle") : undefined}
@@ -628,7 +628,7 @@ export function PlatformAccountPanel({
     return (
       <div className="flex w-full flex-col items-center gap-3">
         <div className="w-full rounded-xl border border-white/10 bg-black/30 p-3">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-white/45">
+          <p className="text-[0.75rem] font-bold text-white/45">
             {tt("platform.accountManagement")}
           </p>
           <div className="relative mt-2">
@@ -642,7 +642,7 @@ export function PlatformAccountPanel({
               onBlur={() => {
                 nicknameDraftFocusedRef.current = false;
               }}
-              className={`h-10 w-full rounded-xl border border-white/10 bg-black/35 px-3 text-sm text-white outline-none focus:border-emerald-400/30 ${
+              className={`h-10 w-full glass-control rounded-xl px-3 text-sm text-white outline-none ${
                 nicknameDraft ? "pr-9" : ""
               }`}
               placeholder={tt("platform.newNicknamePlaceholder")}
@@ -659,7 +659,7 @@ export function PlatformAccountPanel({
               type="button"
               disabled={loading || linking !== null || providerLoginBusy}
               onClick={() => void handleChangeNickname()}
-              className="interactive-press flex-1 rounded-xl border border-emerald-500/35 bg-emerald-600/20 px-3 py-2 text-xs font-semibold text-emerald-100 hover:bg-emerald-600/30 disabled:opacity-60"
+              className="interactive-press flex-1 rounded-xl border border-accent-to/40 bg-accent-from/20 px-3 py-2 text-xs font-semibold text-accent-hi hover:bg-accent-from/30 disabled:opacity-60"
             >
               {tt("platform.changeNickname")}
             </button>
@@ -685,7 +685,7 @@ export function PlatformAccountPanel({
             </button>
             {deleteOpen ? (
               <div className="mt-2 space-y-2 rounded-xl border border-rose-500/20 bg-rose-950/30 p-2">
-                <p className="text-[11px] leading-relaxed text-rose-100/80">
+                <p className="text-[0.8125rem] leading-relaxed text-rose-100/80">
                   {tt("platform.deleteAccountHint")}
                 </p>
                 <div className="relative">
@@ -722,7 +722,7 @@ export function PlatformAccountPanel({
   }
 
   const inputClassName =
-    "h-12 w-full rounded-2xl border border-white/10 bg-black/35 px-4 text-[15px] text-white outline-none transition placeholder:text-white/30 focus:border-emerald-400/40 focus:bg-black/45";
+    "glass-control h-12 w-full rounded-2xl border px-4 text-[1rem] text-white outline-none transition placeholder:text-white/30";
 
   if (!accessToken) {
     return (
@@ -741,8 +741,8 @@ export function PlatformAccountPanel({
 
         {mode === "signup" && signupStep === "verify" ? (
           <div className="flex flex-col gap-5">
-            <div className="rounded-2xl border border-emerald-400/20 bg-gradient-to-b from-emerald-500/10 to-black/20 px-5 py-7 text-center shadow-inner">
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-200/70">
+            <div className="rounded-2xl border border-accent-to/25 bg-accent-from/10 px-5 py-7 text-center shadow-inner">
+              <p className="text-[0.75rem] font-bold text-accent-hi/70">
                 {tt("platform.verificationStepLabel")}
               </p>
               <h3 className="mt-2 text-lg font-semibold text-white">
@@ -773,7 +773,7 @@ export function PlatformAccountPanel({
                         void handleAuth();
                       }
                     }}
-                    className={`h-14 w-full rounded-2xl border border-emerald-400/25 bg-black/45 px-3 text-center text-2xl font-semibold tracking-[0.55em] text-white outline-none transition focus:border-emerald-400/50 focus:bg-black/55 ${
+                    className={`h-14 w-full rounded-2xl border border-accent-to/30 bg-ink-950/70 px-3 text-center text-2xl font-semibold tracking-[0.55em] text-white outline-none transition focus:bg-black/55 ${
                       verificationCode ? "pr-10" : ""
                     }`}
                     placeholder="••••••"
@@ -802,7 +802,7 @@ export function PlatformAccountPanel({
                 type="button"
                 disabled={loading || sendingCode}
                 onClick={() => void handleSendVerificationCode()}
-                className="interactive-press mt-5 text-sm font-semibold text-emerald-200/80 underline-offset-2 hover:text-emerald-100 hover:underline disabled:opacity-60"
+                className="interactive-press mt-5 text-sm font-semibold text-accent-hi/90 underline-offset-2 hover:text-white hover:underline disabled:opacity-60"
               >
                 {sendingCode
                   ? tt("common.loading")
@@ -840,10 +840,10 @@ export function PlatformAccountPanel({
               ref={modeTabsRef}
               role="tablist"
               aria-label={tt("platform.accountTitle")}
-              className="glass-toolbar relative grid h-11 grid-cols-2 items-center overflow-hidden p-1"
+              className="seg-track relative grid h-11 grid-cols-2 items-center overflow-hidden p-1"
             >
               <div
-                className="pointer-events-none absolute top-1 bottom-1 rounded-lg bg-white/90 transition-all duration-200 ease-out"
+                className="pointer-events-none absolute top-1 bottom-1 rounded-md seg-indicator transition-all duration-200 ease-out"
                 style={{
                   left: `${modeTabIndicator.left}px`,
                   width: `${modeTabIndicator.width}px`,
@@ -863,7 +863,7 @@ export function PlatformAccountPanel({
                   setSignupStep("form");
                 }}
                 className={`interactive-press relative z-10 h-full rounded-xl text-sm font-semibold transition-colors ${
-                  mode === "login" ? "text-black" : "text-white/70 hover:text-white"
+                  mode === "login" ? "text-white" : "text-white/70 hover:text-white"
                 }`}
               >
                 {tt("platform.signIn")}
@@ -881,7 +881,7 @@ export function PlatformAccountPanel({
                   setSignupStep("form");
                 }}
                 className={`interactive-press relative z-10 h-full rounded-xl text-sm font-semibold transition-colors ${
-                  mode === "signup" ? "text-black" : "text-white/70 hover:text-white"
+                  mode === "signup" ? "text-white" : "text-white/70 hover:text-white"
                 }`}
               >
                 {tt("platform.signUp")}
@@ -889,7 +889,7 @@ export function PlatformAccountPanel({
             </div>
 
             <div className="flex flex-col">
-              <label className="flex flex-col gap-2 text-[11px] font-semibold uppercase tracking-wider text-white/45">
+              <label className="flex flex-col gap-2 text-[0.8125rem] font-semibold text-white/45">
                 {mode === "signup" ? tt("platform.emailLabel") : tt("platform.emailOrNicknameLabel")}
                 <div className="relative">
                   <input
@@ -909,7 +909,7 @@ export function PlatformAccountPanel({
                   />
                 </div>
                 <span
-                  className={`text-[11px] font-normal normal-case tracking-normal text-white/45 transition-opacity duration-200 ${
+                  className={`text-[0.8125rem] font-normal normal-case tracking-normal text-white/45 transition-opacity duration-200 ${
                     mode === "signup" && emailVerificationRequired
                       ? "opacity-100"
                       : "pointer-events-none h-0 overflow-hidden opacity-0"
@@ -927,7 +927,7 @@ export function PlatformAccountPanel({
               >
                 <div className="min-h-0 overflow-hidden">
                   <label
-                    className={`mt-5 flex flex-col gap-2 text-[11px] font-semibold uppercase tracking-wider text-white/45 transition-opacity duration-200 ${
+                    className={`mt-5 flex flex-col gap-2 text-[0.8125rem] font-semibold text-white/45 transition-opacity duration-200 ${
                       mode === "signup" ? "opacity-100" : "opacity-0"
                     }`}
                   >
@@ -953,7 +953,7 @@ export function PlatformAccountPanel({
               </div>
             </div>
 
-            <label className="flex flex-col gap-2 text-[11px] font-semibold uppercase tracking-wider text-white/45">
+            <label className="flex flex-col gap-2 text-[0.8125rem] font-semibold text-white/45">
               {tt("platform.passwordLabel")}
               <div className="relative flex items-center">
                 <input
@@ -1049,7 +1049,7 @@ export function PlatformAccountPanel({
                   void handleAuth();
                 }
               }}
-              className="interactive-press mt-1 h-12 w-full rounded-2xl bg-[#2d7d46] px-4 text-[15px] font-semibold text-white shadow-lg transition hover:bg-[#248338] disabled:opacity-60"
+              className="interactive-press mt-1 h-12 w-full rounded-2xl bg-[#2d7d46] px-4 text-[1rem] font-semibold text-white shadow-lg transition hover:bg-[#248338] disabled:opacity-60"
             >
               {loading || sendingCode
                 ? tt("common.loading")
@@ -1073,7 +1073,7 @@ export function PlatformAccountPanel({
                   type="button"
                   disabled={loading || sendingCode || discordBusy}
                   onClick={() => void handleDiscordAuth()}
-                  className="interactive-press flex h-12 w-full items-center justify-center gap-3 rounded-2xl border border-[#5865F2]/40 bg-[#5865F2]/18 px-4 text-[15px] font-semibold text-[#d7dbff] transition hover:bg-[#5865F2]/28 disabled:opacity-60"
+                  className="interactive-press flex h-12 w-full items-center justify-center gap-3 rounded-2xl border border-[#5865F2]/40 bg-[#5865F2]/18 px-4 text-[1rem] font-semibold text-[#d7dbff] transition hover:bg-[#5865F2]/28 disabled:opacity-60"
                 >
                   <img
                     src="/launcher-assets/ds.png"
@@ -1103,27 +1103,27 @@ export function PlatformAccountPanel({
       <div className="flex flex-col gap-4">
           <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/30 px-4 py-3">
             <div className="min-w-0 flex-1">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-white/45">
+              <p className="text-[0.75rem] font-bold text-white/45">
                 {tt("platform.launcherNickname")}
               </p>
               <NicknameWithSponsor
                 nickname={launcherNickname || "—"}
                 isSponsor={platformUser?.is_sponsor}
                 sponsorTitle={tt("common.sponsor")}
-                className="mt-0.5 truncate text-sm font-semibold text-emerald-100/95"
+                className="mt-0.5 truncate text-sm font-semibold text-white"
               />
-              <p className="mt-2 text-[10px] font-bold uppercase tracking-wider text-white/45">
+              <p className="mt-2 text-[0.75rem] font-bold text-white/45">
                 {tt("platform.inGameNickname")}
               </p>
               <p className="mt-0.5 truncate text-sm font-semibold text-white/90">{gameNickname || "—"}</p>
             </div>
-            <span className="rounded-md bg-emerald-500/15 px-2 py-1 text-[10px] font-semibold text-emerald-100">
+            <span className="rounded-md bg-emerald-500/15 px-2 py-1 text-[0.75rem] font-semibold text-emerald-100">
               Online
             </span>
           </div>
 
           <div className="rounded-xl border border-white/10 bg-black/30 px-4 py-3">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-white/45">
+            <p className="text-[0.75rem] font-bold text-white/45">
               {tt("platform.accountManagement")}
             </p>
             <div className="mt-2 flex flex-col gap-2 sm:flex-row">
@@ -1138,7 +1138,7 @@ export function PlatformAccountPanel({
                   onBlur={() => {
                     nicknameDraftFocusedRef.current = false;
                   }}
-                  className={`h-10 w-full rounded-xl border border-white/10 bg-black/35 px-3 text-sm text-white outline-none focus:border-emerald-400/30 ${
+                  className={`h-10 w-full glass-control rounded-xl px-3 text-sm text-white outline-none ${
                     nicknameDraft ? "pr-9" : ""
                   }`}
                   placeholder={tt("platform.newNicknamePlaceholder")}
@@ -1154,7 +1154,7 @@ export function PlatformAccountPanel({
                 type="button"
                 disabled={loading || linking !== null || providerLoginBusy}
                 onClick={() => void handleChangeNickname()}
-                className="interactive-press rounded-xl border border-emerald-500/35 bg-emerald-600/20 px-4 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-600/30 disabled:opacity-60"
+                className="interactive-press rounded-xl border border-accent-to/40 bg-accent-from/20 px-4 py-2 text-sm font-semibold text-accent-hi hover:bg-accent-from/30 disabled:opacity-60"
               >
                 {tt("platform.changeNickname")}
               </button>
@@ -1168,7 +1168,7 @@ export function PlatformAccountPanel({
               </button>
             </div>
             <div className="mt-3 rounded-xl border border-rose-500/25 bg-rose-950/25 px-3 py-3">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-rose-200/70">
+              <p className="text-[0.75rem] font-bold text-rose-200/70">
                 {tt("platform.dangerZone")}
               </p>
               <p className="mt-1 text-xs leading-relaxed text-white/55">

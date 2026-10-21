@@ -40,6 +40,7 @@ type SettingSearchId =
   | "launcher.autostart"
   | "launcher.splitView"
   | "launcher.disableAnimations"
+  | "launcher.backgroundAnimation"
   | "launcher.hideBanners"
   | "launcher.disableThematicDecorations"
   | "launcher.language"
@@ -202,6 +203,11 @@ const SETTING_SEARCH_CATALOG: SettingSearchDef[] = [
     keys: ["settings.launcher.disableAnimations.label"],
   },
   {
+    id: "launcher.backgroundAnimation",
+    tab: "launcher",
+    keys: ["settings.launcher.backgroundAnimation.label", "settings.launcher.backgroundAnimation.hint"],
+  },
+  {
     id: "launcher.hideBanners",
     tab: "launcher",
     keys: [
@@ -309,6 +315,7 @@ type Settings = {
   minimize_to_tray_on_close: boolean;
   autostart_enabled: boolean;
   animations_disabled: boolean;
+  background_animation_disabled?: boolean;
   thematic_decorations_disabled?: boolean;
   show_launcher_banners?: boolean;
   interface_language?: string;
@@ -796,7 +803,7 @@ export function SettingsTab({
   }, [language, settingsTab]);
 
   useEffect(() => {
-    const current = settings?.background_accent_color ?? "#0b1530";
+    const current = settings?.background_accent_color ?? "#4a22a8";
     setAccentInput(current);
   }, [settings?.background_accent_color]);
 
@@ -825,7 +832,7 @@ export function SettingsTab({
   );
 
   const accentColorHsv = useMemo(() => {
-    const c = settings?.background_accent_color ?? "#0b1530";
+    const c = settings?.background_accent_color ?? "#4a22a8";
     const rgb = hexToRgb(c);
     if (!rgb) return { h: 0, s: 0, v: 0 };
     return rgbToHsv(rgb.r, rgb.g, rgb.b);
@@ -837,7 +844,7 @@ export function SettingsTab({
     const hue = hueDegFromWheelClientPos(el, clientX, clientY);
     if (hue === null) return;
     const base =
-      accentHueDragBaseRef.current ?? settings?.background_accent_color ?? "#0b1530";
+      accentHueDragBaseRef.current ?? settings?.background_accent_color ?? "#4a22a8";
     const next = hexWithHueFromWheel(base, hue);
     setAccentInput(next);
     updateSettings({ background_accent_color: next });
@@ -845,7 +852,7 @@ export function SettingsTab({
 
   const handleAccentWheelPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
-    accentHueDragBaseRef.current = settings?.background_accent_color ?? "#0b1530";
+    accentHueDragBaseRef.current = settings?.background_accent_color ?? "#4a22a8";
     e.currentTarget.setPointerCapture(e.pointerId);
     applyAccentHueFromPointer(e.clientX, e.clientY);
   };
@@ -884,7 +891,7 @@ export function SettingsTab({
 
   const handleAccentSvPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
-    const c = settings?.background_accent_color ?? "#0b1530";
+    const c = settings?.background_accent_color ?? "#4a22a8";
     const rgb = hexToRgb(c);
     accentSvDragHueRef.current = rgb ? rgbToHsv(rgb.r, rgb.g, rgb.b).h : accentColorHsv.h;
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -1802,14 +1809,14 @@ export function SettingsTab({
                 type="button"
                 disabled={reinstallLoaderLoading}
                 onClick={() => setIsReinstallLoaderDropdownOpen((v) => !v)}
-                className="interactive-press flex h-10 w-full items-center justify-between rounded-xl border border-white/20 bg-black/30 px-3 text-sm text-white/90"
+                className="interactive-press flex h-10 w-full items-center justify-between rounded-xl border border-white/15 bg-black/30 px-3 text-sm text-white/90"
               >
                 <span className="truncate">
                   {reinstallLoaderLoading
                     ? tt("common.loading")
                     : reinstallDialog.selectedLoaderVersion || tt("modpacks.common.select")}
                 </span>
-                <span className="text-[10px] text-white/50">▾</span>
+                <span className="text-[0.75rem] text-white/50">▾</span>
               </button>
               {isReinstallLoaderDropdownOpen && (
                 <div className="absolute left-0 top-full z-30 mt-1 max-h-48 w-full overflow-y-auto glass-popover p-1 text-xs">
@@ -1825,7 +1832,7 @@ export function SettingsTab({
                       }}
                       className={`flex w-full rounded-lg px-3 py-1.5 text-left ${
                         reinstallDialog.selectedLoaderVersion === opt.version
-                          ? "bg-white/90 text-black"
+                          ? "seg-on"
                           : "text-white/80 hover:bg-white/10"
                       }`}
                     >
@@ -1839,7 +1846,7 @@ export function SettingsTab({
               <button
                 type="button"
                 onClick={() => setReinstallDialog(null)}
-                className="interactive-press rounded-xl bg-white/10 px-4 py-1.5 text-xs font-semibold text-white hover:bg-white/20"
+                className="interactive-press rounded-xl bg-white/10 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-white/20"
               >
                 {tt("common.cancel")}
               </button>
@@ -1847,7 +1854,7 @@ export function SettingsTab({
                 type="button"
                 disabled={installingVersionId === reinstallDialog.version.id}
                 onClick={() => void confirmReinstall()}
-                className="interactive-press rounded-xl bg-white/90 px-4 py-1.5 text-xs font-semibold text-black hover:bg-white"
+                className="interactive-press rounded-xl accent-bg px-3.5 py-1.5 text-xs font-semibold text-white hover:brightness-110"
               >
                 {tt("settings.versions.manage.reinstallConfirm")}
               </button>
@@ -1879,7 +1886,7 @@ export function SettingsTab({
               <button
                 type="button"
                 onClick={() => setSimpleDeleteDialog(null)}
-                className="interactive-press rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs font-semibold text-white hover:bg-white/18"
+                className="interactive-press rounded-xl border border-white/10 bg-white/10 px-3.5 py-2 text-xs font-semibold text-white hover:bg-white/18"
               >
                 {tt("common.cancel")}
               </button>
@@ -1891,7 +1898,7 @@ export function SettingsTab({
                   setSimpleDeleteDialog(null);
                   void performDelete(version, scope, targetLabel);
                 }}
-                className="interactive-press rounded-full bg-amber-500 px-4 py-2 text-xs font-semibold text-white shadow-lg hover:bg-amber-400 disabled:opacity-50"
+                className="interactive-press rounded-xl bg-amber-500 px-3.5 py-2 text-xs font-semibold text-white shadow-lg hover:bg-amber-400 disabled:opacity-50"
               >
                 {tt("common.delete")}
               </button>
@@ -1931,7 +1938,7 @@ export function SettingsTab({
                     }),
                   );
                 }}
-                className="interactive-press rounded-xl border border-white/20 px-4 py-2 text-left text-xs text-white/90 hover:bg-white/10"
+                className="interactive-press rounded-xl border border-white/15 px-3.5 py-2 text-left text-xs text-white/90 hover:bg-white/10"
               >
                 {tt("settings.versions.delete.gameOnly", {
                   gameVersion: deleteDialog.details.gameVersion,
@@ -1953,7 +1960,7 @@ export function SettingsTab({
                     tt("settings.versions.delete.loaderOnly", { loaderSuffix: suffix }),
                   );
                 }}
-                className="interactive-press rounded-xl border border-white/20 px-4 py-2 text-left text-xs text-white/90 hover:bg-white/10"
+                className="interactive-press rounded-xl border border-white/15 px-3.5 py-2 text-left text-xs text-white/90 hover:bg-white/10"
               >
                 {tt("settings.versions.delete.loaderOnly", {
                   loaderSuffix:
@@ -1970,7 +1977,7 @@ export function SettingsTab({
                   setDeleteDialog(null);
                   void performDelete(version, "all", version.id);
                 }}
-                className="interactive-press rounded-xl border border-rose-400/40 bg-rose-500/15 px-4 py-2 text-left text-xs font-semibold text-rose-100 hover:bg-rose-500/25"
+                className="interactive-press rounded-xl border border-rose-400/40 bg-rose-500/15 px-3.5 py-2 text-left text-xs font-semibold text-rose-100 hover:bg-rose-500/25"
               >
                 {tt("settings.versions.delete.all")}
               </button>
@@ -1979,7 +1986,7 @@ export function SettingsTab({
               <button
                 type="button"
                 onClick={() => setDeleteDialog(null)}
-                className="interactive-press rounded-xl bg-white/10 px-4 py-1.5 text-xs font-semibold text-white hover:bg-white/20"
+                className="interactive-press rounded-xl bg-white/10 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-white/20"
               >
                 {tt("common.cancel")}
               </button>
@@ -2004,7 +2011,7 @@ export function SettingsTab({
                 corrupted: repairPrompt.result.corrupted_files,
               })}
             </p>
-            <label className="mb-4 flex items-center gap-2 text-[11px] text-white/70">
+            <label className="mb-4 flex items-center gap-2 text-[0.8125rem] text-white/70">
               <input
                 type="checkbox"
                 className="h-3.5 w-3.5 accent-white"
@@ -2017,7 +2024,7 @@ export function SettingsTab({
               <button
                 type="button"
                 onClick={() => setRepairPrompt(null)}
-                className="interactive-press rounded-xl bg-white/10 px-4 py-1.5 text-xs font-semibold text-white hover:bg-white/20"
+                className="interactive-press rounded-xl bg-white/10 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-white/20"
               >
                 {tt("common.cancel")}
               </button>
@@ -2035,7 +2042,7 @@ export function SettingsTab({
                     );
                   })();
                 }}
-                className="interactive-press rounded-xl bg-amber-500 px-4 py-1.5 text-xs font-semibold text-white hover:bg-amber-400"
+                className="interactive-press rounded-xl bg-amber-500 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-amber-400"
               >
                 {tt("settings.versions.verify.rewriteButton")}
               </button>
@@ -2103,9 +2110,9 @@ export function SettingsTab({
               ) : (
                 <>
               {!settingsSearchActive && (
-              <div className="mb-4 flex items-center rounded-full bg-white/10 p-1 relative overflow-hidden">
+              <div className="mb-4 flex items-center seg-track p-1 relative overflow-hidden">
                 <div
-                  className="pointer-events-none absolute top-1 bottom-1 rounded-full bg-white/90 transition-all duration-200 ease-out"
+                  className="pointer-events-none absolute top-1 bottom-1 rounded-md seg-indicator transition-all duration-200 ease-out"
                   style={{
                     left: `${gameSubIndicator.left}px`,
                     width: `${gameSubIndicator.width}px`,
@@ -2120,8 +2127,8 @@ export function SettingsTab({
                     if ((settings?.ui_sounds_enabled ?? true) && gameSubTab !== "general") playTabSwitchSound();
                     setGameSubTab("general");
                   }}
-                  className={`interactive-press relative z-10 flex-1 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
-                    gameSubTab === "general" ? "text-black" : "text-white/70 hover:text-white"
+                  className={`interactive-press relative z-10 flex-1 rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    gameSubTab === "general" ? "text-white" : "text-white/70 hover:text-white"
                   }`}
                 >
                   {tt("settings.game.subtab.general")}
@@ -2135,8 +2142,8 @@ export function SettingsTab({
                     if ((settings?.ui_sounds_enabled ?? true) && gameSubTab !== "java") playTabSwitchSound();
                     setGameSubTab("java");
                   }}
-                  className={`interactive-press relative z-10 flex-1 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
-                    gameSubTab === "java" ? "text-black" : "text-white/70 hover:text-white"
+                  className={`interactive-press relative z-10 flex-1 rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    gameSubTab === "java" ? "text-white" : "text-white/70 hover:text-white"
                   }`}
                 >
                   {tt("settings.game.subtab.java")}
@@ -2170,12 +2177,12 @@ export function SettingsTab({
                         aria-haspopup="listbox"
                         aria-expanded={isGraphicsAdapterDropdownOpen}
                         onClick={() => setIsGraphicsAdapterDropdownOpen((prev) => !prev)}
-                        className="interactive-press launcher-select glass-control flex w-full items-center justify-between px-3 py-2 text-left text-sm outline-none"
+                        className="interactive-press launcher-select glass-control flex w-full items-center justify-between px-4 py-2 text-left text-sm outline-none"
                       >
                         <span className="min-w-0 truncate">
                           {settings?.graphics_adapter || tt("settings.game.graphicsAdapter.auto")}
                         </span>
-                        <span className="ml-2 shrink-0 text-[10px] text-white/55">▾</span>
+                        <span className="ml-2 shrink-0 text-[0.75rem] text-white/55">▾</span>
                       </button>
                       <AnimatePresence>
                         {isGraphicsAdapterDropdownOpen && (
@@ -2207,7 +2214,7 @@ export function SettingsTab({
                                     setIsGraphicsAdapterDropdownOpen(false);
                                   }}
                                   className={`flex w-full items-center rounded-lg px-3 py-2 text-left transition-colors ${
-                                    selected ? "bg-white/90 text-black" : "text-white/80 hover:bg-white/10"
+                                    selected ? "seg-on" : "text-white/80 hover:bg-white/10"
                                   }`}
                                 >
                                   <span className="min-w-0 truncate">{adapter.label}</span>
@@ -2218,7 +2225,7 @@ export function SettingsTab({
                         )}
                       </AnimatePresence>
                     </div>
-                      <span className="text-[11px] text-white/45">
+                      <span className="text-[0.8125rem] text-white/45">
                         {tt("settings.game.graphicsAdapter.hint")}
                       </span>
                     </div>
@@ -2258,7 +2265,7 @@ export function SettingsTab({
                         <div className="text-sm text-white/90">
                           {tt("settings.game.gameDirectory.label")}
                         </div>
-                        <div className="mt-1 break-all text-[11px] text-white/55">
+                        <div className="mt-1 break-all text-[0.8125rem] text-white/55">
                           {settings?.game_directory
                             ? settings.game_directory
                             : tt("settings.game.gameDirectory.defaultPathHint")}
@@ -2282,7 +2289,7 @@ export function SettingsTab({
                               }
                             })();
                           }}
-                          className="interactive-press rounded-xl border border-white/20 bg-black/40 px-3 py-2 text-xs font-semibold text-white/85 hover:border-white/40 hover:bg-black/60"
+                          className="interactive-press rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-xs font-semibold text-white/85 hover:border-white/20 hover:bg-black/60"
                         >
                           {tt("settings.game.gameDirectory.choose")}
                         </button>
@@ -2296,7 +2303,7 @@ export function SettingsTab({
                         </button>
                       </div>
                     </div>
-                    <div className="mt-2 text-[11px] text-white/45">
+                    <div className="mt-2 text-[0.8125rem] text-white/45">
                       {tt("settings.game.gameDirectory.hint")}
                     </div>
                     </>
@@ -2469,10 +2476,10 @@ export function SettingsTab({
                       setIsVersionsLoaderDropdownOpen((prev) => !prev);
                       setIsVersionFilterDropdownOpen(false);
                     }}
-                    className="interactive-press flex h-10 w-full items-center justify-between rounded-xl border border-white/20 bg-black/30 px-3 text-sm text-white/90 transition-colors hover:border-white/35 hover:bg-black/40"
+                    className="interactive-press flex h-10 w-full items-center justify-between rounded-xl border border-white/15 bg-black/30 px-3 text-sm text-white/90 transition-colors hover:border-white/20 hover:bg-black/40"
                   >
                     <span>{tt(`settings.versions.loader.${versionsLoader}`)}</span>
-                    <span className="text-[10px] text-white/50">▾</span>
+                    <span className="text-[0.75rem] text-white/50">▾</span>
                   </button>
                   <AnimatePresence>
                     {isVersionsLoaderDropdownOpen && (
@@ -2494,7 +2501,7 @@ export function SettingsTab({
                                 setIsVersionsLoaderDropdownOpen(false);
                               }}
                               className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors ${
-                                active ? "bg-white/90 text-black" : "text-white/80 hover:bg-white/10"
+                                active ? "seg-on" : "text-white/80 hover:bg-white/10"
                               }`}
                             >
                               <span>{tt(`settings.versions.loader.${id}`)}</span>
@@ -2516,10 +2523,10 @@ export function SettingsTab({
                       setIsVersionFilterDropdownOpen((prev) => !prev);
                       setIsVersionsLoaderDropdownOpen(false);
                     }}
-                    className="interactive-press flex h-10 w-full items-center justify-between rounded-xl border border-white/20 bg-black/30 px-3 text-sm text-white/90 transition-colors hover:border-white/35 hover:bg-black/40"
+                    className="interactive-press flex h-10 w-full items-center justify-between rounded-xl border border-white/15 bg-black/30 px-3 text-sm text-white/90 transition-colors hover:border-white/20 hover:bg-black/40"
                   >
                     <span className="truncate">{selectedVersionFilterLabel}</span>
-                    <span className="text-[10px] text-white/50">▾</span>
+                    <span className="text-[0.75rem] text-white/50">▾</span>
                   </button>
                   <AnimatePresence>
                     {isVersionFilterDropdownOpen && (
@@ -2555,7 +2562,7 @@ export function SettingsTab({
                                 }
                               }}
                               placeholder={tt("play.version.searchPlaceholder")}
-                              className={`h-8 w-full rounded-lg border border-white/15 bg-black/40 px-3 text-xs text-white/90 placeholder:text-white/35 outline-none focus:border-white/35 ${
+                              className={`glass-control h-8 w-full rounded-lg border px-3 text-xs text-white/90 placeholder:text-white/35 outline-none ${
                                 versionFilterQuery ? "pr-8" : ""
                               }`}
                             />
@@ -2581,14 +2588,14 @@ export function SettingsTab({
                             }}
                             className={`flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left text-xs transition-colors ${
                               selectedVersionFilterId === null
-                                ? "bg-white/90 text-black"
+                                ? "seg-on"
                                 : "text-white/80 hover:bg-white/10"
                             }`}
                           >
                             <span>{tt("settings.versions.versionFilter.all")}</span>
                           </button>
                           {versionFilterOptions.length === 0 ? (
-                            <div className="px-3 py-2 text-[11px] text-white/50">
+                            <div className="px-3 py-2 text-[0.8125rem] text-white/50">
                               {tt("settings.versions.versionFilter.noneFound")}
                             </div>
                           ) : (
@@ -2607,7 +2614,7 @@ export function SettingsTab({
                                   }}
                                   className={`flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left text-xs transition-colors ${
                                     selected
-                                      ? "bg-white/90 text-black"
+                                      ? "seg-on"
                                       : "text-white/80 hover:bg-white/10"
                                   }`}
                                 >
@@ -2635,7 +2642,7 @@ export function SettingsTab({
                     <button
                       type="button"
                       onClick={() => void handleImportCustomVersion()}
-                      className="interactive-press rounded-full border border-amber-400/40 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:border-amber-300/60 hover:text-amber-50"
+                      className="interactive-press rounded-xl border border-amber-400/40 px-3 py-1.5 text-xs font-semibold text-amber-100 hover:border-amber-300/60 hover:text-amber-50"
                     >
                       {tt("settings.versions.custom.importButton")}
                     </button>
@@ -2662,7 +2669,7 @@ export function SettingsTab({
                         }
                       })();
                     }}
-                    className="interactive-press rounded-full border border-white/25 px-3 py-1.5 text-xs font-semibold text-white/80 hover:border-white/40 hover:text-white"
+                    className="interactive-press rounded-xl border border-white/15 px-3 py-1.5 text-xs font-semibold text-white/80 hover:border-white/20 hover:text-white"
                   >
                     {tt("settings.versions.refresh")}
                   </button>
@@ -2695,19 +2702,19 @@ export function SettingsTab({
                             <div className="min-w-0">
                               <div className="flex items-center gap-2">
                                 <span className="truncate font-semibold">{v.id}</span>
-                                <span className="rounded-full bg-sky-500/20 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-sky-200">
+                                <span className="rounded-md bg-sky-500/20 px-2 py-0.5 text-[0.75rem] text-sky-200">
                                   {tt(`settings.versions.loader.${v.loader}`)}
                                 </span>
-                                <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-white/70">
+                                <span className="rounded-md bg-white/10 px-2 py-0.5 text-[0.75rem] text-white/70">
                                   {v.version_type}
                                 </span>
                                 {installed && (
-                                  <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+                                  <span className="rounded-md bg-emerald-500/20 px-2 py-0.5 text-[0.75rem] font-semibold text-emerald-300">
                                     {tt("settings.versions.installedBadge")}
                                   </span>
                                 )}
                               </div>
-                              <div className="mt-0.5 text-[11px] text-white/60">
+                              <div className="mt-0.5 text-[0.8125rem] text-white/60">
                                 {v.release_time
                                   ? new Date(v.release_time).toLocaleString(
                                       localeTag(language),
@@ -2724,7 +2731,7 @@ export function SettingsTab({
                                       style={{ width: `${Math.min(100, Math.max(0, percent))}%` }}
                                     />
                                   </div>
-                                  <div className="mt-0.5 text-[10px] text-white/70">
+                                  <div className="mt-0.5 text-[0.75rem] text-white/70">
                                     {percent}%
                                   </div>
                                 </div>
@@ -2737,10 +2744,10 @@ export function SettingsTab({
                                 onClick={() =>
                                   void (installed ? openReinstallDialog(v) : handleInstallVersion(v))
                                 }
-                                className={`interactive-press rounded-full px-3 py-1.5 text-[11px] font-semibold ${
+                                className={`interactive-press rounded-xl px-3 py-1.5 text-[0.8125rem] font-semibold ${
                                   installingVersionId === v.id
                                     ? "cursor-default bg-white/10 text-white/60"
-                                    : "bg-white/90 text-black hover:bg-white"
+                                    : "accent-bg text-white hover:brightness-110"
                                 }`}
                               >
                                 {installingVersionId === v.id
@@ -2759,10 +2766,10 @@ export function SettingsTab({
                                       deletingVersionId === v.id
                                     }
                                     onClick={() => void handleCheckVersionFiles(v)}
-                                    className={`interactive-press rounded-full px-3 py-1.5 text-[11px] font-semibold ${
+                                    className={`interactive-press rounded-xl px-3 py-1.5 text-[0.8125rem] font-semibold ${
                                       checkingVersionId === v.id
                                         ? "cursor-default bg-white/10 text-white/60"
-                                        : "border border-white/25 text-white/80 hover:border-white/40 hover:text-white"
+                                        : "border border-white/15 text-white/80 hover:border-white/20 hover:text-white"
                                     }`}
                                   >
                                     {checkingVersionId === v.id
@@ -2775,7 +2782,7 @@ export function SettingsTab({
                                       installingVersionId === v.id || deletingVersionId === v.id
                                     }
                                     onClick={() => void openDeleteFlow(v)}
-                                    className={`interactive-press rounded-full px-3 py-1.5 text-[11px] font-semibold ${
+                                    className={`interactive-press rounded-xl px-3 py-1.5 text-[0.8125rem] font-semibold ${
                                       deletingVersionId === v.id
                                         ? "cursor-default bg-white/10 text-white/60"
                                         : "border border-rose-400/35 text-rose-200 hover:border-rose-300/55 hover:text-rose-100"
@@ -2797,10 +2804,10 @@ export function SettingsTab({
               </div>
               {installingVersionId && (
                 <div className="mt-3 space-y-1">
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/50">
+                  <div className="text-[0.75rem] font-semibold text-white/50">
                     {tt("settings.versions.installLog", { version: installingVersionId })}
                   </div>
-                  <div className="custom-scrollbar max-h-36 min-h-[5rem] overflow-y-auto rounded-xl border border-white/10 bg-black/80 px-3 py-2 font-mono text-[10px] text-emerald-200/90">
+                  <div className="custom-scrollbar max-h-36 min-h-[5rem] overflow-y-auto rounded-xl border border-white/10 bg-black/80 px-3 py-2 font-mono text-[0.75rem] text-emerald-200/90">
                     {installLogLines.length > 0 ? (
                       installLogLines.map((entry, idx) => (
                         <div
@@ -2836,7 +2843,7 @@ export function SettingsTab({
               <div className="max-h-[clamp(220px,45vh,520px)] overflow-y-auto pr-1 space-y-3">
               {onCheckUpdate && showSetting("launcher.updates") && (
                 <div className={`${SETTINGS_DARK_BOX} space-y-2`}>
-                  <span className="text-xs font-semibold uppercase tracking-wider text-white/60">
+                  <span className="text-xs font-semibold text-white/60">
                     {tt("settings.card.updates")}
                   </span>
                   <SettingsToggle
@@ -2873,7 +2880,7 @@ export function SettingsTab({
                         <button
                           type="button"
                           onClick={() => void onInstallUpdate()}
-                          className="interactive-press rounded-full bg-emerald-500/90 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500"
+                          className="interactive-press rounded-xl bg-accent-from/20 px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110"
                         >
                           {tt("settings.updates.installNow")}
                         </button>
@@ -2898,7 +2905,7 @@ export function SettingsTab({
                             }
                             void onCheckUpdate?.();
                           }}
-                          className="interactive-press rounded-full border border-white/25 px-3 py-1.5 text-xs font-semibold text-white/80 hover:border-white/40 hover:text-white disabled:opacity-50"
+                          className="interactive-press rounded-xl border border-white/15 px-3 py-1.5 text-xs font-semibold text-white/80 hover:border-white/20 hover:text-white disabled:opacity-50"
                         >
                           {tt("settings.updates.checkNow")}
                         </button>
@@ -2938,7 +2945,7 @@ export function SettingsTab({
                 showSetting("launcher.resetSettings")
               ) && (
               <div className={`${SETTINGS_DARK_BOX} space-y-4`}>
-                <span className="text-xs font-semibold uppercase tracking-wider text-white/60">
+                <span className="text-xs font-semibold text-white/60">
                   {tt("settings.card.customization")}
                 </span>
                 {showSetting("launcher.openOnProfiles") && (
@@ -3016,6 +3023,20 @@ export function SettingsTab({
                   onChange={(v) => updateSettings({ animations_disabled: v })}
                 />
                 )}
+                {showSetting("launcher.backgroundAnimation") && (
+                <div className="flex flex-col gap-1.5">
+                <SettingsToggle
+                  label={tt("settings.launcher.backgroundAnimation.label")}
+                  yesLabel={tt("settings.common.toggle.on")}
+                  noLabel={tt("settings.common.toggle.off")}
+                  value={!(settings?.background_animation_disabled ?? false)}
+                  onChange={(v) => updateSettings({ background_animation_disabled: !v })}
+                />
+                <p className="ui-meta pl-0.5 pr-1">
+                  {tt("settings.launcher.backgroundAnimation.hint")}
+                </p>
+                </div>
+                )}
                 {showSetting("launcher.hideBanners") && (
                 <div className="flex flex-col gap-1.5">
                 <SettingsToggle
@@ -3051,10 +3072,10 @@ export function SettingsTab({
                   </span>
                   <div
                     ref={languageToggleContainerRef}
-                    className="relative flex rounded-full bg-white/10 p-0.5 overflow-hidden"
+                    className="relative flex seg-track p-0.5 overflow-hidden"
                   >
                     <div
-                      className="pointer-events-none absolute top-0.5 bottom-0.5 rounded-full bg-white/90 transition-all duration-200 ease-out"
+                      className="pointer-events-none absolute top-0.5 bottom-0.5 rounded-md seg-indicator transition-all duration-200 ease-out"
                       style={{
                         left: `${languageIndicator.left}px`,
                         width: `${languageIndicator.width}px`,
@@ -3070,8 +3091,8 @@ export function SettingsTab({
                         ref={(el) => {
                           languageTabRefs.current[langCode] = el;
                         }}
-                        className={`interactive-press relative z-10 min-w-[72px] rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
-                          language === langCode ? "text-black" : "text-white/70 hover:text-white"
+                        className={`interactive-press relative z-10 min-w-[72px] rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors ${
+                          language === langCode ? "text-white" : "text-white/70 hover:text-white"
                         }`}
                       >
                         {tt(`settings.launcher.interfaceLanguage.${langCode}`)}
@@ -3089,29 +3110,29 @@ export function SettingsTab({
                     <button
                       type="button"
                       onClick={() => setIsAccentPickerOpen((v) => !v)}
-                      className="interactive-press flex h-8 w-16 items-center justify-center rounded-full border border-white/30 bg-black/40 shadow-soft"
+                      className="interactive-press flex h-8 w-16 items-center justify-center rounded-full border border-white/20 bg-black/40 shadow-soft"
                     >
                       <span
                         className="h-5 w-10 rounded-full"
                         style={{
                           background:
-                            settings?.background_accent_color ?? "#0b1530",
+                            settings?.background_accent_color ?? "#4a22a8",
                         }}
                       />
                     </button>
                     <span className="text-xs text-white/60">
-                      {settings?.background_accent_color ?? "#0b1530"}
+                      {settings?.background_accent_color ?? "#4a22a8"}
                     </span>
                     {isAccentPickerOpen && (
                       <div className="glass-popover absolute right-0 bottom-full z-40 mb-2 w-80 px-3 py-3 text-xs text-white">
                         <div className="mb-2 flex items-center justify-between">
-                          <span className="text-[11px] uppercase tracking-[0.16em] text-white/50">
+                          <span className="text-[0.8125rem] text-white/50">
                             {tt("settings.launcher.accentColor.popupTitle")}
                           </span>
                           <button
                             type="button"
                             onClick={() => setIsAccentPickerOpen(false)}
-                            className="interactive-press rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-white/80 hover:bg-white/20"
+                            className="interactive-press rounded-xl bg-white/10 px-2 py-0.5 text-[0.75rem] font-semibold text-white/80 hover:bg-white/20"
                           >
                             ✕
                           </button>
@@ -3137,7 +3158,7 @@ export function SettingsTab({
                             onKeyDown={(e) => {
                               if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
                               e.preventDefault();
-                              const cur = settings?.background_accent_color ?? "#0b1530";
+                              const cur = settings?.background_accent_color ?? "#4a22a8";
                               const rgb = hexToRgb(cur);
                               if (!rgb) return;
                               const hsv = rgbToHsv(rgb.r, rgb.g, rgb.b);
@@ -3167,7 +3188,7 @@ export function SettingsTab({
                                 className="h-full w-full rounded-full ring-1 ring-black/50"
                                 style={{
                                   backgroundColor:
-                                    settings?.background_accent_color ?? "#0b1530",
+                                    settings?.background_accent_color ?? "#4a22a8",
                                   backgroundImage: [
                                     "radial-gradient(circle at 32% 26%, rgba(255,255,255,0.16), transparent 52%)",
                                     "linear-gradient(155deg, rgba(255,255,255,0.07), transparent 48%)",
@@ -3190,12 +3211,12 @@ export function SettingsTab({
                             </div>
                           </div>
                           <div className="flex min-w-0 flex-1 flex-col gap-1">
-                            <span className="text-[11px] text-white/60">
+                            <span className="text-[0.8125rem] text-white/60">
                               {tt("settings.launcher.accentColor.currentLabel")}
                             </span>
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-mono text-[11px] text-white/85">
-                                {settings?.background_accent_color ?? "#0b1530"}
+                              <span className="font-mono text-[0.8125rem] text-white/85">
+                                {settings?.background_accent_color ?? "#4a22a8"}
                               </span>
                               <div className="relative">
                                 <input
@@ -3206,14 +3227,14 @@ export function SettingsTab({
                                   onBlur={(e) => {
                                     const raw = e.target.value.trim();
                                     if (!raw) {
-                                      const fallback = settings?.background_accent_color ?? "#0b1530";
+                                      const fallback = settings?.background_accent_color ?? "#4a22a8";
                                       setAccentInput(fallback);
                                       return;
                                     }
                                     const withHash = raw.startsWith("#") ? raw : `#${raw}`;
                                     const match = /^#[0-9a-fA-F]{6}$/.test(withHash);
                                     if (!match) {
-                                      const fallback = settings?.background_accent_color ?? "#0b1530";
+                                      const fallback = settings?.background_accent_color ?? "#4a22a8";
                                       setAccentInput(fallback);
                                       return;
                                     }
@@ -3221,7 +3242,7 @@ export function SettingsTab({
                                     setAccentInput(normalized);
                                     updateSettings({ background_accent_color: normalized });
                                   }}
-                                  className={`h-6 w-[7.25rem] rounded-lg border border-white/25 bg-black/60 px-2 text-[11px] font-mono text-white/85 outline-none focus:border-white/50 ${
+                                  className={`h-6 w-[7.25rem] rounded-lg border border-white/15 bg-black/60 px-2 text-[0.8125rem] font-mono text-white/85 outline-none focus:border-white/50 ${
                                     accentInput ? "pr-7" : ""
                                   }`}
                                 />
@@ -3236,7 +3257,7 @@ export function SettingsTab({
                           </div>
                         </div>
                         <div className="mb-2">
-                          <div className="mb-1.5 text-[10px] text-white/45">
+                          <div className="mb-1.5 text-[0.75rem] text-white/45">
                             {tt("settings.launcher.accentColor.svPadLabel")}
                           </div>
                           <div
@@ -3263,7 +3284,7 @@ export function SettingsTab({
                             />
                           </div>
                         </div>
-                        <div className="mt-1 text-[11px] text-white/55">
+                        <div className="mt-1 text-[0.8125rem] text-white/55">
                           {tt("settings.launcher.accentColor.helpText")}
                         </div>
                       </div>
@@ -3305,7 +3326,7 @@ export function SettingsTab({
                           console.error(e);
                         }
                       }}
-                      className="interactive-press inline-flex items-center gap-2 rounded-xl border border-white/20 bg-black/40 px-3 py-2 text-xs font-semibold text-white/85 hover:border-white/40 hover:bg-black/60"
+                      className="interactive-press inline-flex items-center gap-2 rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-xs font-semibold text-white/85 hover:border-white/20 hover:bg-black/60"
                     >
                       <span>
                         {tt("settings.launcher.backgroundImage.choose")}
@@ -3332,7 +3353,7 @@ export function SettingsTab({
                       </button>
                     )}
                   </div>
-                  <p className="text-[11px] text-white/45">
+                  <p className="text-[0.8125rem] text-white/45">
                     {tt("settings.launcher.backgroundImage.hint")}
                   </p>
                   </>
@@ -3360,7 +3381,7 @@ export function SettingsTab({
                       className={`interactive-press rounded-xl border px-3 py-2 text-xs font-semibold transition-colors ${
                         !activeThemeId
                           ? "border-white/40 bg-white/15 text-white"
-                          : "border-white/15 bg-black/30 text-white/75 hover:border-white/30 hover:bg-black/45"
+                          : "border-white/15 bg-black/30 text-white/75 hover:border-white/20 hover:bg-black/45"
                       }`}
                     >
                       {tt("settings.launcher.customThemes.default")}
@@ -3373,7 +3394,7 @@ export function SettingsTab({
                         className={`interactive-press rounded-xl border px-3 py-2 text-xs font-semibold transition-colors ${
                           activeThemeId === theme.id
                             ? "border-white/40 bg-white/15 text-white"
-                            : "border-white/15 bg-black/30 text-white/75 hover:border-white/30 hover:bg-black/45"
+                            : "border-white/15 bg-black/30 text-white/75 hover:border-white/20 hover:bg-black/45"
                         }`}
                         title={
                           theme.description ||
@@ -3394,7 +3415,7 @@ export function SettingsTab({
                     )}
                   </div>
                   {activeTheme && (
-                    <p className="text-[11px] text-white/45">
+                    <p className="text-[0.8125rem] text-white/45">
                       {activeTheme.description ||
                         (activeTheme.author
                           ? tt("settings.launcher.customThemes.byAuthor", {
@@ -3443,7 +3464,7 @@ export function SettingsTab({
                           );
                         }
                       }}
-                      className="interactive-press inline-flex items-center gap-2 rounded-xl border border-white/20 bg-black/40 px-3 py-2 text-xs font-semibold text-white/85 hover:border-white/40 hover:bg-black/60"
+                      className="interactive-press inline-flex items-center gap-2 rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-xs font-semibold text-white/85 hover:border-white/20 hover:bg-black/60"
                     >
                       {tt("settings.launcher.customThemes.importZip")}
                     </button>
@@ -3476,7 +3497,7 @@ export function SettingsTab({
                           );
                         }
                       }}
-                      className="interactive-press inline-flex items-center gap-2 rounded-xl border border-white/20 bg-black/40 px-3 py-2 text-xs font-semibold text-white/85 hover:border-white/40 hover:bg-black/60"
+                      className="interactive-press inline-flex items-center gap-2 rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-xs font-semibold text-white/85 hover:border-white/20 hover:bg-black/60"
                     >
                       {tt("settings.launcher.customThemes.create")}
                     </button>
@@ -3493,7 +3514,7 @@ export function SettingsTab({
                           );
                         }
                       }}
-                      className="interactive-press inline-flex items-center gap-2 rounded-xl border border-white/20 bg-black/40 px-3 py-2 text-xs font-semibold text-white/85 hover:border-white/40 hover:bg-black/60"
+                      className="interactive-press inline-flex items-center gap-2 rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-xs font-semibold text-white/85 hover:border-white/20 hover:bg-black/60"
                     >
                       {tt("settings.launcher.customThemes.openFolder")}
                     </button>
@@ -3514,7 +3535,7 @@ export function SettingsTab({
                               );
                             }
                           }}
-                          className="interactive-press inline-flex items-center gap-2 rounded-xl border border-white/20 bg-black/40 px-3 py-2 text-xs font-semibold text-white/85 hover:border-white/40 hover:bg-black/60"
+                          className="interactive-press inline-flex items-center gap-2 rounded-xl border border-white/15 bg-black/40 px-3 py-2 text-xs font-semibold text-white/85 hover:border-white/20 hover:bg-black/60"
                         >
                           {tt("settings.launcher.customThemes.editCss")}
                         </button>
@@ -3555,7 +3576,7 @@ export function SettingsTab({
                       </>
                     )}
                   </div>
-                  <p className="text-[11px] text-white/45">
+                  <p className="text-[0.8125rem] text-white/45">
                     {tt("settings.launcher.customThemes.hint")}
                   </p>
                 </div>
@@ -3572,14 +3593,14 @@ export function SettingsTab({
                     <button
                       type="button"
                       onClick={() => setIsSidebarPositionDropdownOpen((prev) => !prev)}
-                      className="interactive-press flex h-10 w-full min-w-[10rem] items-center justify-between rounded-xl border border-white/20 bg-black/30 px-3 text-sm text-white/90 transition-colors hover:border-white/35 hover:bg-black/40"
+                      className="interactive-press flex h-10 w-full min-w-[10rem] items-center justify-between rounded-xl border border-white/15 bg-black/30 px-3 text-sm text-white/90 transition-colors hover:border-white/20 hover:bg-black/40"
                     >
                       <span>
                         {tt(
                           `settings.launcher.sidebarPosition.${parseSidebarPosition(settings?.sidebar_position)}`,
                         )}
                       </span>
-                      <span className="text-[10px] text-white/50">▾</span>
+                      <span className="text-[0.75rem] text-white/50">▾</span>
                     </button>
                     <AnimatePresence>
                       {isSidebarPositionDropdownOpen && (
@@ -3603,7 +3624,7 @@ export function SettingsTab({
                                 }}
                                 className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors ${
                                   active
-                                    ? "bg-white/90 text-black"
+                                    ? "seg-on"
                                     : "text-white/80 hover:bg-white/10"
                                 }`}
                               >
@@ -3643,7 +3664,7 @@ export function SettingsTab({
                           <button
                             type="button"
                             onClick={() => moveSidebarItem(id, "up")}
-                            className="interactive-press rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-white/80 hover:bg-white/20"
+                            className="interactive-press rounded-xl bg-white/10 px-2 py-0.5 text-[0.75rem] font-semibold text-white/80 hover:bg-white/20"
                             aria-label={tt("settings.launcher.sidebarOrder.moveUp")}
                           >
                             ↑
@@ -3651,7 +3672,7 @@ export function SettingsTab({
                           <button
                             type="button"
                             onClick={() => moveSidebarItem(id, "down")}
-                            className="interactive-press rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-white/80 hover:bg-white/20"
+                            className="interactive-press rounded-xl bg-white/10 px-2 py-0.5 text-[0.75rem] font-semibold text-white/80 hover:bg-white/20"
                             aria-label={tt("settings.launcher.sidebarOrder.moveDown")}
                           >
                             ↓
@@ -3667,7 +3688,7 @@ export function SettingsTab({
                   type="button"
                   onClick={() => void handleResetSettings()}
                   disabled={isResettingSettings}
-                  className="interactive-press inline-flex items-center justify-center rounded-2xl border border-white/25 px-4 py-2 text-xs font-semibold text-white/85 hover:border-white/45 hover:text-white disabled:opacity-60"
+                  className="interactive-press inline-flex items-center justify-center rounded-xl border border-white/15 px-3.5 py-2 text-xs font-semibold text-white/85 hover:border-white/20 hover:text-white disabled:opacity-60"
                 >
                   {tt("settings.launcher.resetSettings.button")}
                 </button>
@@ -3696,7 +3717,7 @@ export function SettingsTab({
                       type="button"
                       onClick={() => void handleClearCache()}
                       disabled={isCacheLoading}
-                      className="interactive-press rounded-full border border-white/25 px-3 py-1.5 text-xs font-semibold text-white/85 hover:border-white/40 hover:text-white disabled:opacity-60"
+                      className="interactive-press rounded-xl border border-white/15 px-3 py-1.5 text-xs font-semibold text-white/85 hover:border-white/20 hover:text-white disabled:opacity-60"
                     >
                       {tt("settings.launcher.cache.clearButton")}
                     </button>
@@ -3705,7 +3726,7 @@ export function SettingsTab({
               )}
               {showSetting("launcher.backup") && (
               <div className={`${SETTINGS_DARK_BOX} space-y-2`}>
-                    <div className="text-[11px] uppercase tracking-[0.16em] text-white/45">
+                    <div className="text-[0.8125rem] text-white/45">
                       {tt("settings.launcher.backup.title")}
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -3713,7 +3734,7 @@ export function SettingsTab({
                         type="button"
                         onClick={() => void handleExportSettings()}
                         disabled={isExportingSettings}
-                        className="interactive-press inline-flex items-center justify-center rounded-2xl border border-white/25 px-4 py-2 text-xs font-semibold text-white/85 hover:border-white/45 hover:text-white disabled:opacity-60"
+                        className="interactive-press inline-flex items-center justify-center rounded-xl border border-white/15 px-3.5 py-2 text-xs font-semibold text-white/85 hover:border-white/20 hover:text-white disabled:opacity-60"
                       >
                         {isExportingSettings
                           ? tt("settings.launcher.backup.exporting")
@@ -3723,14 +3744,14 @@ export function SettingsTab({
                         type="button"
                         onClick={() => void handleImportSettings()}
                         disabled={isImportingSettings}
-                        className="interactive-press inline-flex items-center justify-center rounded-2xl bg-white/10 px-4 py-2 text-xs font-semibold text-white/85 hover:bg-white/20 disabled:opacity-60"
+                        className="interactive-press inline-flex items-center justify-center rounded-xl bg-white/10 px-3.5 py-2 text-xs font-semibold text-white/85 hover:bg-white/20 disabled:opacity-60"
                       >
                         {isImportingSettings
                           ? tt("settings.launcher.backup.importing")
                           : tt("settings.launcher.backup.importButton")}
                       </button>
                     </div>
-                    <div className="text-[11px] text-white/55">
+                    <div className="text-[0.8125rem] text-white/55">
                       {tt("settings.launcher.backup.hint")}
                     </div>
               </div>
@@ -3746,9 +3767,9 @@ export function SettingsTab({
           </div>
 
           <div className="flex shrink-0 justify-center">
-        <div className="glass-chip relative flex items-center gap-0 overflow-hidden p-1">
+        <div className="seg-track relative flex items-center gap-0 overflow-hidden p-1">
           <div
-            className="pointer-events-none absolute top-1 bottom-1 rounded-full bg-white/90 transition-all duration-200 ease-out"
+            className="pointer-events-none absolute top-1 bottom-1 rounded-md seg-indicator transition-all duration-200 ease-out"
             style={{
               left: `${settingsIndicator.left}px`,
               width: `${settingsIndicator.width}px`,
@@ -3779,9 +3800,9 @@ export function SettingsTab({
                   if ((settings?.ui_sounds_enabled ?? true) && settingsTab !== tab.id) playTabSwitchSound();
                   setSettingsTab(tab.id);
                 }}
-                className={`interactive-press relative z-10 rounded-full px-4 py-1.5 text-xs font-semibold text-center transition-colors ${
+                className={`interactive-press relative z-10 rounded-xl px-3.5 py-1.5 text-xs font-semibold text-center transition-colors ${
                   active
-                    ? "text-black"
+                    ? "text-white"
                     : "text-white/70 hover:text-white"
                 }`}
               >

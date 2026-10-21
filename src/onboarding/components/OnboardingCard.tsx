@@ -37,8 +37,8 @@ export function OnboardingCard({
       whileTap={interactive ? { scale: 0.985 } : undefined}
       transition={{ duration: 0.15 }}
       className={[
-        "glass-panel px-4 py-3 transition-colors duration-200",
-        selected ? "border-white/30" : "hover:border-white/20",
+        "glass-panel rounded-2xl px-4 py-3 transition-colors duration-200",
+        selected ? "!border-accent-to/60 !bg-accent-from/10" : "hover:!border-white/20",
         interactive ? "cursor-pointer" : "",
         disabled ? "cursor-not-allowed opacity-50" : "",
         className,

@@ -152,13 +152,12 @@ export function assignProfilesToGroup(
   profileIds: string[],
 ): ProfileGroup[] {
   const idsSet = new Set(profileIds);
-  const next = groups.map((g) => {
+  return groups.map((g) => {
     if (g.id === groupId) {
       return { ...g, profileIds: [...new Set([...g.profileIds, ...profileIds])] };
     }
     return { ...g, profileIds: g.profileIds.filter((id) => !idsSet.has(id)) };
   });
-  return pruneEmptyProfileGroups(next);
 }
 
 export function ungroupProfiles(groups: ProfileGroup[], profileIds: string[]): ProfileGroup[] {
@@ -167,8 +166,4 @@ export function ungroupProfiles(groups: ProfileGroup[], profileIds: string[]): P
     ...g,
     profileIds: g.profileIds.filter((id) => !idsSet.has(id)),
   }));
-}
-
-export function pruneEmptyProfileGroups(groups: ProfileGroup[]): ProfileGroup[] {
-  return groups.filter((g) => g.profileIds.length > 0);
 }

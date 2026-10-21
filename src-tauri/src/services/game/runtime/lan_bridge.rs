@@ -1,23 +1,49 @@
-use std::collections::{HashMap, VecDeque};
-use std::sync::Arc;
+//! LAN-мост комнат: туннелирует TCP-соединения Minecraft через WebRTC DataChannel.
+//!
+//! Внутри одного DataChannel идёт мультиплексированный поток кадров, поэтому каждое
+//! TCP-соединение игры (пинг сервера из меню «Сетевая игра», вход, переподключение)
+//! живёт в собственном канале и не смешивается с соседними.
+//!
+//! Формат кадра: `[kind u8][conn_id u32 BE][len u32 BE][payload]`.
+//! - `OPEN`  (гость → хост): гость принял локальное TCP-соединение, хост открывает своё к LAN-порту мира.
+//! - `DATA`  (в обе стороны): байты соединения.
+//! - `CLOSE` (в обе стороны): соединение закрыто на стороне отправителя.
+//!
+//! Несколько кадров могут идти подряд в одном сообщении DataChannel / одном IPC-вызове.
+
+use std::collections::HashMap;
+use std::ops::RangeInclusive;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use base64::{engine::general_purpose::STANDARD as B64, Engine};
-use once_cell::sync::OnceCell;
+use once_cell::sync::Lazy;
 use serde::Serialize;
+use tauri::ipc::{Channel, InvokeBody, InvokeResponseBody, Request};
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{mpsc, Mutex, watch};
+use tokio::sync::{mpsc, watch};
 
-pub const EVENT_LAN_BRIDGE_DATA: &str = "lan-bridge-data";
 pub const EVENT_LAN_BRIDGE_STATUS: &str = "lan-bridge-status";
+const SESSION_HEADER: &str = "x-lan-session";
 
-#[derive(Debug, Clone, Serialize)]
-pub struct LanBridgeDataPayload {
-    pub session_id: String,
-    pub data_b64: String,
-}
+const FRAME_OPEN: u8 = 1;
+const FRAME_DATA: u8 = 2;
+const FRAME_CLOSE: u8 = 3;
+const FRAME_HEADER_LEN: usize = 9;
+const MAX_FRAME_PAYLOAD: usize = 1024 * 1024;
+
+const READ_CHUNK: usize = 16 * 1024;
+/// Держим сообщения DataChannel ниже дефолтного SCTP max-message-size (64 KiB).
+const OUTBOUND_BATCH_MAX: usize = 48 * 1024;
+
+const HOST_CONNECT_ATTEMPTS: u32 = 4;
+const HOST_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+const HOST_CONNECT_RETRY_DELAY: Duration = Duration::from_millis(300);
+
+/// Стабильный диапазон портов гостя, чтобы адрес `127.0.0.1:<port>` не менялся между перезапусками моста.
+const GUEST_PORT_RANGE: RangeInclusive<u16> = 25570..=25599;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LanBridgeStatusPayload {
@@ -27,39 +53,434 @@ pub struct LanBridgeStatusPayload {
     pub detail: Option<String>,
 }
 
-struct BridgeSession {
-    write_tx: Option<mpsc::Sender<Vec<u8>>>,
-    run_tx: Option<watch::Sender<bool>>,
-    guest_forward_tx: Option<watch::Sender<bool>>,
-    role: Option<&'static str>,
-    guest_port: Option<u16>,
-    pending_chunks: VecDeque<Vec<u8>>,
-    pending_bytes: usize,
+type StatusFn = Arc<dyn Fn(&str, Option<String>) + Send + Sync>;
+
+#[derive(Debug, PartialEq, Eq)]
+struct Frame {
+    kind: u8,
+    conn_id: u32,
+    payload: Vec<u8>,
 }
 
-impl BridgeSession {
-    fn idle() -> Self {
-        Self {
-            write_tx: None,
-            run_tx: None,
-            guest_forward_tx: None,
-            role: None,
-            guest_port: None,
-            pending_chunks: VecDeque::new(),
-            pending_bytes: 0,
+fn encode_frame(kind: u8, conn_id: u32, payload: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(FRAME_HEADER_LEN + payload.len());
+    out.push(kind);
+    out.extend_from_slice(&conn_id.to_be_bytes());
+    out.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+    out.extend_from_slice(payload);
+    out
+}
+
+/// Разбирает целые кадры из `buf`. Возвращает кадры и число потреблённых байт (хвост — неполный кадр).
+fn parse_frames(buf: &[u8]) -> Result<(Vec<Frame>, usize), String> {
+    let mut frames = Vec::new();
+    let mut off = 0;
+    while buf.len() - off >= FRAME_HEADER_LEN {
+        let kind = buf[off];
+        let conn_id = u32::from_be_bytes(buf[off + 1..off + 5].try_into().unwrap());
+        let len = u32::from_be_bytes(buf[off + 5..off + 9].try_into().unwrap()) as usize;
+        if len > MAX_FRAME_PAYLOAD {
+            return Err(format!("lan bridge frame too large: {len} bytes"));
         }
+        let end = off + FRAME_HEADER_LEN + len;
+        if end > buf.len() {
+            break;
+        }
+        frames.push(Frame {
+            kind,
+            conn_id,
+            payload: buf[off + FRAME_HEADER_LEN..end].to_vec(),
+        });
+        off = end;
+    }
+    Ok((frames, off))
+}
+
+enum ConnMsg {
+    Data(Vec<u8>),
+    Close,
+}
+
+struct GuestListener {
+    port: u16,
+    stop_tx: watch::Sender<bool>,
+}
+
+struct TunnelState {
+    outbound: Option<mpsc::UnboundedSender<Vec<u8>>>,
+    /// Растёт при каждом `attach`, чтобы запоздалый `detach` от старого DataChannel не отключил новый.
+    generation: u64,
+    conns: HashMap<u32, mpsc::UnboundedSender<ConnMsg>>,
+    next_conn_id: u32,
+    listener: Option<GuestListener>,
+    partial: Vec<u8>,
+}
+
+struct Tunnel {
+    id: String,
+    state: Mutex<TunnelState>,
+    paused_tx: watch::Sender<bool>,
+    host_port: Arc<AtomicU32>,
+    status: StatusFn,
+}
+
+impl Tunnel {
+    fn new(id: String, host_port: Arc<AtomicU32>, status: StatusFn) -> Arc<Self> {
+        let (paused_tx, _) = watch::channel(false);
+        Arc::new(Self {
+            id,
+            state: Mutex::new(TunnelState {
+                outbound: None,
+                generation: 0,
+                conns: HashMap::new(),
+                next_conn_id: 0,
+                listener: None,
+                partial: Vec::new(),
+            }),
+            paused_tx,
+            host_port,
+            status,
+        })
+    }
+
+    fn lock(&self) -> MutexGuard<'_, TunnelState> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn emit(&self, state: &str, detail: Option<String>) {
+        (self.status)(state, detail);
+    }
+
+    fn report_connections(&self) {
+        let count = self.lock().conns.len();
+        self.emit("connections", Some(count.to_string()));
+    }
+
+    /// Подключает новый исходящий канал (новый DataChannel). Соединения старого канала закрываются:
+    /// удалённая сторона о них уже ничего не знает.
+    fn attach(&self, outbound: mpsc::UnboundedSender<Vec<u8>>) -> u64 {
+        let (generation, stale) = {
+            let mut s = self.lock();
+            s.outbound = Some(outbound);
+            s.generation += 1;
+            s.partial.clear();
+            (s.generation, std::mem::take(&mut s.conns))
+        };
+        if !stale.is_empty() {
+            eprintln!("[LanBridge:{}] reattach: closing {} stale connections", self.id, stale.len());
+        }
+        for tx in stale.values() {
+            let _ = tx.send(ConnMsg::Close);
+        }
+        self.paused_tx.send_replace(false);
+        self.report_connections();
+        generation
+    }
+
+    /// Отключает DataChannel, но оставляет слушатель гостя (адрес для игры не меняется).
+    /// С `generation` отключает только если с тех пор не было нового `attach`.
+    fn detach(&self, generation: Option<u64>) {
+        let stale = {
+            let mut s = self.lock();
+            if generation.is_some_and(|g| g != s.generation) {
+                return;
+            }
+            s.outbound = None;
+            s.partial.clear();
+            std::mem::take(&mut s.conns)
+        };
+        for tx in stale.values() {
+            let _ = tx.send(ConnMsg::Close);
+        }
+        self.paused_tx.send_replace(false);
+    }
+
+    fn shutdown(&self) {
+        self.detach(None);
+        if let Some(listener) = self.lock().listener.take() {
+            let _ = listener.stop_tx.send(true);
+        }
+        self.emit("stopped", None);
+    }
+
+    fn guest_port(&self) -> Option<u16> {
+        self.lock().listener.as_ref().map(|l| l.port)
+    }
+
+    /// Убирает соединение из таблицы, если там всё ещё именно оно. `true` — удалённая сторона о закрытии не знает.
+    fn unregister(&self, conn_id: u32, tx: &mpsc::UnboundedSender<ConnMsg>) -> bool {
+        let mut s = self.lock();
+        match s.conns.get(&conn_id) {
+            Some(current) if current.same_channel(tx) => {
+                s.conns.remove(&conn_id);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn handle_incoming(self: &Arc<Self>, bytes: &[u8]) -> Result<(), String> {
+        let frames = {
+            let mut s = self.lock();
+            let parsed = if s.partial.is_empty() {
+                parse_frames(bytes).map(|(frames, used)| (frames, bytes[used..].to_vec()))
+            } else {
+                let mut buf = std::mem::take(&mut s.partial);
+                buf.extend_from_slice(bytes);
+                parse_frames(&buf).map(|(frames, used)| (frames, buf[used..].to_vec()))
+            };
+            match parsed {
+                Ok((frames, rest)) => {
+                    s.partial = rest;
+                    frames
+                }
+                Err(e) => {
+                    s.partial.clear();
+                    return Err(e);
+                }
+            }
+        };
+        for frame in frames {
+            self.dispatch(frame);
+        }
+        Ok(())
+    }
+
+    fn dispatch(self: &Arc<Self>, frame: Frame) {
+        match frame.kind {
+            FRAME_OPEN => self.open_remote(frame.conn_id),
+            FRAME_DATA => {
+                let tx = self.lock().conns.get(&frame.conn_id).cloned();
+                match tx {
+                    Some(tx) => {
+                        let _ = tx.send(ConnMsg::Data(frame.payload));
+                    }
+                    None => self.send_close(frame.conn_id),
+                }
+            }
+            FRAME_CLOSE => {
+                let tx = self.lock().conns.remove(&frame.conn_id);
+                if let Some(tx) = tx {
+                    let _ = tx.send(ConnMsg::Close);
+                }
+            }
+            // Неизвестные типы кадров игнорируем — задел на расширение протокола.
+            _ => {}
+        }
+    }
+
+    fn send_close(&self, conn_id: u32) {
+        if let Some(out) = self.lock().outbound.clone() {
+            let _ = out.send(encode_frame(FRAME_CLOSE, conn_id, &[]));
+        }
+    }
+
+    /// Хост: гость открыл соединение — подключаемся к LAN-порту мира.
+    fn open_remote(self: &Arc<Self>, conn_id: u32) {
+        let Some(outbound) = self.lock().outbound.clone() else {
+            return;
+        };
+        let port = self.host_port.load(Ordering::Relaxed) as u16;
+        if port == 0 {
+            eprintln!("[LanBridge:{}] conn #{conn_id} refused: world is not shared", self.id);
+            self.emit("refused", Some("world not shared".into()));
+            let _ = outbound.send(encode_frame(FRAME_CLOSE, conn_id, &[]));
+            return;
+        }
+
+        let (tx, rx) = mpsc::unbounded_channel();
+        let replaced = self.lock().conns.insert(conn_id, tx.clone());
+        if let Some(old) = replaced {
+            let _ = old.send(ConnMsg::Close);
+        }
+
+        let tunnel = self.clone();
+        tokio::spawn(async move {
+            match connect_lan(port).await {
+                Ok(stream) => {
+                    eprintln!("[LanBridge:{}] conn #{conn_id} -> LAN :{port}", tunnel.id);
+                    run_conn(tunnel, conn_id, stream, rx, tx, outbound).await;
+                }
+                Err(e) => {
+                    eprintln!("[LanBridge:{}] conn #{conn_id} LAN :{port} unreachable: {e}", tunnel.id);
+                    tunnel.emit("error", Some(format!("LAN port {port}: {e}")));
+                    if tunnel.unregister(conn_id, &tx) {
+                        let _ = outbound.send(encode_frame(FRAME_CLOSE, conn_id, &[]));
+                    }
+                }
+            }
+        });
+    }
+
+    /// Гость: игра подключилась к локальному слушателю.
+    fn open_local(self: &Arc<Self>, stream: TcpStream) {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let opened = {
+            let mut s = self.lock();
+            match s.outbound.clone() {
+                Some(outbound) => {
+                    s.next_conn_id = s.next_conn_id.wrapping_add(1).max(1);
+                    let conn_id = s.next_conn_id;
+                    s.conns.insert(conn_id, tx.clone());
+                    Some((conn_id, outbound))
+                }
+                None => None,
+            }
+        };
+        let Some((conn_id, outbound)) = opened else {
+            eprintln!("[LanBridge:{}] local connection dropped: P2P channel is not attached", self.id);
+            self.emit("refused", Some("p2p channel not attached".into()));
+            return;
+        };
+        if outbound.send(encode_frame(FRAME_OPEN, conn_id, &[])).is_err() {
+            self.unregister(conn_id, &tx);
+            return;
+        }
+        eprintln!("[LanBridge:{}] conn #{conn_id} opened by game", self.id);
+        tokio::spawn(run_conn(self.clone(), conn_id, stream, rx, tx, outbound));
+    }
+
+    async fn start_guest_listener(self: &Arc<Self>, preferred: Option<u16>) -> Result<u16, String> {
+        if let Some(port) = self.guest_port() {
+            return Ok(port);
+        }
+        let listener = bind_guest_listener(preferred).await?;
+        let port = listener
+            .local_addr()
+            .map_err(|e| format!("lan bridge addr: {e}"))?
+            .port();
+
+        let (stop_tx, mut stop_rx) = watch::channel(false);
+        {
+            let mut s = self.lock();
+            if let Some(existing) = s.listener.as_ref() {
+                // Параллельный вызов успел раньше — используем его слушатель.
+                return Ok(existing.port);
+            }
+            s.listener = Some(GuestListener { port, stop_tx });
+        }
+
+        let tunnel = self.clone();
+        tokio::spawn(async move {
+            eprintln!("[LanBridge:{}] guest listening on 127.0.0.1:{port}", tunnel.id);
+            loop {
+                tokio::select! {
+                    accepted = listener.accept() => match accepted {
+                        Ok((stream, _)) => tunnel.open_local(stream),
+                        Err(e) => {
+                            eprintln!("[LanBridge:{}] accept failed: {e}", tunnel.id);
+                            tokio::time::sleep(Duration::from_millis(100)).await;
+                        }
+                    },
+                    _ = stop_rx.changed() => break,
+                }
+            }
+            eprintln!("[LanBridge:{}] guest listener on {port} stopped", tunnel.id);
+        });
+
+        self.emit("listening", Some(format!("127.0.0.1:{port}")));
+        Ok(port)
     }
 }
 
-const PENDING_CHUNKS_MAX: usize = 512;
-const PENDING_BYTES_MAX: usize = 4 * 1024 * 1024;
+async fn bind_guest_listener(preferred: Option<u16>) -> Result<TcpListener, String> {
+    let candidates = preferred.into_iter().chain(GUEST_PORT_RANGE);
+    for port in candidates {
+        if let Ok(listener) = TcpListener::bind(("127.0.0.1", port)).await {
+            return Ok(listener);
+        }
+    }
+    TcpListener::bind("127.0.0.1:0")
+        .await
+        .map_err(|e| format!("lan bridge bind failed: {e}"))
+}
 
-static BRIDGES: OnceCell<Arc<Mutex<HashMap<String, BridgeSession>>>> = OnceCell::new();
+async fn connect_lan(port: u16) -> Result<TcpStream, String> {
+    let mut last_err = String::new();
+    for attempt in 0..HOST_CONNECT_ATTEMPTS {
+        if attempt > 0 {
+            tokio::time::sleep(HOST_CONNECT_RETRY_DELAY).await;
+        }
+        for host in ["127.0.0.1", "::1"] {
+            match tokio::time::timeout(HOST_CONNECT_TIMEOUT, TcpStream::connect((host, port))).await {
+                Ok(Ok(stream)) => return Ok(stream),
+                Ok(Err(e)) => last_err = e.to_string(),
+                Err(_) => last_err = "connect timeout".into(),
+            }
+        }
+    }
+    Err(last_err)
+}
 
-fn bridges_state() -> Arc<Mutex<HashMap<String, BridgeSession>>> {
-    BRIDGES
-        .get_or_init(|| Arc::new(Mutex::new(HashMap::new())))
-        .clone()
+async fn run_conn(
+    tunnel: Arc<Tunnel>,
+    conn_id: u32,
+    stream: TcpStream,
+    mut rx: mpsc::UnboundedReceiver<ConnMsg>,
+    tx: mpsc::UnboundedSender<ConnMsg>,
+    outbound: mpsc::UnboundedSender<Vec<u8>>,
+) {
+    // Без этого Nagle + delayed ACK добавляют до 200 мс на мелкие пакеты игры.
+    let _ = stream.set_nodelay(true);
+    let (mut reader, mut writer) = stream.into_split();
+    let mut paused_rx = tunnel.paused_tx.subscribe();
+    tunnel.report_connections();
+
+    let read_side = async {
+        let mut buf = vec![0u8; READ_CHUNK];
+        loop {
+            loop {
+                let paused = *paused_rx.borrow_and_update();
+                if !paused {
+                    break;
+                }
+                if paused_rx.changed().await.is_err() {
+                    return;
+                }
+            }
+            match reader.read(&mut buf).await {
+                Ok(0) | Err(_) => return,
+                Ok(n) => {
+                    if outbound.send(encode_frame(FRAME_DATA, conn_id, &buf[..n])).is_err() {
+                        return;
+                    }
+                }
+            }
+        }
+    };
+
+    let write_side = async {
+        while let Some(msg) = rx.recv().await {
+            match msg {
+                ConnMsg::Data(data) => {
+                    if writer.write_all(&data).await.is_err() {
+                        return;
+                    }
+                }
+                ConnMsg::Close => break,
+            }
+        }
+        let _ = writer.shutdown().await;
+    };
+
+    tokio::select! {
+        _ = read_side => {}
+        _ = write_side => {}
+    }
+
+    if tunnel.unregister(conn_id, &tx) {
+        let _ = outbound.send(encode_frame(FRAME_CLOSE, conn_id, &[]));
+    }
+    eprintln!("[LanBridge:{}] conn #{conn_id} closed", tunnel.id);
+    tunnel.report_connections();
+}
+
+static TUNNELS: Lazy<Mutex<HashMap<String, Arc<Tunnel>>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+static HOST_LAN_PORT: Lazy<Arc<AtomicU32>> = Lazy::new(|| Arc::new(AtomicU32::new(0)));
+static LAST_GUEST_PORTS: Lazy<Mutex<HashMap<String, u16>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+
+fn tunnels() -> MutexGuard<'static, HashMap<String, Arc<Tunnel>>> {
+    TUNNELS.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 fn normalize_session_id(session_id: &str) -> String {
@@ -71,476 +492,311 @@ fn normalize_session_id(session_id: &str) -> String {
     }
 }
 
-async fn emit_status(app: &AppHandle, session_id: &str, state: &str, detail: Option<String>) {
-    let _ = app.emit(
-        EVENT_LAN_BRIDGE_STATUS,
-        LanBridgeStatusPayload {
-            session_id: session_id.to_string(),
-            state: state.into(),
-            detail,
-        },
-    );
+fn tunnel_for(app: &AppHandle, sid: &str) -> Arc<Tunnel> {
+    tunnels()
+        .entry(sid.to_string())
+        .or_insert_with(|| {
+            let app = app.clone();
+            let session_id = sid.to_string();
+            let status: StatusFn = Arc::new(move |state, detail| {
+                let _ = app.emit(
+                    EVENT_LAN_BRIDGE_STATUS,
+                    LanBridgeStatusPayload {
+                        session_id: session_id.clone(),
+                        state: state.into(),
+                        detail,
+                    },
+                );
+            });
+            Tunnel::new(sid.to_string(), HOST_LAN_PORT.clone(), status)
+        })
+        .clone()
 }
 
-async fn stop_session(session: &mut BridgeSession) {
-    if let Some(tx) = session.run_tx.take() {
-        let _ = tx.send(false);
+fn existing_tunnel(sid: &str) -> Option<Arc<Tunnel>> {
+    tunnels().get(sid).cloned()
+}
+
+/// Подключает DataChannel пира к мосту. Кадры для отправки пиру приходят в `on_frame`.
+/// Возвращает поколение подключения для `lan_bridge_detach`.
+#[tauri::command]
+pub async fn lan_bridge_attach(
+    app: AppHandle,
+    session_id: String,
+    on_frame: Channel<InvokeResponseBody>,
+) -> Result<u64, String> {
+    let sid = normalize_session_id(&session_id);
+    let tunnel = tunnel_for(&app, &sid);
+    let (tx, mut rx) = mpsc::unbounded_channel::<Vec<u8>>();
+    let generation = tunnel.attach(tx);
+
+    tokio::spawn(async move {
+        let mut carry: Option<Vec<u8>> = None;
+        loop {
+            let first = match carry.take() {
+                Some(frame) => frame,
+                None => match rx.recv().await {
+                    Some(frame) => frame,
+                    None => break,
+                },
+            };
+            let mut batch = first;
+            while batch.len() < OUTBOUND_BATCH_MAX {
+                match rx.try_recv() {
+                    Ok(next) if batch.len() + next.len() <= OUTBOUND_BATCH_MAX => {
+                        batch.extend_from_slice(&next)
+                    }
+                    Ok(next) => {
+                        carry = Some(next);
+                        break;
+                    }
+                    Err(_) => break,
+                }
+            }
+            if on_frame.send(InvokeResponseBody::Raw(batch)).is_err() {
+                break;
+            }
+        }
+    });
+    Ok(generation)
+}
+
+/// Кадры, полученные от пира по DataChannel. Тело — сырые байты, сессия — в заголовке `x-lan-session`.
+#[tauri::command]
+pub async fn lan_bridge_write(request: Request<'_>) -> Result<(), String> {
+    let sid = request
+        .headers()
+        .get(SESSION_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .map(normalize_session_id)
+        .ok_or_else(|| "lan bridge: missing session header".to_string())?;
+    let InvokeBody::Raw(bytes) = request.body() else {
+        return Err("lan bridge: expected raw body".into());
+    };
+    let tunnel = existing_tunnel(&sid).ok_or_else(|| format!("lan bridge is not running ({sid})"))?;
+    tunnel.handle_incoming(bytes)
+}
+
+/// Обратное давление: пока DataChannel не успевает отправлять, перестаём читать из TCP.
+#[tauri::command]
+pub async fn lan_bridge_set_flow(session_id: String, paused: bool) -> Result<(), String> {
+    let sid = normalize_session_id(&session_id);
+    if let Some(tunnel) = existing_tunnel(&sid) {
+        tunnel.paused_tx.send_replace(paused);
     }
-    if let Some(tx) = session.guest_forward_tx.take() {
-        let _ = tx.send(true);
-    }
-    session.write_tx = None;
-    session.role = None;
-    session.guest_port = None;
-    session.pending_chunks.clear();
-    session.pending_bytes = 0;
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn lan_bridge_start_guest(app: AppHandle, session_id: String) -> Result<u16, String> {
     let sid = normalize_session_id(&session_id);
-    let state = bridges_state();
-    let mut map = state.lock().await;
-    if let Some(existing) = map.get_mut(&sid) {
-        stop_session(existing).await;
-    }
-
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .map_err(|e| format!("lan bridge bind failed: {e}"))?;
-    let port = listener
-        .local_addr()
-        .map_err(|e| format!("lan bridge addr: {e}"))?
-        .port();
-
-    let (run_tx, run_rx) = watch::channel(true);
-    let (forward_tx, forward_rx) = watch::channel(false);
-    let session = BridgeSession {
-        write_tx: None,
-        run_tx: Some(run_tx),
-        guest_forward_tx: Some(forward_tx),
-        role: Some("guest"),
-        guest_port: Some(port),
-        pending_chunks: VecDeque::new(),
-        pending_bytes: 0,
-    };
-    map.insert(sid.clone(), session);
-    drop(map);
-
-    let app2 = app.clone();
-    let state2 = state.clone();
-    let sid2 = sid.clone();
-    tokio::spawn(async move {
-        emit_status(&app2, &sid2, "listening", Some(format!("127.0.0.1:{port}"))).await;
-        eprintln!("[LanBridge:{sid2}] guest listening on 127.0.0.1:{port}");
-
-        loop {
-            if !*run_rx.borrow() {
-                emit_status(&app2, &sid2, "stopped", None).await;
-                break;
-            }
-
-            let mut run_rx_accept = run_rx.clone();
-            tokio::select! {
-                accept = listener.accept() => {
-                    match accept {
-                        Ok((stream, peer)) => {
-                            eprintln!("[LanBridge:{sid2}] guest accepted from {peer}");
-                            emit_status(&app2, &sid2, "connected", Some(peer.to_string())).await;
-
-                            let (conn_tx, mut conn_rx) = mpsc::channel::<Vec<u8>>(1024);
-                            let pending = {
-                                let mut g = state2.lock().await;
-                                let Some(session) = g.get_mut(&sid2) else { break; };
-                                if session.role != Some("guest") {
-                                    break;
-                                }
-                                session.write_tx = Some(conn_tx.clone());
-                                let drained = session.pending_chunks.drain(..).collect::<Vec<_>>();
-                                session.pending_bytes = 0;
-                                drained
-                            };
-                            {
-                                if !pending.is_empty() {
-                                    eprintln!(
-                                        "[LanBridge:{sid2}] guest flushing {} buffered chunks after accept",
-                                        pending.len()
-                                    );
-                                }
-                                for chunk in pending {
-                                    if conn_tx.send(chunk).await.is_err() {
-                                        eprintln!("[LanBridge:{sid2}] guest failed to flush buffered chunk");
-                                        break;
-                                    }
-                                }
-                            }
-
-                            {
-                                let mut fwd_rx = forward_rx.clone();
-                                let mut run_rx_fwd = run_rx.clone();
-                                let wait_ready = async {
-                                    if *fwd_rx.borrow() {
-                                        return;
-                                    }
-                                    while fwd_rx.changed().await.is_ok() {
-                                        if *fwd_rx.borrow() {
-                                            return;
-                                        }
-                                    }
-                                };
-                                tokio::select! {
-                                    _ = wait_ready => {
-                                        eprintln!("[LanBridge:{sid2}] guest forward allowed (tunnel:ready)");
-                                    }
-                                    _ = tokio::time::sleep(Duration::from_secs(20)) => {
-                                        eprintln!(
-                                            "[LanBridge:{sid2}] guest forward allow timeout — starting anyway"
-                                        );
-                                    }
-                                    _ = run_rx_fwd.changed() => {
-                                        if !*run_rx_fwd.borrow() {
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                            if !*run_rx.borrow() {
-                                break;
-                            }
-
-                            run_stream_loop(app2.clone(), sid2.clone(), stream, &mut conn_rx, run_rx.clone()).await;
-
-                            {
-                                let mut g = state2.lock().await;
-                                if let Some(session) = g.get_mut(&sid2) {
-                                    if session.role == Some("guest") {
-                                        session.write_tx = None;
-                                        if let Some(tx) = session.guest_forward_tx.as_ref() {
-                                            let _ = tx.send(false);
-                                        }
-                                        emit_status(
-                                            &app2,
-                                            &sid2,
-                                            "listening",
-                                            Some(format!("127.0.0.1:{port}")),
-                                        )
-                                        .await;
-                                        eprintln!(
-                                            "[LanBridge:{sid2}] guest TCP closed; still listening on {port}"
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            emit_status(&app2, &sid2, "error", Some(e.to_string())).await;
-                            break;
-                        }
-                    }
-                }
-                _ = run_rx_accept.changed() => {
-                    if !*run_rx_accept.borrow() {
-                        emit_status(&app2, &sid2, "stopped", None).await;
-                        break;
-                    }
-                }
-            }
-        }
-
-        let mut g = state2.lock().await;
-        if let Some(session) = g.get_mut(&sid2) {
-            if session.role == Some("guest") {
-                *session = BridgeSession::idle();
-            }
-        }
-        eprintln!("[LanBridge:{sid2}] guest task exited");
-    });
-
+    let tunnel = tunnel_for(&app, &sid);
+    let preferred = LAST_GUEST_PORTS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get(&sid)
+        .copied();
+    let port = tunnel.start_guest_listener(preferred).await?;
+    LAST_GUEST_PORTS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .insert(sid, port);
     Ok(port)
 }
 
+/// LAN-порт открытого мира хоста (`None` — мир не открыт, входящие соединения отклоняются).
 #[tauri::command]
-pub async fn lan_bridge_start_host(
-    app: AppHandle,
-    session_id: String,
-    lan_port: u16,
-) -> Result<(), String> {
-    if lan_port == 0 {
-        return Err("invalid lan port".into());
-    }
-
-    let sid = normalize_session_id(&session_id);
-    let state = bridges_state();
-    let mut map = state.lock().await;
-    if let Some(existing) = map.get_mut(&sid) {
-        stop_session(existing).await;
-    }
-
-    let (write_tx, mut write_rx) = mpsc::channel::<Vec<u8>>(1024);
-    let (run_tx, run_rx) = watch::channel(true);
-    map.insert(
-        sid.clone(),
-        BridgeSession {
-            write_tx: Some(write_tx),
-            run_tx: Some(run_tx),
-            guest_forward_tx: None,
-            role: Some("host"),
-            guest_port: None,
-            pending_chunks: VecDeque::new(),
-            pending_bytes: 0,
-        },
-    );
-    drop(map);
-
-    let app2 = app.clone();
-    let state2 = state.clone();
-    let sid2 = sid.clone();
-    tokio::spawn(async move {
-        let target = format!("127.0.0.1:{lan_port}");
-        let mut attempt: u32 = 0;
-        loop {
-            if !*run_rx.borrow() {
-                emit_status(&app2, &sid2, "stopped", None).await;
-                break;
-            }
-            attempt = attempt.saturating_add(1);
-            emit_status(
-                &app2,
-                &sid2,
-                "connecting",
-                Some(format!("{target} attempt={attempt}")),
-            )
-            .await;
-            eprintln!("[LanBridge:{sid2}] host connect attempt #{attempt} to {target}");
-
-            match TcpStream::connect(("127.0.0.1", lan_port)).await {
-                Ok(stream) => {
-                    emit_status(&app2, &sid2, "connected", Some(format!("attempt={attempt}"))).await;
-                    eprintln!("[LanBridge:{sid2}] host connected to {target} on attempt {attempt}");
-                    run_stream_loop(app2.clone(), sid2.clone(), stream, &mut write_rx, run_rx.clone()).await;
-                    if !*run_rx.borrow() {
-                        break;
-                    }
-                    emit_status(&app2, &sid2, "reconnecting", Some(target.clone())).await;
-                    eprintln!("[LanBridge:{sid2}] host stream ended, reconnecting to {target}");
-                }
-                Err(e) => {
-                    emit_status(
-                        &app2,
-                        &sid2,
-                        "retrying",
-                        Some(format!("{target} attempt={attempt} err={e}")),
-                    )
-                    .await;
-                    let delay_ms = (attempt.min(40) as u64) * 100;
-                    tokio::time::sleep(Duration::from_millis(delay_ms.max(250))).await;
-                }
-            }
-        }
-
-        let mut g = state2.lock().await;
-        if let Some(session) = g.get_mut(&sid2) {
-            if session.role == Some("host") {
-                *session = BridgeSession::idle();
-            }
-        }
-        eprintln!("[LanBridge:{sid2}] host task exited");
-    });
-
+pub async fn lan_bridge_set_host_port(port: Option<u16>) -> Result<(), String> {
+    HOST_LAN_PORT.store(port.unwrap_or(0) as u32, Ordering::Relaxed);
+    eprintln!("[LanBridge] host LAN port = {port:?}");
     Ok(())
 }
 
+/// Проверяет, что мир действительно открыт для сети на указанном порту.
 #[tauri::command]
-pub async fn lan_bridge_write(session_id: String, data_b64: String) -> Result<(), String> {
+pub async fn lan_bridge_probe_port(port: u16) -> Result<bool, String> {
+    if port == 0 {
+        return Ok(false);
+    }
+    for host in ["127.0.0.1", "::1"] {
+        let attempt = tokio::time::timeout(Duration::from_millis(1500), TcpStream::connect((host, port)));
+        if let Ok(Ok(_)) = attempt.await {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// Отключает DataChannel пира, сохраняя слушатель гостя.
+#[tauri::command]
+pub async fn lan_bridge_detach(session_id: String, generation: Option<u64>) -> Result<(), String> {
     let sid = normalize_session_id(&session_id);
-    let bytes = B64
-        .decode(data_b64.as_bytes())
-        .map_err(|e| format!("invalid bridge payload: {e}"))?;
-    if bytes.is_empty() {
-        return Ok(());
+    if let Some(tunnel) = existing_tunnel(&sid) {
+        tunnel.detach(generation);
     }
-    let state = bridges_state();
-    let (tx_opt, should_buffer_guest) = {
-        let guard = state.lock().await;
-        match guard.get(&sid) {
-            Some(session) => (session.write_tx.clone(), session.role == Some("guest")),
-            None => (None, false),
-        }
-    };
-    if let Some(tx) = tx_opt {
-        tx.send(bytes)
-            .await
-            .map_err(|_| "lan bridge is not accepting data".to_string())?;
-        return Ok(());
-    }
-    if should_buffer_guest {
-        let mut guard = state.lock().await;
-        let Some(session) = guard.get_mut(&sid) else {
-            return Err("lan bridge is not running".into());
-        };
-        let len = bytes.len();
-        if session.pending_chunks.len() >= PENDING_CHUNKS_MAX
-            || session.pending_bytes + len > PENDING_BYTES_MAX
-        {
-            while session.pending_chunks.len() >= PENDING_CHUNKS_MAX
-                || session.pending_bytes + len > PENDING_BYTES_MAX
-            {
-                if let Some(old) = session.pending_chunks.pop_front() {
-                    session.pending_bytes = session.pending_bytes.saturating_sub(old.len());
-                } else {
-                    break;
-                }
-            }
-        }
-        session.pending_bytes = session.pending_bytes.saturating_add(len);
-        session.pending_chunks.push_back(bytes);
-        if session.pending_chunks.len() == 1 {
-            eprintln!("[LanBridge:{sid}] guest buffering peer data until local TCP accept");
-        }
-        return Ok(());
-    }
-    Err(format!("lan bridge is not running ({sid})"))
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn lan_bridge_stop(session_id: Option<String>) -> Result<(), String> {
-    let state = bridges_state();
-    let mut map = state.lock().await;
-    match session_id {
-        Some(raw) => {
-            let sid = normalize_session_id(&raw);
-            if let Some(session) = map.get_mut(&sid) {
-                eprintln!(
-                    "[LanBridge:{sid}] stop requested (role={:?}, port={:?})",
-                    session.role, session.guest_port
-                );
-                stop_session(session).await;
-                map.remove(&sid);
-            }
+    let removed: Vec<Arc<Tunnel>> = {
+        let mut map = tunnels();
+        match session_id {
+            Some(raw) => map.remove(&normalize_session_id(&raw)).into_iter().collect(),
+            None => map.drain().map(|(_, t)| t).collect(),
         }
-        None => {
-            let keys: Vec<String> = map.keys().cloned().collect();
-            eprintln!("[LanBridge] stop all requested ({} sessions)", keys.len());
-            for sid in keys {
-                if let Some(session) = map.get_mut(&sid) {
-                    stop_session(session).await;
-                }
-                map.remove(&sid);
-            }
-        }
-    }
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn lan_bridge_guest_allow_forward(session_id: String) -> Result<(), String> {
-    let sid = normalize_session_id(&session_id);
-    let state = bridges_state();
-    let map = state.lock().await;
-    let Some(session) = map.get(&sid) else {
-        return Err(format!("lan bridge is not running ({sid})"));
     };
-    if session.role != Some("guest") {
-        return Err(format!("lan bridge is not a guest session ({sid})"));
+    if !removed.is_empty() {
+        eprintln!("[LanBridge] stop {} session(s)", removed.len());
     }
-    let Some(tx) = session.guest_forward_tx.as_ref() else {
-        return Err(format!("lan bridge forward gate missing ({sid})"));
-    };
-    let _ = tx.send(true);
-    eprintln!("[LanBridge:{sid}] guest_allow_forward");
+    for tunnel in removed {
+        tunnel.shutdown();
+    }
     Ok(())
 }
 
 #[tauri::command]
 pub async fn lan_bridge_guest_port(session_id: Option<String>) -> Result<Option<u16>, String> {
-    let state = bridges_state();
-    let map = state.lock().await;
     let sid = normalize_session_id(session_id.as_deref().unwrap_or("default"));
-    Ok(map.get(&sid).and_then(|s| s.guest_port))
+    Ok(existing_tunnel(&sid).and_then(|t| t.guest_port()))
 }
 
-#[tauri::command]
-pub async fn get_local_lan_ip() -> Result<Option<String>, String> {
-    use std::net::IpAddr;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    let socket = tokio::net::UdpSocket::bind("0.0.0.0:0")
-        .await
-        .map_err(|e| format!("local ip bind failed: {e}"))?;
-    socket
-        .connect("8.8.8.8:80")
-        .await
-        .map_err(|e| format!("local ip route failed: {e}"))?;
-    let ip = socket
-        .local_addr()
-        .map_err(|e| format!("local ip addr failed: {e}"))?
-        .ip();
-
-    match ip {
-        IpAddr::V4(v4) if !v4.is_loopback() && !v4.is_unspecified() => Ok(Some(v4.to_string())),
-        IpAddr::V6(v6) if !v6.is_loopback() && !v6.is_unspecified() => Ok(Some(v6.to_string())),
-        _ => Ok(None),
+    fn quiet() -> StatusFn {
+        Arc::new(|_, _| {})
     }
-}
 
-async fn run_stream_loop(
-    app: AppHandle,
-    session_id: String,
-    stream: TcpStream,
-    write_rx: &mut mpsc::Receiver<Vec<u8>>,
-    mut run_rx: watch::Receiver<bool>,
-) {
-    let (mut reader, mut writer) = stream.into_split();
-    let mut buf = vec![0u8; 16 * 1024];
-
-    loop {
-        if !*run_rx.borrow() {
-            emit_status(&app, &session_id, "stopped", None).await;
-            break;
-        }
-
-        tokio::select! {
-            read = reader.read(&mut buf) => {
-                match read {
-                    Ok(0) => {
-                        emit_status(&app, &session_id, "closed", Some("tcp eof".into())).await;
-                        break;
-                    }
-                    Ok(n) => {
-                        let _ = app.emit(
-                            EVENT_LAN_BRIDGE_DATA,
-                            LanBridgeDataPayload {
-                                session_id: session_id.clone(),
-                                data_b64: B64.encode(&buf[..n]),
-                            },
-                        );
-                    }
-                    Err(e) => {
-                        emit_status(&app, &session_id, "error", Some(e.to_string())).await;
-                        break;
-                    }
+    /// Соединяет два туннеля «проводом», доставляя байты кусками произвольной длины.
+    fn wire(from: mpsc::UnboundedReceiver<Vec<u8>>, to: Arc<Tunnel>) {
+        let mut from = from;
+        tokio::spawn(async move {
+            while let Some(bytes) = from.recv().await {
+                for piece in bytes.chunks(7) {
+                    to.handle_incoming(piece).expect("valid frames");
                 }
             }
-            chunk = write_rx.recv() => {
-                match chunk {
-                    Some(data) => {
-                        if let Err(e) = writer.write_all(&data).await {
-                            emit_status(&app, &session_id, "error", Some(e.to_string())).await;
-                            break;
-                        }
-                        if let Err(e) = writer.flush().await {
-                            emit_status(&app, &session_id, "error", Some(e.to_string())).await;
-                            break;
+        });
+    }
+
+    async fn echo_server() -> u16 {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 1024];
+                    loop {
+                        match stream.read(&mut buf).await {
+                            Ok(0) | Err(_) => return,
+                            Ok(n) => stream.write_all(&buf[..n]).await.unwrap(),
                         }
                     }
-                    None => break,
-                }
+                });
             }
-            _ = run_rx.changed() => {
-                if !*run_rx.borrow() {
-                    emit_status(&app, &session_id, "stopped", None).await;
-                    break;
-                }
-            }
-        }
+        });
+        port
+    }
+
+    async fn pair(host_port: u16) -> (Arc<Tunnel>, Arc<Tunnel>) {
+        let host = Tunnel::new("host".into(), Arc::new(AtomicU32::new(host_port as u32)), quiet());
+        let guest = Tunnel::new("guest".into(), Arc::new(AtomicU32::new(0)), quiet());
+        let (host_tx, host_rx) = mpsc::unbounded_channel();
+        let (guest_tx, guest_rx) = mpsc::unbounded_channel();
+        host.attach(host_tx);
+        guest.attach(guest_tx);
+        wire(host_rx, guest.clone());
+        wire(guest_rx, host.clone());
+        (host, guest)
+    }
+
+    async fn roundtrip(port: u16, msg: &[u8]) -> TcpStream {
+        let mut client = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        client.write_all(msg).await.unwrap();
+        let mut got = vec![0u8; msg.len()];
+        tokio::time::timeout(Duration::from_secs(5), client.read_exact(&mut got))
+            .await
+            .expect("echo timeout")
+            .unwrap();
+        assert_eq!(got, msg);
+        client
+    }
+
+    #[test]
+    fn frames_roundtrip_with_partial_tail() {
+        let mut wire = encode_frame(FRAME_OPEN, 7, &[]);
+        wire.extend(encode_frame(FRAME_DATA, 7, b"hello"));
+        wire.extend(encode_frame(FRAME_CLOSE, 7, &[]));
+        let cut = wire.len() - 3;
+        let (frames, used) = parse_frames(&wire[..cut]).unwrap();
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[1].payload, b"hello");
+        let (rest, _) = parse_frames(&wire[used..]).unwrap();
+        assert_eq!(rest, vec![Frame { kind: FRAME_CLOSE, conn_id: 7, payload: vec![] }]);
+    }
+
+    #[test]
+    fn oversized_frame_is_rejected() {
+        let mut bad = vec![FRAME_DATA, 0, 0, 0, 1];
+        bad.extend_from_slice(&u32::MAX.to_be_bytes());
+        assert!(parse_frames(&bad).is_err());
+    }
+
+    #[tokio::test]
+    async fn sequential_and_parallel_connections_stay_isolated() {
+        let lan = echo_server().await;
+        let (_host, guest) = pair(lan).await;
+        let port = guest.start_guest_listener(None).await.unwrap();
+
+        // Как в игре: сначала пинг из списка серверов, он закрывается, затем вход.
+        let ping = roundtrip(port, b"status-ping").await;
+        drop(ping);
+        let mut a = roundtrip(port, b"login-a").await;
+        let mut b = roundtrip(port, b"login-b").await;
+
+        a.write_all(b"more-a").await.unwrap();
+        b.write_all(b"more-b").await.unwrap();
+        let mut ga = [0u8; 6];
+        let mut gb = [0u8; 6];
+        a.read_exact(&mut ga).await.unwrap();
+        b.read_exact(&mut gb).await.unwrap();
+        assert_eq!(&ga, b"more-a");
+        assert_eq!(&gb, b"more-b");
+    }
+
+    #[tokio::test]
+    async fn refused_when_world_not_shared() {
+        let (_host, guest) = pair(0).await;
+        let port = guest.start_guest_listener(None).await.unwrap();
+        let mut client = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        client.write_all(b"handshake").await.unwrap();
+        let mut buf = [0u8; 16];
+        let n = tokio::time::timeout(Duration::from_secs(5), client.read(&mut buf))
+            .await
+            .expect("guest connection should be closed")
+            .unwrap_or(0);
+        assert_eq!(n, 0);
+    }
+
+    #[tokio::test]
+    async fn reattach_keeps_listener_port() {
+        let lan = echo_server().await;
+        let (host, guest) = pair(lan).await;
+        let port = guest.start_guest_listener(None).await.unwrap();
+        let _ = roundtrip(port, b"before").await;
+
+        // Новый DataChannel после переподключения WebRTC.
+        let (host_tx, host_rx) = mpsc::unbounded_channel();
+        let (guest_tx, guest_rx) = mpsc::unbounded_channel();
+        host.attach(host_tx);
+        guest.attach(guest_tx);
+        wire(host_rx, guest.clone());
+        wire(guest_rx, host.clone());
+
+        assert_eq!(guest.start_guest_listener(None).await.unwrap(), port);
+        let _ = roundtrip(port, b"after").await;
     }
 }

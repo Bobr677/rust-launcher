@@ -35,7 +35,11 @@
       "modrinth": "Modrinth",
       "curseforge": "CurseForge"
     },
-    "unlockConfirm": "Version und Loader werden mit dem ausgewählten Profil synchronisiert. Sie trotzdem ändern?",
+    "unlockTitle": "Version ist durch das Profil festgelegt",
+    "unlockConfirm": "Version und Loader ändern? Installierte Inhalte sind eventuell nicht mit dem Profil kompatibel.",
+    "lockedBanner": "Vom Profil festgelegt: Minecraft {{version}} · {{loader}}. Mods werden darauf abgestimmt.",
+    "unlockedBanner": "Sie sehen Inhalte, die nicht zum gewählten Profil passen. Installierte Mods starten möglicherweise nicht.",
+    "relock": "Wieder wie Profil",
     "searchPlaceholder": "Suchen...",
     "version": "Version",
     "syncedHint": "Mit Profil synchronisiert. Klicken Sie zum Entsperren auf „Ändern“.",
@@ -324,6 +328,10 @@
       "disableAnimations": {
         "label": "Animationen deaktivieren:"
       },
+      "backgroundAnimation": {
+        "label": "Animierter Hintergrund:",
+        "hint": "Langsame Bewegung der Farbverläufe im Hintergrund. Deaktivieren, wenn der Launcher die Grafikkarte stark belastet."
+      },
       "hideBanners": {
         "label": "Werbebanner deaktivieren:",
         "hint": "Blendet das Nachrichten- und Bannerkarussell auf dem Spielen-Tab aus."
@@ -599,6 +607,11 @@
       "openTitle": "Spielordner öffnen",
       "alt": "Spielordner"
     },
+    "dock": {
+      "folder": "Ordner",
+      "settings": "Einstellungen",
+      "noBuild": "Keine Instanz gewählt"
+    },
     "home": {
       "recentTitle": "Zuletzt gespielt",
       "seeAll": "Alle Packs",
@@ -621,6 +634,14 @@
       "empty": "Protokolle werden nach Spielstart angezeigt.",
       "hint": "Wird durch die Einstellung „Konsole beim Spielstart anzeigen“ im Spielbereich gesteuert.",
       "analyzer": {
+        "readingDisk": "Logs werden gelesen…",
+        "okBadge": "Keine Fehler",
+        "refresh": "Logs neu einlesen",
+        "sourcesLabel": "Geprüft",
+        "sourceConsole": "Konsole",
+        "sourceLatest": "latest.log",
+        "sourceCrash": "Crash-Reports: {{count}}",
+        "diskReadFailed": "Logs konnten nicht von der Festplatte gelesen werden.",
         "title": "Log-Analyse",
         "show": "Zeigen",
         "hide": "Ausblenden",
@@ -783,8 +804,13 @@
       "createGroupMenu": "Neue Profilgruppe",
       "editGroupMenu": "Gruppe bearbeiten",
       "deleteGroupMenu": "Gruppe löschen",
-      "dropHint": "Kommen Sie hierher",
-      "selectedCount": "Ausgewählt: {{count}}"
+      "dropHint": "Hierher ziehen",
+      "selectedCount": "Ausgewählt: {{count}}",
+      "title": "Meine Profile",
+      "newGroup": "Neue Gruppe",
+      "groupActions": "Gruppenaktionen",
+      "dragCount": "{{count}} Profile",
+      "clearSelection": "Auswahl aufheben"
     },
     "groups": {
       "createTitle": "Neue Profilgruppe",
@@ -998,6 +1024,8 @@
     },
     "contextMenu": {
       "settings": "Einstellungen",
+      "moveToGroup": "In Gruppe verschieben",
+      "removeFromGroup": "Aus Gruppe entfernen",
       "pinToSidebar": "An Seitenleiste anpinnen",
       "unpinFromSidebar": "Von der Seitenleiste lösen",
       "deleteProfile": "Profil löschen",
@@ -1274,6 +1302,16 @@
     "mcOnlineEly": "Ely",
     "mcOffline": "offline",
     "mcOfflineHint": "Melde dich mit Microsoft oder Ely an, um der Welt eines Freundes beizutreten.",
+    "joinClosedReason": "Dieser Raum ist geschlossen, Beitritt nicht möglich.",
+    "auto": {
+      "label": "Spiel im Raum",
+      "fromProfile": "Aus Profil „{{name}}“",
+      "fromMenu": "Aus dem Hauptmenü",
+      "manual": "Manuell ändern",
+      "useAuto": "Automatisch wählen",
+      "none": "Kein Profil gewählt. Wählen Sie die Version manuell oder im Hauptmenü."
+    },
+    "needP2pReason": "Warten Sie, bis die Verbindung zu den Raummitgliedern steht (P2P noch nicht bereit).",
     "p2pLabel": "Verbindung",
     "p2pReady": "bereit",
     "p2pConnecting": "verbindet…",
@@ -1294,6 +1332,8 @@
     "guestSteps": "Wenn der Host den Zugang öffnet - Welt beitreten. Microsoft oder Ely nötig.",
     "waitForPeer": "Lade einen Freund ein - die Verbindung erscheint, wenn er beitritt.",
     "needP2p": "Warte, bis die Verbindung zum Freund bereit ist",
+    "peerLauncherOutdated": "Dein Freund nutzt eine ältere Launcher-Version — aktualisiert beide, sonst funktioniert der Weltbeitritt nicht.",
+    "lanPortUnreachable": "Port {{port}} antwortet noch nicht. Öffne die Welt im LAN und gib den Port aus dem Spielchat ein.",
     "visibility": {
       "public": "öffentlich",
       "private": "privat",
@@ -1487,6 +1527,8 @@
   },
   "app": {
     "sidebar": {
+      "collapse": "Seitenleiste einklappen",
+      "expand": "Seitenleiste ausklappen",
       "play": "Spielen",
       "settings": "Einstellungen",
       "mods": "Mods",
@@ -1529,6 +1571,7 @@
       "newAccountNameBase": "Spieler",
       "addAccount": "Konto hinzufügen",
       "sidebarTooltip": "Konten",
+      "offlineBadge": "offline",
       "switcherTitle": "Konto wechseln",
       "switcherHeading": "Konten",
       "manageAll": "Alle Konten und Anmeldung…",
@@ -1702,7 +1745,13 @@
       "fabricNotInstalled": "Das Fabric-Profil ist für diese Version nicht installiert.",
       "quiltNotInstalled": "Das Quilt-Profil ist für diese Version nicht installiert."
     },
+    "window": {
+      "minimize": "Minimieren",
+      "maximize": "Maximieren",
+      "close": "Schließen"
+    },
     "versionBadge": {
+      "updateChip": "Update verfügbar",
       "latest": "Sie haben die neueste Version",
       "outdatedWithVersion": "Neue Version verfügbar: {{version}}",
       "outdated": "Neue Version verfügbar",

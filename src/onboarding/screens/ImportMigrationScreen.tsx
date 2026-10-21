@@ -281,7 +281,7 @@ export function ImportMigrationScreen({
 
       <div className="flex w-full flex-col gap-2.5 text-left">
         <div>
-          <label className="mb-1 block text-[11px] font-semibold text-white/55">
+          <label className="mb-1 block text-[0.8125rem] font-semibold text-white/55">
             {tt("onboarding.import.launcher")}
           </label>
           <div ref={launcherMenuRef} className="relative">
@@ -289,7 +289,7 @@ export function ImportMigrationScreen({
               type="button"
               disabled={busy}
               onClick={() => setLauncherMenuOpen((v) => !v)}
-              className="interactive-press glass-control flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-sm text-white hover:bg-white/10 disabled:opacity-60"
+              className="interactive-press glass-control flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left text-sm text-white hover:bg-white/10 disabled:opacity-60"
             >
               <span className="truncate">{launcherLabel(tt, launcherType)}</span>
               <ChevronDown className="h-4 w-4 shrink-0 text-white/45" aria-hidden />
@@ -304,9 +304,9 @@ export function ImportMigrationScreen({
                       key={opt.id}
                       type="button"
                       onClick={() => void handleLauncherChange(opt.id)}
-                      className={`interactive-press flex w-full items-center rounded-xl px-3 py-2 text-left text-sm transition-colors ${
+                      className={`interactive-press flex w-full items-center rounded-xl px-4 py-2 text-left text-sm transition-colors ${
                         active
-                          ? "bg-white/90 font-semibold text-black"
+                          ? "seg-on font-semibold"
                           : "text-white/80 hover:bg-white/10"
                       }`}
                     >
@@ -320,7 +320,7 @@ export function ImportMigrationScreen({
         </div>
 
         <div>
-          <label className="mb-1 block text-[11px] font-semibold text-white/55">
+          <label className="mb-1 block text-[0.8125rem] font-semibold text-white/55">
             {tt("onboarding.import.path")}
           </label>
           <div className="flex items-center gap-2">
@@ -363,7 +363,7 @@ export function ImportMigrationScreen({
               />
             </button>
           </div>
-          <p className="mt-1.5 text-[11px] leading-snug text-white/40">
+          <p className="mt-1.5 text-[0.8125rem] leading-snug text-white/40">
             {tt("onboarding.import.pathHint")}
           </p>
         </div>

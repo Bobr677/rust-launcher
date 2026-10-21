@@ -9,7 +9,7 @@ type Props = {
 };
 
 export function OnboardingBackground({
-  accentColor = "#0b1530",
+  accentColor = "#4a22a8",
   backgroundImageUrl = DEFAULT_LAUNCHER_BACKGROUND,
 }: Props) {
   const backgroundAnimated = useOnboardingBackgroundAnimated();

@@ -195,7 +195,7 @@ export function UserProfileModal({
                       <p className="mt-0.5 text-xs text-white/40">{tt("common.loading")}</p>
                     ) : null}
                     {elyUsername ? (
-                      <p className="mt-1 truncate text-[11px] text-white/45">
+                      <p className="mt-1 truncate text-[0.8125rem] text-white/45">
                         Ely.by · {elyUsername}
                       </p>
                     ) : null}
@@ -230,7 +230,7 @@ export function UserProfileModal({
                     type="button"
                     disabled={addingFriend}
                     onClick={() => void handleAddFriend()}
-                    className="interactive-press rounded-xl border border-emerald-500/40 bg-emerald-600/25 px-4 py-2.5 text-sm font-semibold text-emerald-50 hover:bg-emerald-600/35 disabled:opacity-60"
+                    className="interactive-press rounded-xl border border-accent-to/40 bg-accent-from/20 px-4 py-2.5 text-sm font-semibold text-accent-hi hover:bg-accent-from/30 disabled:opacity-60"
                   >
                     {tt("friends.addFriend")}
                   </button>
